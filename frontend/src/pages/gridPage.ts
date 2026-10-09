@@ -1,7 +1,8 @@
 import { api, isRenderable } from '../api';
 import { Renderer } from '../gl/renderer';
 import { DEFAULT_RECIPE, normalizeRecipe, type Recipe } from '../recipe';
-import { el, option, showBanner } from './ui';
+import { fillRecipeSelect, loadRecipeValue } from './recipeOptions';
+import { el, showBanner } from './ui';
 
 const THUMB = 360;
 
@@ -29,7 +30,7 @@ export function mountGridPage(root: HTMLElement, params: URLSearchParams): () =>
     let recipe: Recipe = DEFAULT_RECIPE;
     try {
       if (name) {
-        const { recipe: r, fixed } = normalizeRecipe(await api.getRecipe(name));
+        const { recipe: r, fixed } = normalizeRecipe(await loadRecipeValue(name));
         recipe = r;
         if (fixed.length) showBanner(banner, 'warn', `配方「${name}」有欄位已補預設值或修正: ${fixed.join(', ')}`);
       }
@@ -71,10 +72,7 @@ export function mountGridPage(root: HTMLElement, params: URLSearchParams): () =>
   recipeSel.addEventListener('change', draw);
   (async () => {
     try {
-      const names = await api.listRecipes();
-      recipeSel.replaceChildren(option('', '(預設值)'), ...names.map((n) => option(n, n)));
-      const want = params.get('recipe');
-      if (want && names.includes(want)) recipeSel.value = want;
+      await fillRecipeSelect(recipeSel, params.get('recipe') ?? '');
       await draw();
     } catch (e) {
       showBanner(banner, 'error', (e as Error).message);

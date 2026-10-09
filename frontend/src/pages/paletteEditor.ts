@@ -8,7 +8,12 @@ export interface PaletteEditor {
   setColors(colors: string[]): void;
 }
 
-export function createPaletteEditor(onChange: (colors: string[]) => void): PaletteEditor {
+export function createPaletteEditor(
+  onChange: (colors: string[]) => void,
+  limits: { min?: number; max?: number } = {},
+): PaletteEditor {
+  const min = limits.min ?? 0;
+  const max = limits.max ?? 256;
   let colors: string[] = [];
 
   const swatches = el('div', { className: 'pal-swatches' });
@@ -18,7 +23,9 @@ export function createPaletteEditor(onChange: (colors: string[]) => void): Palet
     message.classList.toggle('error-text', error);
   };
   const commit = (next: string[]) => {
-    colors = next;
+    if (next.length < min) { say(`至少要 ${min} 色`, true); return; }
+    if (next.length > max) say(`最多 ${max} 色, 只保留前 ${max} 色`);
+    colors = next.slice(0, max);
     renderSwatches();
     onChange([...colors]);
   };
@@ -36,12 +43,13 @@ export function createPaletteEditor(onChange: (colors: string[]) => void): Palet
         onChange([...colors]);
       });
       const del = el('button', { text: '×', className: 'pal-del', title: '刪除這個顏色' });
+      del.disabled = colors.length <= min;
       del.addEventListener('click', () => commit(colors.filter((_, j) => j !== i)));
       swatches.append(el('div', { className: 'pal-swatch' }, [picker, del]));
     });
     const add = el('button', { text: '+', className: 'pal-add', title: '新增一個顏色' });
     add.addEventListener('click', () => commit([...colors, colors.at(-1) ?? '#808080']));
-    swatches.append(add);
+    if (colors.length < max) swatches.append(add);
     if (!colors.length) say('色票是空的, 會沿用原圖顏色');
   }
 
