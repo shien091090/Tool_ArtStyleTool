@@ -17,6 +17,7 @@ export interface PackMeta {
   height: number;
   created: string;
   layers: Record<string, LayerInfo>;
+  flat_color_source?: 'source' | 'user_flat';
   regions: { count: number; colors: Record<string, RGB>; areas: Record<string, number> };
 }
 
@@ -31,8 +32,10 @@ const enc = encodeURIComponent;
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   let res: Response;
+  const headers = new Headers(init?.headers);
+  headers.set('X-ArtStyle', '1'); // 後端只接受帶這個標頭的寫入請求, 防止其他網頁偷打本機 API
   try {
-    res = await fetch(url, init);
+    res = await fetch(url, { ...init, headers });
   } catch {
     throw new Error('連不上後端伺服器, 請確認已經啟動(見 README)');
   }

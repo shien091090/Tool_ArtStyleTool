@@ -10,6 +10,9 @@ from .fal import FalClient, FalError, HttpFalClient
 from .pack import LAYERS, Pack
 
 
+APP_HEADER = "X-ArtStyle"
+
+
 def _default_client() -> FalClient | None:
     return HttpFalClient(config.FAL_KEY) if config.FAL_KEY else None
 
@@ -23,6 +26,12 @@ def create_app(data_dir: Path, client_factory: Callable[[], FalClient | None] = 
         def handler(_: Request, exc: Exception):
             return JSONResponse(status_code=status, content={"detail": str(exc)})
         return handler
+
+    @app.middleware("http")
+    async def require_app_header(request: Request, call_next):
+        if request.method not in ("GET", "HEAD", "OPTIONS") and request.headers.get(APP_HEADER) != "1":
+            return JSONResponse(status_code=403, content={"detail": f"缺少 {APP_HEADER} 標頭, 只接受本工具前端的請求"})
+        return await call_next(request)
 
     app.add_exception_handler(ValueError, error(400))
     app.add_exception_handler(FileNotFoundError, error(404))

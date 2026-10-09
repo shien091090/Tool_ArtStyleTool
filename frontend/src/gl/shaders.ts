@@ -108,11 +108,13 @@ void main() {
     frag += (vec2(vnoise(q), vnoise(q + 17.3)) - 0.5) * 2.0 * uJitter * uScale;
   }
   ivec2 ip = imgPx(frag);
-  float sd = (texelFetch(uSdf, ip, 0).r * 255.0 - 128.0) / 8.0;
+  float raw = texelFetch(uSdf, ip, 0).r * 255.0;
+  float sd = (raw - 128.0) / 8.0;
   float w = uThickness;
   if (uVariation == 1) w += uVarAmount * (1.0 - prev.a);
-  w *= uScale;
-  float a = 1.0 - smoothstep(w - 0.75, w + 0.75, sd);
+  // 距離場只記到約 ±16px: 255 代表「更遠」, 粗細也夾在可表示範圍內, 否則大圖加粗時整張會被塗黑
+  w = min(w * uScale, 14.5);
+  float a = raw > 254.5 ? 0.0 : 1.0 - smoothstep(w - 0.75, w + 0.75, sd);
   if (uTexture == 1) a *= 0.55 + 0.45 * hash(floor(gl_FragCoord.xy));
   else if (uTexture == 2) a *= smoothstep(0.32, 0.5, fbm(gl_FragCoord.xy * 0.35 / uScale));
   vec3 lc = uColorMode == 0 ? vec3(0.08) : regionColor(ip) * (1.0 - uColorDarken);

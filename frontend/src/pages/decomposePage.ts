@@ -196,7 +196,7 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams): 
     const staleCount = STEP_ORDER.filter((s) => m.layers[s]?.stale).length;
     const missing = STEP_ORDER.filter((s) => !m.layers[s]).length;
     status.textContent = missing ? `還有 ${missing} 步未完成` : staleCount ? `有 ${staleCount} 層已過期` : '拆解完成';
-    if (m.layers.flat?.color_source === 'user_flat') cells[2].origin.textContent += '(顏色取自上傳的平塗圖)';
+    if ((m.flat_color_source ?? m.layers.flat?.color_source) === 'user_flat') cells[2].origin.textContent += '(顏色取自上傳的平塗圖)';
   }
 
   function setBusy(on: boolean, text = '') {

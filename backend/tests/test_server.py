@@ -7,13 +7,16 @@ from artstyle.server import create_app
 from tests.test_decompose import FakeFal, _source
 
 
+HEADERS = {"X-ArtStyle": "1"}
+
+
 def _png(img):
     return cv2.imencode(".png", img)[1].tobytes()
 
 
 @pytest.fixture
 def client(tmp_path):
-    return TestClient(create_app(tmp_path, lambda: FakeFal()))
+    return TestClient(create_app(tmp_path, lambda: FakeFal()), headers=HEADERS)
 
 
 def _upload(client, name="騎士", data=None):
@@ -70,7 +73,7 @@ def test_errors(client):
 
 
 def test_no_key_returns_503(tmp_path):
-    c = TestClient(create_app(tmp_path, lambda: None))
+    c = TestClient(create_app(tmp_path, lambda: None), headers=HEADERS)
     assert c.get("/api/status").json() == {"fal": False}
     _upload(c)
     r = c.post("/api/packs/騎士/steps/depth")
@@ -78,7 +81,7 @@ def test_no_key_returns_503(tmp_path):
 
 
 def test_fal_failure_returns_502(tmp_path):
-    c = TestClient(create_app(tmp_path, lambda: FakeFal(fail_on="depth")))
+    c = TestClient(create_app(tmp_path, lambda: FakeFal(fail_on="depth")), headers=HEADERS)
     _upload(c)
     r = c.post("/api/packs/騎士/decompose")
     assert r.status_code == 502 and "模擬失敗" in r.json()["detail"]
@@ -92,3 +95,10 @@ def test_recipes_roundtrip(client):
     assert client.get("/api/recipes/沒有").status_code == 404
     assert client.put("/api/recipes/..%2Fx", json={}).status_code in (400, 404)
     assert client.put("/api/recipes/x", json=[1, 2]).status_code == 400
+
+
+def test_mutations_require_app_header(tmp_path):
+    c = TestClient(create_app(tmp_path, lambda: FakeFal()))
+    r = c.post("/api/packs", data={"name": "x"}, files={"file": ("a.png", _png(_source()), "image/png")})
+    assert r.status_code == 403
+    assert c.get("/api/packs").status_code == 200

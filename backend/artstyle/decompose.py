@@ -69,7 +69,7 @@ def run_step(pack: Pack, step: str, client: FalClient | None, **params) -> None:
                          params={"gap_radius": gap, "min_area": area})
     elif step == "flat":
         _require(pack, "regions", "line")
-        source = pack.meta["layers"].get("flat", {}).get("color_source", "source")
+        source = pack.meta.get("flat_color_source") or pack.meta["layers"].get("flat", {}).get("color_source", "source")
         color_img = pack.read("user_flat" if source == "user_flat" else "source")
         labels = decode_labels(pack.read("regions"))
         colors = region_colors(labels, color_img, exclude=line_mask(pack.read("line")))
@@ -79,11 +79,31 @@ def run_step(pack: Pack, step: str, client: FalClient | None, **params) -> None:
         raise ValueError(f"未知的步驟: {step}")
 
 
+AI_STEPS = {"depth", "line"}
+PREREQS = {"normal": ["depth"], "line_sdf": ["line"], "regions": ["line"], "flat": ["regions", "line"]}
+
+
+def _fresh(pack: Pack, layer: str) -> bool:
+    return pack.has(layer) and not pack.is_stale(layer)
+
+
 def run_all(pack: Pack, client: FalClient | None) -> None:
-    """依序跑「不存在或已過期」的步驟。"""
+    """依序跑「不存在或已過期」的步驟。沒有金鑰時跳過 AI 步驟、照樣跑完本機能算的, 最後再回報缺什麼。"""
+    skipped = []
     for step in STEPS:
-        if not pack.has(step) or pack.is_stale(step):
-            run_step(pack, step, client)
+        if _fresh(pack, step):
+            continue
+        if step == "depth" and _fresh(pack, "normal"):
+            continue  # 已有(使用者上傳的)法線, 不必再花錢推深度
+        if step in AI_STEPS and client is None:
+            skipped.append(STEP_NAMES[step])
+            continue
+        if not all(pack.has(p) for p in PREREQS.get(step, [])):
+            continue
+        run_step(pack, step, client)
+    if skipped:
+        raise NoClientError(f"沒有設定 FAL_KEY 環境變數, 無法產生「{'、'.join(skipped)}」。"
+                            "本機能算的步驟已完成, 也可以改上傳自己的線稿或法線圖")
 
 
 def replace_layer(pack: Pack, layer: str, image_bytes: bytes) -> None:
@@ -97,7 +117,8 @@ def replace_layer(pack: Pack, layer: str, image_bytes: bytes) -> None:
         pack.write_layer("normal", resize_to(img, w, h), "user")
     else:
         pack.write_layer("user_flat", resize_to(img, w, h, nearest=True), "user")
-        pack.update_layer_info("flat", color_source="user_flat")
+        pack.meta["flat_color_source"] = "user_flat"
+        pack.save_meta()
         if pack.has("regions") and pack.has("line"):
             run_step(pack, "flat", None)
 

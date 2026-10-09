@@ -7,10 +7,9 @@ NO_LINE_DISTANCE = 64.0
 
 
 def normalize_line(img: np.ndarray, width: int, height: int) -> np.ndarray:
-    """fal 回傳的線稿 → 指定尺寸、白底黑線的灰階圖。用邊框中位數判斷底色, 線多時比全圖平均穩。"""
+    """fal 回傳的線稿 → 指定尺寸、白底黑線的灰階圖。線條稀疏, 全圖中位數就是底色; 不看邊框, 帶外框的線稿才不會被反相。"""
     gray = to_gray(img)
-    border = np.concatenate([gray[0], gray[-1], gray[:, 0], gray[:, -1]])
-    if np.median(border) < 128:
+    if np.median(gray) < 128:
         gray = 255 - gray
     return resize_to(gray, width, height)
 

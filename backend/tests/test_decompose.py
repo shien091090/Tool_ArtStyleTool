@@ -124,3 +124,42 @@ def test_replace_line_marks_downstream(pack):
 def test_replace_unknown_layer(pack):
     with pytest.raises(ValueError):
         decompose.replace_layer(pack, "source", _png(_source()))
+
+
+def _line_png():
+    line = np.full((60, 80), 255, np.uint8)
+    cv2.rectangle(line, (10, 10), (70, 50), 0, 2)
+    line[10:51, 39:41] = 0
+    return _png(line)
+
+
+def test_no_key_with_user_layers_reaches_renderable(pack):
+    decompose.replace_layer(pack, "line", _line_png())
+    decompose.replace_layer(pack, "normal", _png(np.full((60, 80, 3), (255, 128, 128), np.uint8)))
+    decompose.run_all(pack, None)
+    for layer in ["line_sdf", "regions", "flat"]:
+        assert pack.has(layer)
+    assert not pack.has("depth")
+
+
+def test_run_all_skips_depth_when_user_normal_exists(pack):
+    decompose.replace_layer(pack, "normal", _png(np.full((60, 80, 3), (255, 128, 128), np.uint8)))
+    calls = FakeFal()
+    decompose.run_all(pack, calls)
+    assert not any("depth" in c for c in calls.calls)
+    assert pack.meta["layers"]["normal"]["origin"] == "user"
+
+
+def test_no_key_still_runs_local_steps_then_reports(pack):
+    decompose.replace_layer(pack, "line", _line_png())
+    with pytest.raises(decompose.NoClientError):
+        decompose.run_all(pack, None)          # 缺法線又沒金鑰
+    assert pack.has("regions") and pack.has("flat")
+
+
+def test_upload_flat_before_regions_does_not_fake_flat_layer(pack):
+    decompose.replace_layer(pack, "flat", _png(np.full((60, 80, 3), (0, 200, 0), np.uint8)))
+    assert "flat" not in pack.meta["layers"]
+    decompose.replace_layer(pack, "line", _line_png())
+    decompose.run_all(pack, FakeFal())
+    assert pack.read("flat")[30, 25].tolist() == [0, 200, 0]
