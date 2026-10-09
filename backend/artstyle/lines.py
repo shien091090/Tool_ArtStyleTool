@@ -27,6 +27,8 @@ def signed_distance(mask: np.ndarray) -> np.ndarray:
     """有號距離場(像素): 線內為負、線外為正, 邊界約在 0。"""
     if not mask.any():
         return np.full(mask.shape, NO_LINE_DISTANCE, np.float32)
+    if mask.all():
+        return np.full(mask.shape, -NO_LINE_DISTANCE, np.float32)
     outside = cv2.distanceTransform((~mask).astype(np.uint8), cv2.DIST_L2, 5)
     inside = cv2.distanceTransform(mask.astype(np.uint8), cv2.DIST_L2, 5)
     return np.where(mask, -(inside - 0.5), outside - 0.5).astype(np.float32)

@@ -6,14 +6,16 @@ from .colorseg import color_segments, merge_similar
 from .fal import DELIGHT_MODEL, DELIGHT_PROMPT, DEPTH_MODEL, LINE_MODELS, FalClient
 from .flat import paint, region_areas, region_colors
 from .imaging import load_rgb, resize_to
+from .masks import ambient_occlusion, foreground, silhouette_sdf
 from .lines import encode_sdf, line_mask, normalize_line, signed_distance
 from .normals import depth_to_normal, detail_normal, focus_foreground, normalize_depth
 from .pack import Pack
 from .regions import decode_labels, encode_labels, label_regions
 
-STEPS = ["depth", "normal", "normal_detail", "line", "line_sdf", "delight", "regions", "flat"]
+STEPS = ["depth", "normal", "normal_detail", "line", "line_sdf", "delight", "regions", "flat", "ao", "silhouette_sdf"]
 STEP_NAMES = {"depth": "深度", "normal": "法線", "normal_detail": "細部法線", "line": "線稿",
-              "line_sdf": "線條距離場", "delight": "AI 去光影", "regions": "區塊", "flat": "平塗", "source": "原圖"}
+              "line_sdf": "線條距離場", "delight": "AI 去光影", "regions": "區塊", "flat": "平塗", "ao": "環境遮蔽",
+              "silhouette_sdf": "主體剪影", "source": "原圖"}
 DEFAULT_LINE_MODEL = "lineart"
 REPLACEABLE = ["line", "normal", "flat"]
 
@@ -127,13 +129,23 @@ def run_step(pack: Pack, step: str, client: FalClient | None, **params) -> None:
         source = "user_flat" if pack.meta.get("flat_color_source") == "user_flat" else p["color_source"]
         pack.write_layer("flat", paint(labels, colors), "computed", color_source=source)
         pack.set_regions_meta(colors, region_areas(labels))
+    elif step == "ao":
+        _require(pack, "depth")
+        d = _depth01(pack)
+        pack.write_layer("ao", ambient_occlusion(d, foreground(d, None)), "computed")
+    elif step == "silhouette_sdf":
+        if not (pack.has("depth") or pack.has("regions")):
+            raise ValueError("請先完成「深度」或「區塊」")
+        d = _depth01(pack) if pack.has("depth") else None
+        labels = decode_labels(pack.read("regions")) if pack.has("regions") else None
+        pack.write_layer("silhouette_sdf", silhouette_sdf(foreground(d, labels, (h, w))), "computed")
     else:
         raise ValueError(f"未知的步驟: {step}")
 
 
 REQUIRED_AI = {"depth", "line"}   # 沒有就無法渲染
 OPTIONAL_AI = {"delight"}         # 沒有就退回原圖取色
-PREREQS = {"normal": ["depth"], "line_sdf": ["line"], "flat": ["regions"]}
+PREREQS = {"normal": ["depth"], "line_sdf": ["line"], "flat": ["regions"], "ao": ["depth"]}
 
 
 def _fresh(pack: Pack, layer: str) -> bool:
@@ -153,6 +165,8 @@ def run_all(pack: Pack, client: FalClient | None) -> None:
                 skipped.append(STEP_NAMES[step])
             continue
         if step == "regions" and _region_params(pack, {})["method"] == "line" and not pack.has("line"):
+            continue
+        if step == "silhouette_sdf" and not (pack.has("depth") or pack.has("regions")):
             continue
         if not all(pack.has(p) for p in PREREQS.get(step, [])):
             continue

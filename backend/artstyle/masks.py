@@ -1,0 +1,34 @@
+"""環境遮蔽與主體剪影: 給渲染端的凹處變暗、外輪廓、外框描邊、限制光照範圍使用。"""
+import cv2
+import numpy as np
+
+from .lines import encode_sdf, signed_distance
+
+
+def ambient_occlusion(depth01: np.ndarray, fg: np.ndarray) -> np.ndarray:
+    """凹處(比周圍遠的地方)= 模糊後的深度減原深度取正。255 = 最暗的凹處, 平面為 0。"""
+    h, w = depth01.shape
+    d = depth01.astype(np.float32)
+    cav = np.maximum(0.0, cv2.GaussianBlur(d, (0, 0), max(3.0, max(h, w) / 100)) - d) * fg
+    top = np.percentile(cav[cav > 0], 99) if (cav > 0).any() else 0
+    if top <= 1e-6:
+        return np.zeros((h, w), np.uint8)
+    return np.clip(cav / top * 255, 0, 255).astype(np.uint8)
+
+
+def foreground(depth01: np.ndarray | None, labels: np.ndarray | None, shape=None) -> np.ndarray:
+    """主體遮罩。有深度: 深度 > 0(背景已在拆解時設為 0)。沒有深度: 碰到圖片邊框且面積最大的區塊當背景。"""
+    if depth01 is not None:
+        return depth01 > 0.001
+    if labels is not None:
+        border = np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]])
+        ids, counts = np.unique(labels, return_counts=True)
+        area = dict(zip(ids.tolist(), counts.tolist()))
+        bg = max(set(border.tolist()), key=lambda i: area[i])
+        return labels != bg
+    return np.ones(shape, bool)
+
+
+def silhouette_sdf(fg: np.ndarray) -> np.ndarray:
+    """主體剪影的有號距離場, 編碼同線條距離場(主體內 < 128、外 > 128)。"""
+    return encode_sdf(signed_distance(fg))

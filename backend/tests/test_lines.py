@@ -59,3 +59,12 @@ def test_normalize_keeps_framed_line_art():
     img[:, 29:31] = 0
     out = lines.normalize_line(img, 60, 60)
     assert out[30, 15] == 255 and out[30, 30] == 0
+
+
+def test_signed_distance_all_inside_no_overflow():
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        sd = lines.signed_distance(np.ones((10, 10), bool))
+        enc = lines.encode_sdf(sd)
+    assert (sd <= -16).all() and (enc == 0).all()
