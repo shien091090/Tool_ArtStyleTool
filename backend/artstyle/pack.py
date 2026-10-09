@@ -1,0 +1,116 @@
+"""分層包: 一張圖一個資料夾, 存各層 PNG 與 meta.json。"""
+import json
+import shutil
+from datetime import datetime
+from pathlib import Path
+
+import numpy as np
+
+from . import config
+from .imaging import limit_size, load_rgb, read_png, write_png
+from .names import validate_name
+
+LAYERS = ["source", "depth", "normal", "line", "line_sdf", "regions", "flat", "user_flat"]
+DEPENDENTS = {
+    "source": ["depth", "line", "flat"],
+    "depth": ["normal"],
+    "line": ["line_sdf", "regions"],
+    "regions": ["flat"],
+}
+
+
+def _now() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+
+class Pack:
+    def __init__(self, root: Path, name: str, meta: dict):
+        self.root = Path(root)
+        self.name = name
+        self.dir = self.root / name
+        self.meta = meta
+
+    @classmethod
+    def create(cls, root, name: str, image_bytes: bytes) -> "Pack":
+        validate_name(name)
+        root = Path(root)
+        if (root / name).exists():
+            raise FileExistsError(f"分層包「{name}」已存在")
+        img = limit_size(load_rgb(image_bytes), config.MAX_SIDE)  # 先解碼, 壞圖不留下空資料夾
+        (root / name).mkdir(parents=True)
+        h, w = img.shape[:2]
+        pack = cls(root, name, {"name": name, "width": w, "height": h, "created": _now(),
+                                "layers": {}, "regions": {"count": 0, "colors": {}, "areas": {}}})
+        try:
+            pack.write_layer("source", img, "user")
+        except Exception:
+            shutil.rmtree(pack.dir, ignore_errors=True)
+            raise
+        return pack
+
+    @classmethod
+    def open(cls, root, name: str) -> "Pack":
+        validate_name(name)
+        meta_path = Path(root) / name / "meta.json"
+        if not meta_path.is_file():
+            raise FileNotFoundError(f"找不到分層包「{name}」")
+        return cls(root, name, json.loads(meta_path.read_text(encoding="utf-8")))
+
+    @classmethod
+    def list(cls, root) -> list[dict]:
+        root = Path(root)
+        if not root.is_dir():
+            return []
+        result = []
+        for d in sorted(root.iterdir()):
+            meta_path = d / "meta.json"
+            if meta_path.is_file():
+                result.append(json.loads(meta_path.read_text(encoding="utf-8")))
+        return result
+
+    def path(self, layer: str) -> Path:
+        if layer not in LAYERS:
+            raise ValueError(f"未知的圖層: {layer}")
+        return self.dir / f"{layer}.png"
+
+    def has(self, layer: str) -> bool:
+        return self.path(layer).is_file()
+
+    def read(self, layer: str) -> np.ndarray:
+        if not self.has(layer):
+            raise ValueError(f"分層包「{self.name}」還沒有「{layer}」層")
+        return read_png(self.path(layer))
+
+    def is_stale(self, layer: str) -> bool:
+        return bool(self.meta["layers"].get(layer, {}).get("stale"))
+
+    def write_layer(self, layer: str, img: np.ndarray, origin: str, **extra) -> None:
+        write_png(self.path(layer), img)
+        entry = {**self.meta["layers"].get(layer, {}), **extra,
+                 "origin": origin, "updated": _now(), "stale": False}
+        self.meta["layers"][layer] = entry
+        self._mark_stale(layer)
+        self.save_meta()
+
+    def update_layer_info(self, layer: str, **extra) -> None:
+        self.meta["layers"].setdefault(layer, {}).update(extra)
+        self.save_meta()
+
+    def _mark_stale(self, layer: str) -> None:
+        for child in DEPENDENTS.get(layer, []):
+            if child in self.meta["layers"]:
+                self.meta["layers"][child]["stale"] = True
+            self._mark_stale(child)
+
+    def set_regions_meta(self, colors: dict, areas: dict) -> None:
+        self.meta["regions"] = {
+            "count": len(colors),
+            "colors": {str(k): [int(c) for c in v] for k, v in colors.items()},
+            "areas": {str(k): int(v) for k, v in areas.items()},
+        }
+        self.save_meta()
+
+    def save_meta(self) -> None:
+        tmp = self.dir / "meta.json.tmp"
+        tmp.write_text(json.dumps(self.meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(self.dir / "meta.json")
