@@ -120,6 +120,8 @@ def run_step(pack: Pack, step: str, client: FalClient | None, **params) -> None:
                 _, inv = np.unique(labels, return_inverse=True)
                 labels = (inv.reshape(labels.shape) + 1).astype(np.int32)
         pack.write_layer("regions", encode_labels(labels), "computed", params=p)
+        if pack.has("silhouette_sdf"):
+            run_step(pack, "silhouette_sdf", None)  # 剪影取自區塊, 區塊變了就要跟著重算
     elif step == "flat":
         _require(pack, "regions")
         p = _region_params(pack, {})

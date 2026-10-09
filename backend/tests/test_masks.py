@@ -53,3 +53,15 @@ def test_foreground_intersects_depth_and_regions():
     labels[10:30, 10:30] = 2                     # 畫出來的主體比較小
     fg = masks.foreground(d, labels)
     assert fg[20, 20] and not fg[7, 7] and not fg[0, 0]
+
+
+def test_background_pick_uses_depth_when_subject_touches_border():
+    # 半身構圖: 角色(區塊 2)碰到下緣且面積最大, 背景被切成兩塊(1、3)
+    d = np.zeros((40, 40), np.float32)
+    d[10:40, 5:35] = 0.8
+    labels = np.ones((40, 40), np.int32)
+    labels[:, 20:] = 3
+    labels[10:40, 5:35] = 2
+    fg = masks.foreground(d, labels)
+    assert fg[30, 20] and fg[39, 20]           # 角色沒被挖掉
+    assert not fg[2, 2] and not fg[2, 38]

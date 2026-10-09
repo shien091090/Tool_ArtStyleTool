@@ -223,3 +223,9 @@ def test_silhouette_without_depth_uses_regions(pack):
     decompose.replace_layer(pack, "normal", _png(np.full((60, 80, 3), (255, 128, 128), np.uint8)))
     decompose.run_all(pack, None)
     assert pack.has("silhouette_sdf") and not pack.has("ao")
+
+
+def test_recut_regions_refreshes_silhouette(pack):
+    decompose.run_all(pack, FakeFal())
+    decompose.run_step(pack, "regions", None, colors=4)
+    assert pack.has("silhouette_sdf") and not pack.is_stale("silhouette_sdf")

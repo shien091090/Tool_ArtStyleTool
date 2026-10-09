@@ -127,7 +127,7 @@ void main() {
     : mix(c, uShadowColor, s);
   vec3 litCol = mix(c, min(c * uLitColor * 1.15, vec3(1.0)), uLitStrength);
   vec3 o = mix(shadowCol, litCol, q);
-  o *= 1.0 - uAoStrength * texelFetch(uAo, ip, 0).r;
+  if (uBands > 1.5) o *= 1.0 - uAoStrength * texelFetch(uAo, ip, 0).r;
 
   if (uRim) {
     float facing = max(dot(normalize(n.xy + 1e-4), normalize(uLight.xy + 1e-4)), 0.0);
@@ -262,8 +262,8 @@ void main() {
     float size = uHtSize * uScale;
     vec2 cell = fract(rot(uHtAngle) * frag / size) - 0.5;
     float dist = length(cell) * size;
-    float hd = clamp(uShadowOnly ? 1.0 - p0.a : 1.0 - luma(c), 0.0, 1.0);
-    hd = clamp((hd - 0.12) / 0.88, 0.0, 1.0); // 很亮的地方(紙白)不出網點
+    // 依明暗模式時, 很亮的地方(紙白)不出網點; 只在陰影區模式維持原本的算法
+    float hd = uShadowOnly ? clamp(1.0 - p0.a, 0.0, 1.0) : clamp((1.0 - luma(c) - 0.12) / 0.88, 0.0, 1.0);
     float r = sqrt(hd) * size * 0.7;
     float mask = hd > 0.001 ? 1.0 - smoothstep(r - 0.75, r + 0.75, dist) : 0.0;
     c *= 1.0 - uHtStrength * mask;

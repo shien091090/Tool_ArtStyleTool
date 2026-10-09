@@ -2,7 +2,7 @@ import { api, type PackMeta, type RGB } from '../api';
 import { hexToRgb, rgbToHex } from '../colorMath';
 import { el, option, showBanner } from './ui';
 
-const STEP_ORDER = ['depth', 'normal', 'normal_detail', 'line', 'line_sdf', 'delight', 'regions', 'flat'];
+const STEP_ORDER = ['depth', 'normal', 'normal_detail', 'line', 'line_sdf', 'delight', 'regions', 'flat', 'ao', 'silhouette_sdf'];
 
 function originLabel(origin: string | undefined): string {
   if (!origin) return '尚未產生';

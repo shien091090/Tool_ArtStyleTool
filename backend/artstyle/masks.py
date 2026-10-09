@@ -23,10 +23,16 @@ def foreground(depth01: np.ndarray | None, labels: np.ndarray | None, shape=None
     if depth01 is not None:
         fg &= depth01 > 0.001
     if labels is not None:
-        border = np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]])
-        ids, counts = np.unique(labels, return_counts=True)
-        area = dict(zip(ids.tolist(), counts.tolist()))
-        bg = max(set(border.tolist()), key=lambda i: area[i])
+        border = set(np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]]).tolist())
+        if depth01 is not None:
+            # 角色碰到邊框時面積可能比背景碎塊大, 改看「深度為 0(背景)的像素」最多的那塊
+            far = labels[depth01 <= 0.001]
+            ids, counts = np.unique(far, return_counts=True)
+            score = dict(zip(ids.tolist(), counts.tolist()))
+        else:
+            ids, counts = np.unique(labels, return_counts=True)
+            score = dict(zip(ids.tolist(), counts.tolist()))
+        bg = max(border, key=lambda i: score.get(i, 0))
         fg &= labels != bg
     return fg
 
