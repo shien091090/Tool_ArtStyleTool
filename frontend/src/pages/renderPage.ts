@@ -2,7 +2,7 @@ import { Pane } from 'tweakpane';
 import { api, isRenderable, type PackMeta } from '../api';
 import { Renderer } from '../gl/renderer';
 import { PRESET_LABELS, PRESET_PALETTES } from '../palettes';
-import { DEFAULT_RECIPE, LIMITS, normalizeRecipe, type Recipe } from '../recipe';
+import { DEFAULT_RECIPE, LIMITS, normalizeRecipe, SECTIONS, type Recipe } from '../recipe';
 import { isVisible } from '../visibility';
 import { createPaletteEditor } from './paletteEditor';
 import { el, option, showBanner } from './ui';
@@ -152,7 +152,7 @@ export function mountRenderPage(root: HTMLElement, params: URLSearchParams): () 
 
   function applyRecipe(raw: unknown, name: string) {
     const { recipe: loaded, fixed } = normalizeRecipe(raw);
-    for (const section of ['color', 'lighting', 'lines', 'effects', 'filter'] as const) {
+    for (const section of SECTIONS) {
       Object.assign(recipe[section], loaded[section]);
     }
     currentRecipeName = name;

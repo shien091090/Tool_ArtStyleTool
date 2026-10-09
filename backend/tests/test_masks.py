@@ -44,3 +44,12 @@ def test_silhouette_sdf_sign():
     fg[10:30, 10:30] = True
     sdf = masks.silhouette_sdf(fg).astype(int)
     assert sdf[20, 20] < 128 and sdf[2, 2] > 128
+
+
+def test_foreground_intersects_depth_and_regions():
+    d = np.zeros((40, 40), np.float32)
+    d[5:35, 5:35] = 0.7                          # 深度主體偏大
+    labels = np.ones((40, 40), np.int32)
+    labels[10:30, 10:30] = 2                     # 畫出來的主體比較小
+    fg = masks.foreground(d, labels)
+    assert fg[20, 20] and not fg[7, 7] and not fg[0, 0]

@@ -17,16 +17,18 @@ def ambient_occlusion(depth01: np.ndarray, fg: np.ndarray) -> np.ndarray:
 
 
 def foreground(depth01: np.ndarray | None, labels: np.ndarray | None, shape=None) -> np.ndarray:
-    """主體遮罩。有深度: 深度 > 0(背景已在拆解時設為 0)。沒有深度: 碰到圖片邊框且面積最大的區塊當背景。"""
+    """主體遮罩。深度: 深度 > 0(背景已在拆解時設為 0), 但輪廓會比畫出來的大一圈;
+    區塊: 碰到圖片邊框且面積最大的區塊當背景, 邊界貼著顏色走。兩者都有時取交集。"""
+    fg = np.ones(shape if shape is not None else (depth01 if depth01 is not None else labels).shape, bool)
     if depth01 is not None:
-        return depth01 > 0.001
+        fg &= depth01 > 0.001
     if labels is not None:
         border = np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]])
         ids, counts = np.unique(labels, return_counts=True)
         area = dict(zip(ids.tolist(), counts.tolist()))
         bg = max(set(border.tolist()), key=lambda i: area[i])
-        return labels != bg
-    return np.ones(shape, bool)
+        fg &= labels != bg
+    return fg
 
 
 def silhouette_sdf(fg: np.ndarray) -> np.ndarray:
