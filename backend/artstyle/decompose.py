@@ -13,7 +13,7 @@ from .regions import decode_labels, encode_labels, label_regions
 STEPS = ["depth", "normal", "line", "line_sdf", "regions", "flat"]
 STEP_NAMES = {"depth": "深度", "normal": "法線", "line": "線稿", "line_sdf": "線條距離場",
               "regions": "區塊", "flat": "平塗", "source": "原圖"}
-DEFAULT_LINE_MODEL = "teed"
+DEFAULT_LINE_MODEL = "lineart"
 REPLACEABLE = ["line", "normal", "flat"]
 
 

@@ -71,3 +71,16 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .grid canvas { width: 100%; display: block; image-rendering: pixelated; }
 .grid figcaption { margin-top: 6px; color: var(--muted); }
 .grid .unfinished { aspect-ratio: 3 / 4; display: flex; align-items: center; justify-content: center; border: 1px dashed var(--line); color: var(--muted); }
+
+/* 自訂色票編輯區(放在 Tweakpane 色彩資料夾裡) */
+.pal-editor { padding: 6px 8px 8px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.pal-swatches { display: flex; flex-wrap: wrap; gap: 4px; }
+.pal-swatch { position: relative; }
+.pal-swatch input[type='color'] { width: 26px; height: 26px; border-radius: 4px; cursor: pointer; }
+.pal-del { position: absolute; top: -6px; right: -6px; width: 16px; height: 16px; padding: 0; font-size: 11px; line-height: 14px; border-radius: 50%; display: none; }
+.pal-swatch:hover .pal-del { display: block; }
+.pal-add { width: 26px; height: 26px; padding: 0; }
+.pal-row { display: flex; gap: 4px; align-items: center; }
+.pal-row input:not([type]) { flex: 1; min-width: 0; }
+.pal-row input, .pal-row button { font-size: 12px; padding: 3px 6px; }
+.pal-msg { color: var(--muted); min-height: 1em; }

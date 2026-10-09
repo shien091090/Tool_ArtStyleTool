@@ -5,7 +5,7 @@ from typing import Callable
 from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 
-from . import config, decompose, recipes
+from . import config, decompose, lospec, recipes
 from .fal import FalClient, FalError, HttpFalClient
 from .pack import LAYERS, Pack
 
@@ -38,6 +38,7 @@ def create_app(data_dir: Path, client_factory: Callable[[], FalClient | None] = 
     app.add_exception_handler(FileExistsError, error(409))
     app.add_exception_handler(FalError, error(502))
     app.add_exception_handler(decompose.NoClientError, error(503))
+    app.add_exception_handler(lospec.LospecError, error(502))
 
     def open_pack(name: str) -> Pack:
         return Pack.open(packs_dir, name)
@@ -100,6 +101,10 @@ def create_app(data_dir: Path, client_factory: Callable[[], FalClient | None] = 
         pack = open_pack(name)
         decompose.set_region_color(pack, region_id, body.get("color", []))
         return pack.meta
+
+    @app.get("/api/lospec")
+    def get_lospec(url: str):
+        return lospec.fetch_palette(url)
 
     @app.get("/api/recipes")
     def list_recipes():

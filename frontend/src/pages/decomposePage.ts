@@ -2,7 +2,6 @@ import { api, type PackMeta, type RGB } from '../api';
 import { hexToRgb, rgbToHex } from '../colorMath';
 import { el, option, showBanner } from './ui';
 
-const LINE_MODELS = ['teed', 'lineart', 'hed', 'pidi'];
 const STEP_ORDER = ['depth', 'normal', 'line', 'line_sdf', 'regions', 'flat'];
 
 function originLabel(origin: string | undefined): string {
@@ -46,8 +45,6 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams): 
   overlayOpacity.value = '0.7';
 
   // ---- 四格 ----
-  const lineModel = el('select');
-  lineModel.append(...LINE_MODELS.map((m) => option(m, m)));
   const gapInput = el('input');
   gapInput.type = 'number';
   gapInput.min = '0';
@@ -95,8 +92,7 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams): 
   const cells: Cell[] = [
     makeCell('source', '原圖', []),
     makeCell('line', '線稿', [
-      el('label', {}, ['模型', lineModel]),
-      button('重跑', () => step('重跑線稿', [['line', { model: lineModel.value }]])),
+      button('重跑', () => step('重跑線稿', [['line', {}]])),
       ...uploadButton('line'),
     ]),
     makeCell('flat', '平塗', [

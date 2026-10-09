@@ -102,3 +102,8 @@ def test_mutations_require_app_header(tmp_path):
     r = c.post("/api/packs", data={"name": "x"}, files={"file": ("a.png", _png(_source()), "image/png")})
     assert r.status_code == 403
     assert c.get("/api/packs").status_code == 200
+
+
+def test_lospec_endpoint_rejects_other_hosts(client):
+    r = client.get("/api/lospec", params={"url": "https://evil.com/palette-list/x"})
+    assert r.status_code == 400

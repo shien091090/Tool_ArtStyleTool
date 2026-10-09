@@ -7,12 +7,8 @@ import numpy as np
 from .imaging import decode_any, to_data_uri
 
 DEPTH_MODEL = "fal-ai/imageutils/marigold-depth"
-LINE_MODELS = {
-    "lineart": "fal-ai/image-preprocessors/lineart",
-    "teed": "fal-ai/image-preprocessors/teed",
-    "hed": "fal-ai/image-preprocessors/hed",
-    "pidi": "fal-ai/image-preprocessors/pidi",
-}
+# 使用者實測 lineart 效果最好, 只保留這一種
+LINE_MODELS = {"lineart": "fal-ai/image-preprocessors/lineart"}
 
 
 class FalError(Exception):

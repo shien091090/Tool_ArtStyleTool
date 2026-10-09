@@ -57,9 +57,9 @@ def test_failure_keeps_completed_steps(pack):
 
 def test_rerun_line_marks_downstream_stale(pack):
     decompose.run_all(pack, FakeFal())
-    decompose.run_step(pack, "line", FakeFal(), model="hed")
+    decompose.run_step(pack, "line", FakeFal())
     layers = pack.meta["layers"]
-    assert layers["line"]["origin"] == "ai:fal-ai/image-preprocessors/hed"
+    assert layers["line"]["origin"] == "ai:fal-ai/image-preprocessors/lineart"
     assert layers["regions"]["stale"] and layers["flat"]["stale"] and layers["line_sdf"]["stale"]
     assert not layers["normal"]["stale"]
     calls = FakeFal()
@@ -163,3 +163,8 @@ def test_upload_flat_before_regions_does_not_fake_flat_layer(pack):
     decompose.replace_layer(pack, "line", _line_png())
     decompose.run_all(pack, FakeFal())
     assert pack.read("flat")[30, 25].tolist() == [0, 200, 0]
+
+
+def test_only_lineart_model():
+    from artstyle.fal import LINE_MODELS
+    assert list(LINE_MODELS) == ["lineart"] and decompose.DEFAULT_LINE_MODEL == "lineart"

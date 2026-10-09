@@ -81,6 +81,7 @@ export const api = {
     request<PackMeta>(`/api/packs/${enc(name)}/regions/${id}`, json('PUT', { color })),
   fileUrl: (name: string, layer: string, version = '') =>
     `/api/packs/${enc(name)}/files/${layer}.png?v=${enc(version || String(Date.now()))}`,
+  lospec: (url: string) => request<{ name: string; colors: string[] }>(`/api/lospec?url=${enc(url)}`),
   listRecipes: () => request<string[]>('/api/recipes'),
   getRecipe: (name: string) => request<unknown>(`/api/recipes/${enc(name)}`),
   saveRecipe: (name: string, recipe: Recipe) => request<{ ok: boolean }>(`/api/recipes/${enc(name)}`, json('PUT', recipe)),
