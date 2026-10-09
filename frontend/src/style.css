@@ -1,0 +1,73 @@
+:root {
+  --bg: #1e1f22;
+  --panel: #2b2d31;
+  --line: #3c3f45;
+  --text: #e6e6e6;
+  --muted: #9a9ca3;
+  --accent: #6ea8fe;
+  --danger: #f06a6a;
+  --warn: #e8b04a;
+  color-scheme: dark;
+  font-family: system-ui, 'Microsoft JhengHei', sans-serif;
+  font-size: 14px;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
+body { display: flex; flex-direction: column; }
+
+.topbar { display: flex; align-items: center; gap: 24px; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.topbar nav { display: flex; gap: 4px; }
+.topbar nav a { color: var(--muted); text-decoration: none; padding: 6px 12px; border-radius: 6px; }
+.topbar nav a.active { color: var(--text); background: var(--line); }
+
+#page { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+button, select, input { font: inherit; color: var(--text); background: var(--line); border: 1px solid #50545b; border-radius: 6px; padding: 5px 10px; }
+button { cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.5; cursor: default; }
+button.primary { background: #2f5ea8; border-color: #2f5ea8; }
+input[type='number'] { width: 70px; }
+input[type='color'] { padding: 0; width: 36px; height: 28px; }
+label { display: inline-flex; align-items: center; gap: 6px; }
+
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
+.toolbar .spacer { flex: 1; }
+.banner { padding: 8px 16px; }
+.banner.error { background: #4a2326; color: #ffc9c9; }
+.banner.warn { background: #4a3c1f; color: #ffe2a8; }
+.banner.info { background: #22344f; color: #cfe1ff; }
+.muted { color: var(--muted); }
+.error-text { color: var(--danger); }
+.hidden { display: none !important; }
+
+/* 渲染頁 */
+.render-layout { flex: 1; min-height: 0; display: flex; }
+.canvas-wrap { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; padding: 16px; background: repeating-conic-gradient(#26272b 0% 25%, #222326 0% 50%) 50% / 24px 24px; }
+.canvas-wrap canvas { max-width: 100%; max-height: 100%; image-rendering: pixelated; box-shadow: 0 2px 12px #0008; }
+.panel-wrap { width: 320px; overflow-y: auto; border-left: 1px solid var(--line); background: var(--panel); }
+
+/* 拆解檢查頁 */
+.cells { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 12px 16px; overflow: auto; }
+.cell { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+.cell header { padding: 8px 10px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.cell header .title { display: flex; justify-content: space-between; gap: 8px; }
+.cell header .origin { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.cell .tag-stale { color: var(--warn); font-size: 12px; }
+.cell .controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cell .view { position: relative; flex: 1; min-height: 200px; display: flex; align-items: flex-start; justify-content: center; padding: 8px; }
+.cell .view img { max-width: 100%; display: block; }
+.cell .view .stack { position: relative; }
+.cell .view .overlay { position: absolute; inset: 0; width: 100%; mix-blend-mode: multiply; pointer-events: none; }
+.cell .view .empty { color: var(--muted); align-self: center; }
+.cell.clickable img { cursor: crosshair; }
+.region-pop { position: fixed; z-index: 10; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: flex; gap: 8px; align-items: center; box-shadow: 0 4px 16px #000a; }
+
+/* 對照網格 */
+.grid { flex: 1; overflow: auto; padding: 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; align-content: start; }
+.grid figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; cursor: pointer; }
+.grid figure:hover { border-color: var(--accent); }
+.grid canvas { width: 100%; display: block; image-rendering: pixelated; }
+.grid figcaption { margin-top: 6px; color: var(--muted); }
+.grid .unfinished { aspect-ratio: 3 / 4; display: flex; align-items: center; justify-content: center; border: 1px dashed var(--line); color: var(--muted); }
