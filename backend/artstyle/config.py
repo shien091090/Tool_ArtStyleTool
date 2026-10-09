@@ -9,5 +9,5 @@ RECIPES_DIR = DATA_DIR / "recipes"
 MAX_SIDE = 2048
 FAL_KEY = os.environ.get("FAL_KEY") or None
 
-# fal.ai 深度圖的亮暗慣例, 由 scripts/fal_smoke.py 實測決定
-DEPTH_NEAR_IS_BRIGHT = True
+# fal.ai marigold-depth 實測(2026-10-09): 16bit, 近的暗、遠的亮
+DEPTH_NEAR_IS_BRIGHT = False
