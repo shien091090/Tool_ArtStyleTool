@@ -13,10 +13,11 @@ export const STARTER_RECIPES: { name: string; recipe: Recipe }[] = [
   {
     name: '漫畫網點',
     recipe: make({
-      lighting: { bands: 2, shadowMode: 'darken', shadowStrength: 0.15, ambient: 0.3 },
-      lines: { thickness: 0.5, outerThickness: 2 },
-      effects: { halftone: true, halftoneShadowOnly: true, halftoneSize: 6, halftoneStrength: 0.8 },
-      grade: { preset: 'noir', presetStrength: 1 },
+      color: { saturation: 0 },
+      lighting: { bands: 2, shadowMode: 'darken', shadowStrength: 0.1, ambient: 0.4, detailStrength: 0.6 },
+      lines: { thickness: 0.8, outerThickness: 2.5 },
+      effects: { halftone: true, halftoneShadowOnly: false, halftoneSize: 7, halftoneStrength: 0.9 },
+      grade: { preset: 'noir', presetStrength: 0.35 },
     }),
   },
   {
@@ -24,7 +25,7 @@ export const STARTER_RECIPES: { name: string; recipe: Recipe }[] = [
     recipe: make({
       lighting: { bands: 2, softness: 0.8, shadowStrength: 0.3 },
       lines: { thickness: -0.5, colorMode: 'region', colorDarken: 0.5, pressure: 0.5, breaks: 0.2 },
-      effects: { wcEdge: 0.6, wcBleed: 0.5, wcGranule: 0.5, paper: 0.6 },
+      effects: { wcEdge: 0.7, wcBleed: 0.5, wcGranule: 0.35, paper: 0.35 },
       filter: { kuwahara: 2 },
       grade: { satShadow: -0.4 },
     }),
@@ -33,9 +34,9 @@ export const STARTER_RECIPES: { name: string; recipe: Recipe }[] = [
     name: '像素',
     recipe: make({
       color: { paletteMode: 'preset', preset: 'pico8' },
-      lighting: { bands: 2 },
+      lighting: { bands: 3, detailStrength: 0.5 },
       lines: { thickness: 0.5 },
-      filter: { pixelSize: 6, dither: true, ditherLevels: 4, outlineWidth: 6, outlineColor: '#1d2b53' },
+      filter: { pixelSize: 6, outlineWidth: 6, outlineColor: '#1d2b53' },
     }),
   },
   {
@@ -43,7 +44,7 @@ export const STARTER_RECIPES: { name: string; recipe: Recipe }[] = [
     recipe: make({
       lighting: { bands: 2, shadowMode: 'darken', shadowStrength: 0.2 },
       lines: { thickness: 1, outerThickness: 3, pressure: 0.6 },
-      effects: { hatch: true, hatchSpacing: 7, hatchWidth: 1.5, crossHatch: true, hatchStrength: 0.9, paper: 0.5 },
+      effects: { hatch: true, hatchSpacing: 9, hatchWidth: 2.5, crossHatch: true, hatchStrength: 1, paper: 0.5 },
       grade: { gradientMap: true, gradientStops: ['#1a1410', '#efe4cf'] },
     }),
   },
@@ -51,10 +52,11 @@ export const STARTER_RECIPES: { name: string; recipe: Recipe }[] = [
     name: '賽璐璐',
     recipe: make({
       lighting: {
-        bands: 2, shadowMode: 'custom', shadowColor: '#5a4f8a', shadowStrength: 0.6, ambient: 0.2,
-        specular: true, rim: true, rimStrength: 0.4,
+        bands: 2, shadowMode: 'custom', shadowColor: '#4b3f8f', shadowStrength: 0.75, ambient: 0.15,
+        normalStrength: 1.6, detailStrength: 0.35, specular: true, specSize: 0.25, rim: true, rimStrength: 0.5,
       },
-      lines: { thickness: -0.5, outerThickness: 1 },
+      color: { saturation: 1.15 },
+      lines: { thickness: -0.3, outerThickness: 1.5 },
     }),
   },
   {

@@ -263,6 +263,7 @@ void main() {
     vec2 cell = fract(rot(uHtAngle) * frag / size) - 0.5;
     float dist = length(cell) * size;
     float hd = clamp(uShadowOnly ? 1.0 - p0.a : 1.0 - luma(c), 0.0, 1.0);
+    hd = clamp((hd - 0.12) / 0.88, 0.0, 1.0); // 很亮的地方(紙白)不出網點
     float r = sqrt(hd) * size * 0.7;
     float mask = hd > 0.001 ? 1.0 - smoothstep(r - 0.75, r + 0.75, dist) : 0.0;
     c *= 1.0 - uHtStrength * mask;
