@@ -6,6 +6,8 @@ import { createProgram, createTarget, loadBitmap, textureFromBitmap, textureFrom
 import { COLOR_FS, EFFECTS_FS, FINAL_FS, KUWAHARA_FS, LIGHTING_FS, LINES_FS, SOURCE_FS } from './shaders';
 
 const PACK_TEXTURES = ['regions', 'normal', 'line_sdf', 'source'] as const;
+/** 舊的分層包可能沒有細部法線, 沒有就用「正對畫面」的平面法線代替。 */
+const FLAT_NORMAL = new Uint8Array([128, 128, 255, 255]);
 type PackTexture = (typeof PACK_TEXTURES)[number];
 
 const rgb01 = (hex: string): [number, number, number] => hexToRgb(hex).map((v) => v / 255) as [number, number, number];
@@ -17,6 +19,7 @@ export class Renderer {
   private vao: WebGLVertexArrayObject;
   private packTex: Partial<Record<PackTexture, WebGLTexture>> = {};
   private tableTex: WebGLTexture;
+  private detailTex: WebGLTexture | null = null;
   private targets: Target[] = [];
   private meta: PackMeta | null = null;
   private tableKey = '';
@@ -49,7 +52,13 @@ export class Renderer {
   async loadPack(meta: PackMeta): Promise<void> {
     const version = PACK_TEXTURES.map((l) => meta.layers[l]?.updated ?? '').join('|');
     const bitmaps = await Promise.all(PACK_TEXTURES.map((l) => loadBitmap(api.fileUrl(meta.name, l, version))));
+    const detail = meta.layers.normal_detail
+      ? await loadBitmap(api.fileUrl(meta.name, 'normal_detail', meta.layers.normal_detail.updated))
+      : null;
     const gl = this.gl;
+    if (this.detailTex) gl.deleteTexture(this.detailTex);
+    this.detailTex = detail ? textureFromBitmap(gl, detail) : textureFromBytes(gl, 1, 1, FLAT_NORMAL);
+    detail?.close();
     for (const t of Object.values(this.packTex)) gl.deleteTexture(t);
     this.packTex = {};
     PACK_TEXTURES.forEach((l, i) => {
@@ -90,6 +99,8 @@ export class Renderer {
     this.pass('lighting', B, scale, (u) => {
       u.tex('uPrev', A.tex, 0);
       u.tex('uNormal', t.normal!, 1);
+      u.tex('uDetail', this.detailTex!, 2);
+      u.f('uDetailStrength', L.detailStrength);
       u.bool('uEnabled', L.enabled);
       u.v3('uLight', [Math.cos(az) * Math.cos(el), Math.sin(az) * Math.cos(el), Math.sin(el)]);
       u.f('uBands', L.bands);

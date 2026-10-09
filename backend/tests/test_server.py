@@ -41,9 +41,10 @@ def test_upload_decompose_and_fetch(client):
 def test_run_single_step_with_params(client):
     _upload(client)
     client.post("/api/packs/騎士/decompose")
-    r = client.post("/api/packs/騎士/steps/regions", json={"gap_radius": 1, "min_area": 5})
+    r = client.post("/api/packs/騎士/steps/regions", json={"method": "line", "gap_radius": 1, "min_area": 5})
     assert r.status_code == 200
-    assert r.json()["layers"]["regions"]["params"] == {"gap_radius": 1, "min_area": 5}
+    params = r.json()["layers"]["regions"]["params"]
+    assert params["method"] == "line" and params["gap_radius"] == 1 and params["min_area"] == 5
     assert r.json()["layers"]["flat"]["stale"]
 
 
@@ -66,7 +67,7 @@ def test_errors(client):
     assert client.get("/api/packs/none").status_code == 404
     assert client.get("/api/packs/騎士/files/meta.json").status_code == 404
     assert client.get("/api/packs/騎士/files/flat.png").status_code == 404
-    r = client.post("/api/packs/騎士/steps/regions")
+    r = client.post("/api/packs/騎士/steps/flat")
     assert r.status_code == 400 and "請先完成" in r.json()["detail"]
     assert client.post("/api/packs/騎士/steps/nope").status_code == 400
     assert client.get("/api/packs/騎士/region", params={"x": 999, "y": 0}).status_code == 400

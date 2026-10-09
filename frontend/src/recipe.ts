@@ -22,6 +22,7 @@ export interface Recipe {
     shadowStrength: number;
     ambient: number;
     normalStrength: number;
+    detailStrength: number;
     rim: boolean;
     rimStrength: number;
     rimColor: string;
@@ -64,7 +65,7 @@ export const DEFAULT_RECIPE: Recipe = {
   color: { enabled: true, paletteMode: 'source', autoCount: 8, preset: 'pico8', custom: [], hue: 0, saturation: 1, temperature: 0 },
   lighting: {
     enabled: true, azimuth: 135, elevation: 45, bands: 3, shadowMode: 'cool', shadowStrength: 0.5,
-    ambient: 0.25, normalStrength: 1, rim: false, rimStrength: 0.5, rimColor: '#ffffff',
+    ambient: 0.25, normalStrength: 1, detailStrength: 1, rim: false, rimStrength: 0.5, rimColor: '#ffffff',
   },
   lines: { enabled: true, thickness: 0, variation: 'uniform', variationAmount: 1.5, colorMode: 'black', colorDarken: 0.5, texture: 'clean', jitter: 0 },
   effects: { enabled: true, halftone: false, halftoneSize: 6, halftoneAngle: 45, halftoneShadowOnly: true, halftoneStrength: 0.6, paper: 0, grain: 0 },
@@ -86,6 +87,7 @@ export const LIMITS: Record<string, [number, number, boolean?]> = {
   'lighting.shadowStrength': [0, 1],
   'lighting.ambient': [0, 1],
   'lighting.normalStrength': [0, 3],
+  'lighting.detailStrength': [0, 3],
   'lighting.rimStrength': [0, 1],
   'lines.thickness': [-3, 8],
   'lines.variationAmount': [0, 6],

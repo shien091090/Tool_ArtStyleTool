@@ -55,6 +55,8 @@ void main() {
 export const LIGHTING_FS = HEADER + `
 uniform sampler2D uPrev;
 uniform sampler2D uNormal;
+uniform sampler2D uDetail;
+uniform float uDetailStrength;
 uniform bool uEnabled;
 uniform vec3 uLight;
 uniform float uBands;
@@ -69,9 +71,11 @@ uniform vec3 uRimColor;
 void main() {
   vec3 c = prevAt(uPrev, gl_FragCoord.xy).rgb;
   if (!uEnabled) { outColor = vec4(c, 1.0); return; }
-  vec3 n = texelFetch(uNormal, imgPx(gl_FragCoord.xy), 0).rgb * 2.0 - 1.0;
-  n.xy *= uNormalStrength;
-  n = normalize(n);
+  ivec2 ip = imgPx(gl_FragCoord.xy);
+  vec3 n = texelFetch(uNormal, ip, 0).rgb * 2.0 - 1.0;
+  vec3 d = texelFetch(uDetail, ip, 0).rgb * 2.0 - 1.0;
+  // 大形(深度)與細部(原圖明暗)分開調強度後疊加
+  n = normalize(vec3(n.xy * uNormalStrength + d.xy * uDetailStrength, n.z));
   // 以「正對畫面」的受光為基準: 平塗原色就是亮面的顏色, 轉向光源的面不會更亮
   float t = clamp(dot(n, uLight) / max(uLight.z, 0.2), 0.0, 1.0);
   float q = uBands < 1.5 ? 1.0 : clamp(floor(t * uBands) / (uBands - 1.0), 0.0, 1.0);

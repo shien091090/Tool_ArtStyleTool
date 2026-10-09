@@ -2,7 +2,7 @@ import { api, type PackMeta, type RGB } from '../api';
 import { hexToRgb, rgbToHex } from '../colorMath';
 import { el, option, showBanner } from './ui';
 
-const STEP_ORDER = ['depth', 'normal', 'line', 'line_sdf', 'regions', 'flat'];
+const STEP_ORDER = ['depth', 'normal', 'normal_detail', 'line', 'line_sdf', 'delight', 'regions', 'flat'];
 
 function originLabel(origin: string | undefined): string {
   if (!origin) return '尚未產生';
@@ -11,7 +11,7 @@ function originLabel(origin: string | undefined): string {
 }
 
 interface Cell {
-  layer: 'source' | 'line' | 'flat' | 'normal';
+  layer: 'source' | 'line' | 'flat' | 'normal' | 'delight';
   title: string;
   root: HTMLElement;
   origin: HTMLElement;
@@ -45,13 +45,35 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams): 
   overlayOpacity.value = '0.7';
 
   // ---- 四格 ----
-  const gapInput = el('input');
-  gapInput.type = 'number';
-  gapInput.min = '0';
-  gapInput.max = '16';
-  const areaInput = el('input');
-  areaInput.type = 'number';
-  areaInput.min = '1';
+  const numberInput = (min: string, max: string, step = '1') => {
+    const i = el('input');
+    i.type = 'number';
+    i.min = min;
+    i.max = max;
+    i.step = step;
+    return i;
+  };
+  const methodSel = el('select');
+  methodSel.append(option('color', '依顏色'), option('line', '依線稿'));
+  const sourceSel = el('select');
+  sourceSel.append(option('delight', 'AI 去光影'), option('source', '原圖'));
+  const colorsInput = numberInput('2', '64');
+  const areaInput = numberInput('1', '100000');
+  const gapInput = numberInput('0', '16');
+  const mergeInput = numberInput('0', '0.5', '0.01');
+  const colorsLabel = el('label', { title: '依顏色分成幾色, 越多細節越多' }, ['色數', colorsInput]);
+  const gapLabel = el('label', { title: '線條沒接起來導致顏色漏到隔壁時調大' }, ['補線縫', gapInput]);
+  const mergeLabel = el('label', { title: '相鄰且顏色差距小於這個值的區塊合併, 0 = 不合併' }, ['合併相近色', mergeInput]);
+  const syncMethod = () => {
+    const line = methodSel.value === 'line';
+    colorsLabel.classList.toggle('hidden', line);
+    gapLabel.classList.toggle('hidden', !line);
+    mergeLabel.classList.toggle('hidden', !line);
+  };
+  methodSel.addEventListener('change', syncMethod);
+  const normalView = el('select');
+  normalView.append(option('normal', '看大形'), option('normal_detail', '看細部'));
+  normalView.addEventListener('change', () => renderCells());
 
   const actions: HTMLButtonElement[] = [createBtn, runAllBtn];
   const button = (text: string, onClick: () => void) => {
@@ -96,17 +118,27 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams): 
       ...uploadButton('line'),
     ]),
     makeCell('flat', '平塗', [
-      el('label', { title: '線條沒接起來導致顏色漏到隔壁時調大' }, ['補線縫', gapInput]),
+      el('label', {}, ['切法', methodSel]),
+      el('label', { title: 'AI 去光影的圖顏色較乾淨; 若它改變了構圖或顏色就改用原圖' }, ['取色', sourceSel]),
+      colorsLabel, gapLabel, mergeLabel,
       el('label', { title: '小於這個面積的碎塊併入鄰近區塊' }, ['最小面積', areaInput]),
       button('重算區塊', () => step('重算區塊', [
-        ['regions', { gap_radius: Number(gapInput.value), min_area: Number(areaInput.value) }], ['flat', {}],
+        ['regions', {
+          method: methodSel.value, color_source: sourceSel.value, colors: Number(colorsInput.value),
+          min_area: Number(areaInput.value), gap_radius: Number(gapInput.value), merge: Number(mergeInput.value),
+        }], ['flat', {}],
       ])),
       ...uploadButton('flat'),
       el('span', { className: 'muted', text: '點圖上的區塊可以改色' }),
     ]),
     makeCell('normal', '法線', [
-      button('重跑', () => step('重跑法線', [['depth', {}], ['normal', {}]])),
+      normalView,
+      button('重跑', () => step('重跑法線', [['depth', {}], ['normal', {}], ['normal_detail', {}]])),
       ...uploadButton('normal'),
+    ]),
+    makeCell('delight', 'AI 去光影', [
+      button('重跑', () => step('重跑去光影', [['delight', {}]])),
+      el('span', { className: 'muted', text: '平塗的取色來源' }),
     ]),
   ];
   cells[2].root.classList.add('clickable');
@@ -166,7 +198,8 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams): 
     const m = meta;
     const lineInfo = m.layers.line;
     for (const c of cells) {
-      const info = m.layers[c.layer];
+      const shown = c.layer === 'normal' ? normalView.value : c.layer;
+      const info = m.layers[shown];
       c.origin.textContent = originLabel(info?.origin);
       c.stale.textContent = info?.stale ? '已過期' : '';
       if (!info) {
@@ -174,7 +207,7 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams): 
         continue;
       }
       const img = el('img');
-      img.src = api.fileUrl(m.name, c.layer, info.updated);
+      img.src = api.fileUrl(m.name, shown, info.updated);
       img.alt = c.title;
       const stack = el('div', { className: 'stack' }, [img]);
       if (overlayChk.checked && lineInfo && c.layer !== 'line') {
@@ -186,9 +219,14 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams): 
       if (c.layer === 'flat') img.addEventListener('click', onFlatClick);
       c.view.append(stack);
     }
-    const params = m.layers.regions?.params;
-    gapInput.value = String(params?.gap_radius ?? 3);
-    areaInput.value = String(params?.min_area ?? 12);
+    const p = m.layers.regions?.params;
+    methodSel.value = p?.method ?? 'color';
+    sourceSel.value = p?.color_source ?? 'delight';
+    colorsInput.value = String(p?.colors ?? 12);
+    areaInput.value = String(p?.min_area ?? 30);
+    gapInput.value = String(p?.gap_radius ?? 3);
+    mergeInput.value = String(p?.merge ?? 0.06);
+    syncMethod();
     const staleCount = STEP_ORDER.filter((s) => m.layers[s]?.stale).length;
     const missing = STEP_ORDER.filter((s) => !m.layers[s]).length;
     status.textContent = missing ? `還有 ${missing} 步未完成` : staleCount ? `有 ${staleCount} 層已過期` : '拆解完成';

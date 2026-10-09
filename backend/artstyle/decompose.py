@@ -2,19 +2,25 @@
 import numpy as np
 
 from . import config
-from .fal import DEPTH_MODEL, LINE_MODELS, FalClient
+from .colorseg import color_segments, merge_similar
+from .fal import DELIGHT_MODEL, DELIGHT_PROMPT, DEPTH_MODEL, LINE_MODELS, FalClient
 from .flat import paint, region_areas, region_colors
 from .imaging import load_rgb, resize_to
 from .lines import encode_sdf, line_mask, normalize_line, signed_distance
-from .normals import depth_to_normal, focus_foreground, normalize_depth
+from .normals import depth_to_normal, detail_normal, focus_foreground, normalize_depth
 from .pack import Pack
 from .regions import decode_labels, encode_labels, label_regions
 
-STEPS = ["depth", "normal", "line", "line_sdf", "regions", "flat"]
-STEP_NAMES = {"depth": "深度", "normal": "法線", "line": "線稿", "line_sdf": "線條距離場",
-              "regions": "區塊", "flat": "平塗", "source": "原圖"}
+STEPS = ["depth", "normal", "normal_detail", "line", "line_sdf", "delight", "regions", "flat"]
+STEP_NAMES = {"depth": "深度", "normal": "法線", "normal_detail": "細部法線", "line": "線稿",
+              "line_sdf": "線條距離場", "delight": "AI 去光影", "regions": "區塊", "flat": "平塗", "source": "原圖"}
 DEFAULT_LINE_MODEL = "lineart"
 REPLACEABLE = ["line", "normal", "flat"]
+
+# 區塊參數: (預設值, 最小, 最大)
+REGION_DEFAULTS = {"method": "color", "color_source": "delight", "colors": 12, "min_area": 30,
+                   "gap_radius": 3, "merge": 0.06}
+REGION_LIMITS = {"colors": (2, 64), "min_area": (1, 100000), "gap_radius": (0, 16), "merge": (0.0, 0.5)}
 
 
 class NoClientError(Exception):
@@ -37,6 +43,37 @@ def _size(pack: Pack) -> tuple[int, int]:
     return pack.meta["width"], pack.meta["height"]
 
 
+def _region_params(pack: Pack, params: dict) -> dict:
+    stored = {**REGION_DEFAULTS, **pack.meta["layers"].get("regions", {}).get("params", {})}
+    p = {**stored, **{k: v for k, v in params.items() if k in REGION_DEFAULTS}}
+    if p["method"] not in ("color", "line"):
+        raise ValueError(f"未知的切法: {p['method']}(可用: color、line)")
+    if p["color_source"] not in ("delight", "source"):
+        raise ValueError(f"未知的取色來源: {p['color_source']}(可用: delight、source)")
+    for key, (lo, hi) in REGION_LIMITS.items():
+        try:
+            v = float(p[key])
+        except (TypeError, ValueError):
+            raise ValueError(f"「{key}」必須是數字")
+        v = min(hi, max(lo, v))
+        p[key] = v if key == "merge" else int(round(v))
+    return p
+
+
+def _color_image(pack: Pack, params: dict) -> np.ndarray:
+    """取色(與依顏色切區塊)用的圖: 使用者上傳的平塗 > AI 去光影(有且被選用) > 原圖。"""
+    if pack.meta.get("flat_color_source") == "user_flat" and pack.has("user_flat"):
+        return pack.read("user_flat")
+    if params["color_source"] == "delight" and pack.has("delight"):
+        return pack.read("delight")
+    return pack.read("source")
+
+
+def _depth01(pack: Pack) -> np.ndarray:
+    raw = pack.read("depth")
+    return raw.astype(np.float32) / (65535 if raw.dtype == np.uint16 else 255)
+
+
 def run_step(pack: Pack, step: str, client: FalClient | None, **params) -> None:
     w, h = _size(pack)
     if step == "depth":
@@ -46,9 +83,12 @@ def run_step(pack: Pack, step: str, client: FalClient | None, **params) -> None:
         pack.write_layer("depth", np.round(d * 65535).astype(np.uint16), f"ai:{DEPTH_MODEL}")
     elif step == "normal":
         _require(pack, "depth")
-        raw = pack.read("depth")
-        d = raw.astype(np.float32) / (65535 if raw.dtype == np.uint16 else 255)
-        pack.write_layer("normal", depth_to_normal(d), "computed")
+        pack.write_layer("normal", depth_to_normal(_depth01(pack)), "computed")
+    elif step == "normal_detail":
+        _require(pack, "source")
+        # 只在主體上算細部; 沒有深度(例如使用者上傳法線)就整張都算
+        mask = _depth01(pack) > 0.001 if pack.has("depth") else np.ones((h, w), bool)
+        pack.write_layer("normal_detail", detail_normal(pack.read("source"), mask), "computed")
     elif step == "line":
         _require(pack, "source")
         key = params.get("model", DEFAULT_LINE_MODEL)
@@ -59,28 +99,41 @@ def run_step(pack: Pack, step: str, client: FalClient | None, **params) -> None:
     elif step == "line_sdf":
         _require(pack, "line")
         pack.write_layer("line_sdf", encode_sdf(signed_distance(line_mask(pack.read("line")))), "computed")
+    elif step == "delight":
+        _require(pack, "source")
+        raw = _client(client).run_image(DELIGHT_MODEL, pack.read("source"), prompt=DELIGHT_PROMPT, output_format="png")
+        img = raw if raw.ndim == 3 else np.dstack([raw] * 3)
+        pack.write_layer("delight", resize_to(img[..., :3], w, h), f"ai:{DELIGHT_MODEL}")
     elif step == "regions":
-        _require(pack, "line")
-        stored = pack.meta["layers"].get("regions", {}).get("params", {})
-        gap = int(np.clip(int(params.get("gap_radius", stored.get("gap_radius", 3))), 0, 16))
-        area = int(np.clip(int(params.get("min_area", stored.get("min_area", 12))), 1, 100000))
-        labels = label_regions(line_mask(pack.read("line")), gap_radius=gap, min_area=area)
-        pack.write_layer("regions", encode_labels(labels), "computed",
-                         params={"gap_radius": gap, "min_area": area})
+        p = _region_params(pack, params)
+        if p["method"] == "color":
+            labels = color_segments(_color_image(pack, p), k=p["colors"], min_area=p["min_area"])
+        else:
+            _require(pack, "line")
+            mask = line_mask(pack.read("line"))
+            labels = label_regions(mask, gap_radius=p["gap_radius"], min_area=p["min_area"])
+            if p["merge"] > 0:
+                colors = region_colors(labels, _color_image(pack, p), exclude=mask)
+                labels, _ = merge_similar(labels, colors, region_areas(labels), p["merge"])
+                _, inv = np.unique(labels, return_inverse=True)
+                labels = (inv.reshape(labels.shape) + 1).astype(np.int32)
+        pack.write_layer("regions", encode_labels(labels), "computed", params=p)
     elif step == "flat":
-        _require(pack, "regions", "line")
-        source = pack.meta.get("flat_color_source") or pack.meta["layers"].get("flat", {}).get("color_source", "source")
-        color_img = pack.read("user_flat" if source == "user_flat" else "source")
+        _require(pack, "regions")
+        p = _region_params(pack, {})
         labels = decode_labels(pack.read("regions"))
-        colors = region_colors(labels, color_img, exclude=line_mask(pack.read("line")))
+        exclude = line_mask(pack.read("line")) if pack.has("line") else None
+        colors = region_colors(labels, _color_image(pack, p), exclude=exclude)
+        source = "user_flat" if pack.meta.get("flat_color_source") == "user_flat" else p["color_source"]
         pack.write_layer("flat", paint(labels, colors), "computed", color_source=source)
         pack.set_regions_meta(colors, region_areas(labels))
     else:
         raise ValueError(f"未知的步驟: {step}")
 
 
-AI_STEPS = {"depth", "line"}
-PREREQS = {"normal": ["depth"], "line_sdf": ["line"], "regions": ["line"], "flat": ["regions", "line"]}
+REQUIRED_AI = {"depth", "line"}   # 沒有就無法渲染
+OPTIONAL_AI = {"delight"}         # 沒有就退回原圖取色
+PREREQS = {"normal": ["depth"], "line_sdf": ["line"], "flat": ["regions"]}
 
 
 def _fresh(pack: Pack, layer: str) -> bool:
@@ -95,8 +148,11 @@ def run_all(pack: Pack, client: FalClient | None) -> None:
             continue
         if step == "depth" and _fresh(pack, "normal"):
             continue  # 已有(使用者上傳的)法線, 不必再花錢推深度
-        if step in AI_STEPS and client is None:
-            skipped.append(STEP_NAMES[step])
+        if step in REQUIRED_AI | OPTIONAL_AI and client is None:
+            if step in REQUIRED_AI:
+                skipped.append(STEP_NAMES[step])
+            continue
+        if step == "regions" and _region_params(pack, {})["method"] == "line" and not pack.has("line"):
             continue
         if not all(pack.has(p) for p in PREREQS.get(step, [])):
             continue
@@ -119,7 +175,7 @@ def replace_layer(pack: Pack, layer: str, image_bytes: bytes) -> None:
         pack.write_layer("user_flat", resize_to(img, w, h, nearest=True), "user")
         pack.meta["flat_color_source"] = "user_flat"
         pack.save_meta()
-        if pack.has("regions") and pack.has("line"):
+        if pack.has("regions"):
             run_step(pack, "flat", None)
 
 

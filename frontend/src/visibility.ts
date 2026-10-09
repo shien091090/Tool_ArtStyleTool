@@ -15,6 +15,7 @@ const RULES: Record<string, Rule> = {
   'lighting.azimuth': lightUsed,
   'lighting.elevation': lightUsed,
   'lighting.normalStrength': lightUsed,
+  'lighting.detailStrength': lightUsed,
   'lighting.shadowMode': lit,
   'lighting.shadowStrength': lit,
   'lighting.ambient': lit,

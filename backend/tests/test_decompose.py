@@ -31,6 +31,8 @@ class FakeFal:
             raise FalError("模擬失敗")
         if "depth" in model:
             return np.full((30, 40), 128, np.uint8)  # 故意給一半尺寸
+        if "kontext" in model:
+            return cv2.resize(img, (88, 66))         # 去光影: 故意給不同尺寸
         gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
         return 255 - np.where(gray < 50, 0, 255).astype(np.uint8)  # 黑底白線
 
@@ -42,7 +44,7 @@ def pack(tmp_path):
 
 def test_run_all_produces_aligned_layers(pack):
     decompose.run_all(pack, FakeFal())
-    for layer in ["depth", "normal", "line", "line_sdf", "regions", "flat"]:
+    for layer in ["depth", "normal", "normal_detail", "line", "line_sdf", "delight", "regions", "flat"]:
         assert pack.read(layer).shape[:2] == (60, 80)
     flat = pack.read("flat")
     assert flat[30, 25, 0] > 150 and flat[30, 55, 2] > 150
@@ -75,7 +77,7 @@ def test_unknown_line_model(pack):
 
 def test_missing_prerequisite(pack):
     with pytest.raises(ValueError, match="請先完成"):
-        decompose.run_step(pack, "regions", None)
+        decompose.run_step(pack, "flat", None)
 
 
 def test_ai_step_without_client(pack):
@@ -85,8 +87,10 @@ def test_ai_step_without_client(pack):
 
 def test_regions_params_recorded(pack):
     decompose.run_all(pack, FakeFal())
-    decompose.run_step(pack, "regions", None, gap_radius=5, min_area=30)
-    assert pack.meta["layers"]["regions"]["params"] == {"gap_radius": 5, "min_area": 30}
+    decompose.run_step(pack, "regions", None, method="line", gap_radius=5, min_area=30, merge=0.1)
+    params = pack.meta["layers"]["regions"]["params"]
+    assert params["method"] == "line" and params["gap_radius"] == 5 and params["min_area"] == 30 and params["merge"] == 0.1
+    assert pack.meta["layers"]["flat"]["stale"]
 
 
 def test_set_region_color_updates_flat(pack):
@@ -168,3 +172,42 @@ def test_upload_flat_before_regions_does_not_fake_flat_layer(pack):
 def test_only_lineart_model():
     from artstyle.fal import LINE_MODELS
     assert list(LINE_MODELS) == ["lineart"] and decompose.DEFAULT_LINE_MODEL == "lineart"
+
+
+def test_default_regions_cut_by_color_from_delight(pack):
+    calls = FakeFal()
+    decompose.run_all(pack, calls)
+    assert any("kontext" in c for c in calls.calls)
+    params = pack.meta["layers"]["regions"]["params"]
+    assert params["method"] == "color" and params["color_source"] == "delight"
+    assert pack.read("delight").shape[:2] == (60, 80)
+
+
+def test_no_key_skips_delight_and_uses_source(pack):
+    decompose.replace_layer(pack, "line", _line_png())
+    decompose.replace_layer(pack, "normal", _png(np.full((60, 80, 3), (255, 128, 128), np.uint8)))
+    decompose.run_all(pack, None)
+    assert not pack.has("delight") and pack.has("flat")
+    assert pack.read("flat")[30, 25, 0] > 150                # 左半紅, 取自原圖
+
+
+def test_color_source_param_source(pack):
+    decompose.run_all(pack, FakeFal())
+    decompose.run_step(pack, "regions", None, color_source="source", colors=4)
+    p = pack.meta["layers"]["regions"]["params"]
+    assert p["color_source"] == "source" and p["colors"] == 4
+
+
+def test_line_method_merge_reduces_regions(pack):
+    decompose.run_all(pack, FakeFal())
+    decompose.run_step(pack, "regions", None, method="line", merge=0.0)
+    decompose.run_step(pack, "flat", None)
+    before = pack.meta["regions"]["count"]
+    decompose.run_step(pack, "regions", None, method="line", merge=0.5)
+    decompose.run_step(pack, "flat", None)
+    assert pack.meta["regions"]["count"] < before
+
+
+def test_bad_region_params(pack):
+    with pytest.raises(ValueError):
+        decompose.run_step(pack, "regions", None, method="nope")

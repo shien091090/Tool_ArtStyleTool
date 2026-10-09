@@ -7,8 +7,15 @@ export interface LayerInfo {
   origin: string;
   updated: string;
   stale: boolean;
-  params?: { gap_radius: number; min_area: number };
-  color_source?: 'source' | 'user_flat';
+  params?: {
+    method?: 'color' | 'line';
+    color_source?: 'delight' | 'source';
+    colors?: number;
+    min_area: number;
+    gap_radius: number;
+    merge?: number;
+  };
+  color_source?: 'source' | 'delight' | 'user_flat';
 }
 
 export interface PackMeta {

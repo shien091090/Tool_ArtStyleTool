@@ -58,3 +58,21 @@ def test_steep_silhouette_is_clipped():
     d[:, 20:] = 1.0
     n = normals.depth_to_normal(d, strength=100).astype(int)
     assert n[20, 20, 2] > 128 + 20           # 剪影邊緣不會整個翻成 90 度側面
+
+
+def test_detail_normal_bulges_where_bright():
+    img = np.full((256, 256, 3), 100, np.uint8)
+    y, x = np.mgrid[0:256, 0:256]
+    blob = np.exp(-((x - 128) ** 2 + (y - 128) ** 2) / (2 * 3 ** 2))
+    img += (blob[..., None] * 120).astype(np.uint8)
+    n = normals.detail_normal(img, np.ones((256, 256), bool)).astype(int)
+    assert n[128, 131, 0] > 140 and n[128, 125, 0] < 116    # 亮點右側朝右、左側朝左
+    assert n[125, 128, 1] > 140                              # 上側朝上
+
+
+def test_detail_normal_flat_and_masked():
+    flat = normals.detail_normal(np.full((32, 32, 3), 90, np.uint8), np.ones((32, 32), bool))
+    assert (abs(flat[..., :2].astype(int) - 128) <= 1).all()
+    noisy = np.random.default_rng(0).integers(0, 255, (32, 32, 3), dtype=np.uint8)
+    masked = normals.detail_normal(noisy, np.zeros((32, 32), bool))
+    assert (abs(masked[..., :2].astype(int) - 128) <= 1).all()

@@ -48,3 +48,18 @@ def depth_to_normal(depth: np.ndarray, strength: float = 25.0, blur: float = 1.5
     n = np.dstack([-dx, dy, np.ones_like(dx)])  # 影像 y 向下, 往下變高代表表面朝上
     n /= np.linalg.norm(n, axis=2, keepdims=True)
     return np.clip(np.round((n * 0.5 + 0.5) * 255), 0, 255).astype(np.uint8)
+
+
+def detail_normal(source: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """從原圖明暗推細部起伏(甲殼、紋路): 亮度高通當高度, 只算 mask 內(主體)。回傳 RGB 編碼法線, 慣例同 depth_to_normal。"""
+    h, w = source.shape[:2]
+    s = max(h, w) / 512
+    gray = to_gray(source).astype(np.float32) / 255
+    height = gray - cv2.GaussianBlur(gray, (0, 0), max(1.0, 6 * s))
+    height = cv2.GaussianBlur(height, (0, 0), 0.8) * mask
+    k = 40 * s
+    dx = cv2.Sobel(height, cv2.CV_32F, 1, 0, ksize=3) / 8 * k
+    dy = cv2.Sobel(height, cv2.CV_32F, 0, 1, ksize=3) / 8 * k
+    n = np.dstack([-dx, dy, np.ones_like(dx)])
+    n /= np.linalg.norm(n, axis=2, keepdims=True)
+    return np.clip(np.round((n * 0.5 + 0.5) * 255), 0, 255).astype(np.uint8)

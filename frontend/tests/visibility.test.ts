@@ -62,3 +62,10 @@ describe('isVisible', () => {
     expect(isVisible('filter.ditherLevels', make((r) => { r.filter.dither = true; }))).toBe(true);
   });
 });
+
+describe('細部立體感', () => {
+  it('跟大形立體感同一條規則', () => {
+    expect(isVisible('lighting.detailStrength', DEFAULT_RECIPE)).toBe(true);
+    expect(isVisible('lighting.detailStrength', make((r) => { r.lighting.bands = 1; }))).toBe(false);
+  });
+});

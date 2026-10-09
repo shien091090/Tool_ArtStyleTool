@@ -50,3 +50,14 @@ describe('normalizeRecipe', () => {
     expect(DEFAULT_RECIPE.color.custom).toEqual([]);
   });
 });
+
+describe('detailStrength', () => {
+  it('舊配方沒有細部立體感時補預設 1 並回報', () => {
+    const { recipe, fixed } = normalizeRecipe({ lighting: { bands: 3 } });
+    expect(recipe.lighting.detailStrength).toBe(1);
+    expect(fixed).toContain('lighting.detailStrength');
+  });
+  it('夾在 0~3', () => {
+    expect(normalizeRecipe({ lighting: { detailStrength: 9 } }).recipe.lighting.detailStrength).toBe(3);
+  });
+});

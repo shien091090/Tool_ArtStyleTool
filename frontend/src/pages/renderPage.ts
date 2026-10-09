@@ -92,7 +92,8 @@ export function mountRenderPage(root: HTMLElement, params: URLSearchParams): () 
   track('lighting.shadowMode', fLight.addBinding(recipe.lighting, 'shadowMode', { label: '陰影上色', options: { 壓暗: 'darken', 偏冷色: 'cool' } }));
   track('lighting.shadowStrength', fLight.addBinding(recipe.lighting, 'shadowStrength', { label: '陰影強度', ...range('lighting.shadowStrength') }));
   track('lighting.ambient', fLight.addBinding(recipe.lighting, 'ambient', { label: '環境光', ...range('lighting.ambient') }));
-  track('lighting.normalStrength', fLight.addBinding(recipe.lighting, 'normalStrength', { label: '立體感', ...range('lighting.normalStrength') }));
+  track('lighting.normalStrength', fLight.addBinding(recipe.lighting, 'normalStrength', { label: '大形立體感', ...range('lighting.normalStrength') }));
+  track('lighting.detailStrength', fLight.addBinding(recipe.lighting, 'detailStrength', { label: '細部立體感', ...range('lighting.detailStrength') }));
   track('lighting.rim', fLight.addBinding(recipe.lighting, 'rim', { label: '邊緣光' }));
   track('lighting.rimStrength', fLight.addBinding(recipe.lighting, 'rimStrength', { label: '邊緣光強度', ...range('lighting.rimStrength') }));
   track('lighting.rimColor', fLight.addBinding(recipe.lighting, 'rimColor', { label: '邊緣光顏色' }));
