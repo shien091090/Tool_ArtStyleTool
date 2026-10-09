@@ -134,7 +134,7 @@ export function buildRegionTable(
     if (color.paletteMode === 'auto') {
       palette = kmeansPalette(ids.map((id) => regionColors[id]), ids.map((id) => areas[id] ?? 1), color.autoCount);
     } else if (color.paletteMode === 'preset') {
-      palette = (PRESET_PALETTES[color.preset] ?? []).map(hexToRgb);
+      palette = (Object.hasOwn(PRESET_PALETTES, color.preset) ? PRESET_PALETTES[color.preset] : []).map(hexToRgb);
     } else if (color.paletteMode === 'custom') {
       palette = color.custom.map(hexToRgb);
     }

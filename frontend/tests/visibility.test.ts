@@ -69,3 +69,50 @@ describe('細部立體感', () => {
     expect(isVisible('lighting.detailStrength', make((r) => { r.lighting.bands = 1; }))).toBe(false);
   });
 });
+
+describe('新效果的顯示規則', () => {
+  it('指定陰影色只在 custom 且有陰影時', () => {
+    expect(isVisible('lighting.shadowColor', DEFAULT_RECIPE)).toBe(false);
+    expect(isVisible('lighting.shadowColor', make((r) => { r.lighting.shadowMode = 'custom'; }))).toBe(true);
+    expect(isVisible('lighting.shadowColor', make((r) => { r.lighting.shadowMode = 'custom'; r.lighting.bands = 1; }))).toBe(false);
+  });
+  it('陰影相關的新參數需要有陰影', () => {
+    for (const k of ['litColor', 'litStrength', 'softness', 'edgeJitter', 'ao']) {
+      expect(isVisible('lighting.' + k, DEFAULT_RECIPE)).toBe(true);
+      expect(isVisible('lighting.' + k, make((r) => { r.lighting.bands = 1; }))).toBe(false);
+    }
+  });
+  it('開關型效果的子參數', () => {
+    const cases: [string, (r: Recipe) => void][] = [
+      ['lighting.specSize', (r) => { r.lighting.specular = true; }],
+      ['lighting.fillColor', (r) => { r.lighting.fill = true; }],
+      ['lines.doubleOffset', (r) => { r.lines.doubleLine = true; }],
+      ['effects.hatchSpacing', (r) => { r.effects.hatch = true; }],
+      ['effects.crossHatch', (r) => { r.effects.hatch = true; }],
+      ['effects.stippleSize', (r) => { r.effects.stipple = true; }],
+      ['grade.gradientStops', (r) => { r.grade.gradientMap = true; }],
+    ];
+    for (const [key, on] of cases) {
+      expect(isVisible(key, DEFAULT_RECIPE)).toBe(false);
+      expect(isVisible(key, make(on))).toBe(true);
+    }
+  });
+  it('強度型效果的子參數', () => {
+    const cases: [string, (r: Recipe) => void][] = [
+      ['lines.pressureScale', (r) => { r.lines.pressure = 0.5; }],
+      ['effects.brushScale', (r) => { r.effects.brush = 0.5; }],
+      ['effects.risoAngle', (r) => { r.effects.riso = 3; }],
+      ['filter.outlineColor', (r) => { r.filter.outlineWidth = 2; }],
+      ['filter.bloomThreshold', (r) => { r.filter.bloom = 0.5; }],
+      ['filter.scanSpacing', (r) => { r.filter.scan = 0.5; }],
+      ['grade.presetStrength', (r) => { r.grade.preset = 'film'; }],
+    ];
+    for (const [key, on] of cases) {
+      expect(isVisible(key, DEFAULT_RECIPE)).toBe(false);
+      expect(isVisible(key, make(on))).toBe(true);
+    }
+  });
+  it('調色層停用時只剩啟用', () => {
+    expect(isVisible('grade.satShadow', make((r) => { r.grade.enabled = false; }))).toBe(false);
+  });
+});

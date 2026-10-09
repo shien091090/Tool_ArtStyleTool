@@ -7,12 +7,11 @@ describe('normalizeRecipe', () => {
     expect(recipe).toEqual(DEFAULT_RECIPE);
     expect(fixed).toEqual([]);
   });
-  it('缺欄位補預設並回報', () => {
+  it('缺欄位安靜補預設, 不列入提示', () => {
     const { recipe, fixed } = normalizeRecipe({ version: 1, lighting: { bands: 5 } });
     expect(recipe.lighting.bands).toBe(5);
     expect(recipe.lines).toEqual(DEFAULT_RECIPE.lines);
-    expect(fixed).toContain('lines');
-    expect(fixed).toContain('lighting.azimuth');
+    expect(fixed).toEqual([]);
   });
   it('越界數值夾回範圍並取整', () => {
     const { recipe, fixed } = normalizeRecipe({ version: 1, lighting: { bands: 0 }, filter: { pixelSize: 3.7 } });
@@ -52,12 +51,55 @@ describe('normalizeRecipe', () => {
 });
 
 describe('detailStrength', () => {
-  it('舊配方沒有細部立體感時補預設 1 並回報', () => {
+  it('舊配方沒有細部立體感時安靜補預設 1', () => {
     const { recipe, fixed } = normalizeRecipe({ lighting: { bands: 3 } });
     expect(recipe.lighting.detailStrength).toBe(1);
-    expect(fixed).toContain('lighting.detailStrength');
+    expect(fixed).toEqual([]);
   });
   it('夾在 0~3', () => {
     expect(normalizeRecipe({ lighting: { detailStrength: 9 } }).recipe.lighting.detailStrength).toBe(3);
+  });
+});
+
+describe('風格效果新欄位', () => {
+  const v1 = () => {
+    const r: Record<string, any> = structuredClone(DEFAULT_RECIPE);
+    delete r.grade;
+    for (const k of ['shadowColor', 'litColor', 'litStrength', 'softness', 'edgeJitter', 'specular', 'fill', 'ao']) delete r.lighting[k];
+    for (const k of ['outerThickness', 'innerLines', 'pressure', 'breaks', 'doubleLine']) delete r.lines[k];
+    for (const k of ['hatch', 'stipple', 'wcEdge', 'brush', 'riso']) delete r.effects[k];
+    for (const k of ['outlineWidth', 'bloom', 'chroma', 'scan']) delete r.filter[k];
+    return r;
+  };
+  it('v1 時期的配方: 新欄位全為預設且沒有提示', () => {
+    const { recipe, fixed } = normalizeRecipe(v1());
+    expect(fixed).toEqual([]);
+    expect(recipe).toEqual(DEFAULT_RECIPE);
+  });
+  it('新效果預設全部關閉', () => {
+    const r = DEFAULT_RECIPE;
+    expect([r.lighting.specular, r.lighting.fill, r.lines.doubleLine, r.effects.hatch, r.effects.stipple, r.grade.gradientMap]).toEqual([false, false, false, false, false, false]);
+    expect([r.lighting.ao, r.lighting.litStrength, r.lines.pressure, r.lines.breaks, r.effects.wcEdge, r.effects.brush, r.effects.riso, r.filter.outlineWidth, r.filter.bloom, r.filter.chroma, r.filter.scan]).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(r.grade.preset).toBe('none');
+  });
+  it('指定陰影色是合法選項', () => {
+    expect(normalizeRecipe({ lighting: { shadowMode: 'custom' } }).recipe.lighting.shadowMode).toBe('custom');
+  });
+  it('漸層色帶: 過濾非法色碼、最多 6 色、少於 2 色改回預設', () => {
+    const many = normalizeRecipe({ grade: { gradientStops: ['#000000', 'x', '#111111', '#222222', '#333333', '#444444', '#555555', '#666666'] } });
+    expect(many.recipe.grade.gradientStops).toHaveLength(6);
+    expect(many.fixed).toContain('grade.gradientStops');
+    const one = normalizeRecipe({ grade: { gradientStops: ['#000000'] } });
+    expect(one.recipe.grade.gradientStops).toEqual(DEFAULT_RECIPE.grade.gradientStops);
+    expect(one.fixed).toContain('grade.gradientStops');
+  });
+  it('調色預設只接受已知名稱', () => {
+    expect(normalizeRecipe({ grade: { preset: 'film' } }).recipe.grade.preset).toBe('film');
+    expect(normalizeRecipe({ grade: { preset: 'zzz' } }).fixed).toContain('grade.preset');
+  });
+  it('色票名稱不接受物件原型上的鍵', () => {
+    const { recipe, fixed } = normalizeRecipe({ color: { preset: 'constructor' } });
+    expect(recipe.color.preset).toBe('pico8');
+    expect(fixed).toContain('color.preset');
   });
 });
