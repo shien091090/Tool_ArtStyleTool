@@ -44,6 +44,19 @@ export interface SegBox {
 /** [x0, y0, x1, y1], 含端點。 */
 export type BBox = [number, number, number, number];
 
+export interface MaterialVariant {
+  id: string;
+  material: string;
+  ref: boolean;
+  created: string;
+}
+
+export interface PartMaterial {
+  /** 套用中的候選; null = 原本材質 */
+  current: string | null;
+  variants: MaterialVariant[];
+}
+
 export interface Part {
   id: string;
   name: string;
@@ -57,6 +70,8 @@ export interface Part {
   bbox: BBox;
   /** 遮罩重切次數(前端快取用) */
   rev?: number;
+  /** 舊作品沒有 = 原本材質 */
+  material?: PartMaterial;
 }
 
 export interface WorkImage {
@@ -81,6 +96,8 @@ export interface WorkMeta {
   parts: Part[];
   pad: Pad;
   results: ResultInfo[];
+  /** AI 列部位記下的中文名 → 英文 */
+  aliases?: Record<string, string>;
 }
 
 export const ZERO_PAD: Pad = { top: 0, right: 0, bottom: 0, left: 0 };

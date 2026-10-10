@@ -478,7 +478,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
     }
     await run('載入中…', async () => {
       await setMeta(await api.proportion.getWork(name));
-      history.replaceState(null, '', `#/proportion?work=${encodeURIComponent(name)}`);
+      history.replaceState(null, '', `#/workshop?work=${encodeURIComponent(name)}`);
       redraw();
     });
   }

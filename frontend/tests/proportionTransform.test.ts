@@ -6,6 +6,7 @@ import {
   invert,
   isChanged,
   isDrawn,
+  isMaterialOnly,
   multiply,
   partMatrix,
   placeForeign,
@@ -110,5 +111,25 @@ describe('autoPad', () => {
   });
   it('隱藏與沒動的部位不算', () => {
     expect(autoPad([part({ transform: T({ scaleX: 9, scaleY: 9, hidden: true }) })], 100, 100).top).toBe(0);
+  });
+});
+
+describe('材質', () => {
+  const mat = { current: 'm1', variants: [{ id: 'm1', material: '金屬', ref: false, created: '' }] };
+  it('只換材質的主圖部位要畫上拼貼, 但不算比例改動', () => {
+    const p = part({ material: mat });
+    expect(isChanged(p)).toBe(false);
+    expect(isMaterialOnly(p)).toBe(true);
+    expect(isDrawn(p)).toBe(true);
+  });
+  it('換材質又動比例 → 一般改動', () => {
+    const p = part({ material: mat, transform: T({ scaleX: 2 }) });
+    expect(isMaterialOnly(p)).toBe(false);
+    expect(isDrawn(p)).toBe(true);
+  });
+  it('原本材質、隱藏、或未放上的外來部位都不是只換材質', () => {
+    expect(isMaterialOnly(part({ material: { current: null, variants: [] } }))).toBe(false);
+    expect(isDrawn(part({ material: mat, transform: T({ hidden: true }) }))).toBe(false);
+    expect(isMaterialOnly(part({ material: mat, image: 's1', placed: false }))).toBe(false);
   });
 });

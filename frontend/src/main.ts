@@ -3,6 +3,7 @@ import { mountDecomposePage } from './pages/decomposePage';
 import { mountRenderPage } from './pages/renderPage';
 import { mountGridPage } from './pages/gridPage';
 import { mountProportionPage } from './pages/proportionPage';
+import { canonicalPath } from './routes';
 
 type Mount = (el: HTMLElement, params: URLSearchParams) => () => void;
 
@@ -10,7 +11,7 @@ const ROUTES: { path: string; label: string; mount: Mount }[] = [
   { path: 'decompose', label: '拆解檢查', mount: mountDecomposePage },
   { path: 'render', label: '渲染', mount: mountRenderPage },
   { path: 'grid', label: '對照網格', mount: mountGridPage },
-  { path: 'proportion', label: '部位比例', mount: mountProportionPage },
+  { path: 'workshop', label: '部位工坊', mount: mountProportionPage },
 ];
 
 const nav = document.querySelector<HTMLElement>('#nav')!;
@@ -26,7 +27,12 @@ for (const r of ROUTES) {
 }
 
 function route() {
-  const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
+  const [raw, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
+  const path = canonicalPath(raw);
+  if (path !== raw) {
+    location.replace(`#/${path}${query ? `?${query}` : ''}`); // 會再觸發 hashchange
+    return;
+  }
   const target = ROUTES.find((r) => r.path === path) ?? ROUTES[0];
   for (const a of nav.querySelectorAll<HTMLAnchorElement>('a')) a.classList.toggle('active', a.dataset.path === target.path);
   unmount?.();

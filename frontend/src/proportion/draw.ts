@@ -3,7 +3,7 @@
  */
 import { api } from '../api';
 import type { Part, WorkMeta } from './model';
-import { applyMat, bboxEdges, invert, isChanged, isDrawn, multiply, partMatrix, type Mat } from './transform';
+import { applyMat, bboxEdges, invert, isChanged, isDrawn, isMaterialOnly, multiply, partMatrix, type Mat } from './transform';
 
 export interface PartLayer {
   /** 部位外框裁切: 原圖像素 × 遮罩 alpha */
@@ -16,6 +16,10 @@ export interface PartLayer {
   cut: HTMLCanvasElement;
   cutOx: number;
   cutOy: number;
+  /** 遮罩邊緣一圈(外擴 − 內縮): 只換材質的部位生成時只讓 AI 改這裡 */
+  ring: HTMLCanvasElement;
+  ringOx: number;
+  ringOy: number;
   /** 整張圖大小的遮罩(0/255), 點選命中測試用 */
   alpha: Uint8Array;
   w: number;
@@ -66,6 +70,46 @@ export function dilate(src: Uint8Array, w: number, h: number, r: number): Uint8A
   return out;
 }
 
+/** 只換材質部位的邊緣環半徑(像素)。 */
+export function ringRadius(w: number, h: number): number {
+  return Math.max(2, Math.round(Math.max(w, h) * 0.008));
+}
+
+/** 邊緣環: 外擴 r − 內縮 r。src 為 w×h, 回傳 (w+2r)×(h+2r)(與 dilate 對齊)。 */
+export function ringMask(src: Uint8Array, w: number, h: number, r: number): Uint8Array {
+  const W = w + 2 * r;
+  const H = h + 2 * r;
+  const grown = dilate(src, w, h, r);
+  // 內縮 = 反相後外擴再反相; 外框外當作「不是部位」, 所以貼邊處也會內縮
+  const inv = new Uint8Array(W * H).fill(255);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) inv[(y + r) * W + x + r] = 255 - src[y * w + x];
+  const dInv = dilate(inv, W, H, r);
+  const W2 = W + 2 * r;
+  const out = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const eroded = 255 - dInv[(y + r) * W2 + x + r];
+      out[y * W + x] = grown[y * W + x] && !eroded ? 255 : 0;
+    }
+  }
+  return out;
+}
+
+function whiteCanvas(alpha: Uint8Array, w: number, h: number): HTMLCanvasElement {
+  const c = canvas(w, h);
+  const ctx = c.getContext('2d')!;
+  const img = ctx.createImageData(c.width, c.height);
+  for (let i = 0; i < alpha.length; i++) {
+    img.data.fill(255, i * 4, i * 4 + 3);
+    img.data[i * 4 + 3] = alpha[i];
+  }
+  ctx.putImageData(img, 0, 0);
+  return c;
+}
+
+/** 部位像素來源的圖片快取鍵: 套用中的材質候選, 否則來源圖。 */
+const sourceKey = (p: Part) => (p.material?.current ? `mat:${p.material.current}` : p.image);
+
 /** 作品的圖與部位圖層快取。部位遮罩或圖改變時呼叫 sync 重載。 */
 export class WorkAssets {
   images = new Map<string, HTMLImageElement>();
@@ -76,6 +120,12 @@ export class WorkAssets {
     for (const im of meta.images) {
       if (!this.images.has(im.id)) this.images.set(im.id, await loadImage(api.proportion.fileUrl(meta.name, `images/${im.id}.png`)));
     }
+    for (const p of meta.parts) {
+      const cur = p.material?.current;
+      if (cur && !this.images.has(`mat:${cur}`)) {
+        this.images.set(`mat:${cur}`, await loadImage(api.proportion.fileUrl(meta.name, `materials/${cur}.png`)));
+      }
+    }
     const alive = new Set(meta.parts.map((p) => p.id));
     for (const id of [...this.layers.keys()]) {
       if (!alive.has(id)) {
@@ -84,7 +134,7 @@ export class WorkAssets {
       }
     }
     for (const p of meta.parts) {
-      const key = `${p.rev ?? 0}|${p.bbox.join(',')}|${JSON.stringify(p.points)}|${JSON.stringify(p.box)}|${p.color}`;
+      const key = `${p.rev ?? 0}|${p.bbox.join(',')}|${JSON.stringify(p.points)}|${JSON.stringify(p.box)}|${p.color}|${sourceKey(p)}`;
       if (this.keys.get(p.id) === key) continue;
       const mask = await loadImage(api.proportion.fileUrl(meta.name, `masks/${p.id}.png`));
       this.layers.set(p.id, this.buildLayer(p, mask));
@@ -93,7 +143,7 @@ export class WorkAssets {
   }
 
   private buildLayer(part: Part, mask: HTMLImageElement): PartLayer {
-    const src = this.images.get(part.image)!;
+    const src = this.images.get(sourceKey(part))!;
     const W = mask.naturalWidth;
     const H = mask.naturalHeight;
     const full = canvas(W, H).getContext('2d', { willReadFrequently: true })!;
@@ -132,22 +182,25 @@ export class WorkAssets {
     const r = cutRadius(W, H);
     const local = new Uint8Array(e.w * e.h);
     for (let y = 0; y < e.h; y++) local.set(alpha.subarray((y + e.y0) * W + e.x0, (y + e.y0) * W + e.x0 + e.w), y * e.w);
-    const grown = dilate(local, e.w, e.h, r);
-    const cut = canvas(e.w + 2 * r, e.h + 2 * r);
-    const cctx = cut.getContext('2d')!;
-    const cimg = cctx.createImageData(cut.width, cut.height);
-    for (let i = 0; i < grown.length; i++) {
-      cimg.data.fill(255, i * 4, i * 4 + 3);
-      cimg.data[i * 4 + 3] = grown[i];
-    }
-    cctx.putImageData(cimg, 0, 0);
-    return { pixels, white, tint, cut, cutOx: e.x0 - r, cutOy: e.y0 - r, alpha, w: W, h: H, ox: e.x0, oy: e.y0 };
+    const cut = whiteCanvas(dilate(local, e.w, e.h, r), e.w + 2 * r, e.h + 2 * r);
+    const rr = ringRadius(W, H);
+    const ring = whiteCanvas(ringMask(local, e.w, e.h, rr), e.w + 2 * rr, e.h + 2 * rr);
+    return {
+      pixels, white, tint, cut, cutOx: e.x0 - r, cutOy: e.y0 - r, ring, ringOx: e.x0 - rr, ringOy: e.y0 - rr,
+      alpha, w: W, h: H, ox: e.x0, oy: e.y0,
+    };
   }
 }
 
 /** 部位裁切圖座標 → 拼貼畫布座標(含畫布擴大偏移)。 */
 export function layerMatrix(part: Part, layer: PartLayer, padLeft: number, padTop: number): Mat {
   const m = multiply(partMatrix(part), [1, 0, 0, 1, layer.ox, layer.oy]);
+  return multiply([1, 0, 0, 1, padLeft, padTop], m);
+}
+
+/** 邊緣環座標 → 拼貼畫布座標(跟著部位變形)。 */
+function ringMatrix(part: Part, layer: PartLayer, padLeft: number, padTop: number): Mat {
+  const m = multiply(partMatrix(part), [1, 0, 0, 1, layer.ringOx, layer.ringOy]);
   return multiply([1, 0, 0, 1, padLeft, padTop], m);
 }
 
@@ -189,7 +242,7 @@ export function drawCollage(ctx: CanvasRenderingContext2D, meta: WorkMeta, asset
   }
 }
 
-/** 改動範圍: 動過/隱藏的主圖部位原位置 ∪ 動過的部位新位置。黑底白範圍。 */
+/** 改動範圍: 動過/隱藏的主圖部位原位置 ∪ 動過的部位新位置 ∪ 只換材質部位的邊緣環。黑底白範圍。 */
 export function drawRegion(ctx: CanvasRenderingContext2D, meta: WorkMeta, assets: WorkAssets): void {
   const { w, h } = collageSize(meta);
   const { left, top } = meta.pad;
@@ -203,8 +256,26 @@ export function drawRegion(ctx: CanvasRenderingContext2D, meta: WorkMeta, assets
   }
   for (const p of drawnByZ(meta)) {
     const layer = assets.layers.get(p.id);
-    if (layer) drawAt(ctx, layer.white, layerMatrix(p, layer, left, top));
+    if (!layer) continue;
+    if (isMaterialOnly(p)) drawAt(ctx, layer.ring, ringMatrix(p, layer, left, top));
+    else drawAt(ctx, layer.white, layerMatrix(p, layer, left, top));
   }
+}
+
+/** 素材圖檢視: 原圖 + 該圖上換過材質的部位。 */
+export function drawSourceView(ctx: CanvasRenderingContext2D, meta: WorkMeta, assets: WorkAssets, imageId: string): void {
+  const img = assets.images.get(imageId);
+  if (!img) return;
+  ctx.drawImage(img, 0, 0);
+  for (const p of meta.parts) {
+    const layer = assets.layers.get(p.id);
+    if (p.image === imageId && p.material?.current && layer) drawAt(ctx, layer.pixels, [1, 0, 0, 1, layer.ox, layer.oy]);
+  }
+}
+
+/** 是否有東西可以生成: 動過比例或換過材質。 */
+export function hasEdits(meta: WorkMeta): boolean {
+  return meta.parts.some((p) => isChanged(p) || isMaterialOnly(p));
 }
 
 function toBlob(c: HTMLCanvasElement): Promise<Blob> {

@@ -127,6 +127,17 @@ export const api = {
       request<{ pack: string }>(`${work(name)}/results/${resultId}/to-pack`, { method: 'POST' }),
     resultParams: (name: string, resultId: string) =>
       request<{ pad?: Pad; model?: string }>(`${work(name)}/files/results/${resultId}.json`),
+    suggestParts: (name: string, image: string) =>
+      request<{ parts: { name: string; en: string }[]; meta: WorkMeta }>(`${work(name)}/suggest-parts`, json('POST', { image })),
+    addMaterials: (name: string, partId: string, material: string, count: number, reference: File | null) =>
+      request<{ meta: WorkMeta; errors: string[] }>(`${work(name)}/parts/${partId}/materials`, {
+        method: 'POST',
+        body: form({ material, count: String(count), ...(reference ? { reference } : {}) }),
+      }),
+    setMaterial: (name: string, partId: string, variant: string | null) =>
+      request<WorkMeta>(`${work(name)}/parts/${partId}/material`, json('PUT', { variant })),
+    deleteMaterial: (name: string, partId: string, variantId: string) =>
+      request<WorkMeta>(`${work(name)}/parts/${partId}/materials/${variantId}`, { method: 'DELETE' }),
     listRecipes: () => request<string[]>('/api/proportion/recipes'),
     getRecipe: (name: string) => request<unknown>(`/api/proportion/recipes/${enc(name)}`),
     saveRecipe: (name: string, recipe: ProportionRecipe) =>

@@ -1,6 +1,6 @@
 /** 部位比例的畫布: 顯示拼貼或素材圖、遮罩疊色、選取把手、拖曳變形、點選/框選修正、結果對照。 */
 import type { Part, PartTransform, SegBox, WorkMeta } from './model';
-import { collageSize, drawCollage, hitPart, layerMatrix, type WorkAssets } from './draw';
+import { collageSize, drawCollage, drawSourceView, hitPart, layerMatrix, type WorkAssets } from './draw';
 import { anchorPoint, applyMat, bboxEdges, invert, isDrawn, partMatrix, placedEdges, type Mat } from './transform';
 
 export type Tool = 'move' | 'point' | 'box';
@@ -100,7 +100,7 @@ export class Editor {
       if (!img) return;
       this.base.width = img.naturalWidth;
       this.base.height = img.naturalHeight;
-      this.base.getContext('2d')!.drawImage(img, 0, 0);
+      drawSourceView(this.base.getContext('2d')!, s.meta, s.assets, s.view);
     }
   }
 

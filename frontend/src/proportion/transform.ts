@@ -89,9 +89,19 @@ export function isChanged(part: Part): boolean {
   return part.transform.hidden || !isIdentityTransform(part.transform);
 }
 
-/** 會畫在拼貼上的部位: 動過且沒隱藏(沒動過的主圖部位已在底圖上)。 */
+/** 換過材質(套用中的不是原本材質)。 */
+export function hasMaterial(part: Part): boolean {
+  return !!part.material?.current;
+}
+
+/** 只換材質、沒動比例: 生成時只把邊緣一圈交給 AI 順接。 */
+export function isMaterialOnly(part: Part): boolean {
+  return part.image === 'main' && hasMaterial(part) && !isChanged(part);
+}
+
+/** 會畫在拼貼上的部位: 動過且沒隱藏, 或只換材質(要蓋上新材質)。沒動過的主圖部位已在底圖上。 */
 export function isDrawn(part: Part): boolean {
-  return isChanged(part) && !(part.image === 'main' && part.transform.hidden);
+  return (isChanged(part) || isMaterialOnly(part)) && !(part.image === 'main' && part.transform.hidden);
 }
 
 /** 變形後外框(主圖座標)。 */
