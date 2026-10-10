@@ -71,11 +71,54 @@ void main() {
   outColor = vec4(regionColor(imgPx(gl_FragCoord.xy)), 1.0);
 }`;
 
-export const LIGHTING_FS = HEADER + NORMALS + `
+const OKLAB = `
+vec3 toLinear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }
+vec3 toSrgb(vec3 c) {
+  c = max(c, vec3(0.0));
+  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
+vec3 toLab(vec3 rgb) {
+  vec3 l = toLinear(rgb);
+  vec3 lms = pow(max(vec3(
+    dot(l, vec3(0.4122214708, 0.5363325363, 0.0514459929)),
+    dot(l, vec3(0.2119034982, 0.6806995451, 0.1073969566)),
+    dot(l, vec3(0.0883024619, 0.2817188376, 0.6299787005))), vec3(0.0)), vec3(1.0 / 3.0));
+  return vec3(
+    dot(lms, vec3(0.2104542553, 0.793617785, -0.0040720468)),
+    dot(lms, vec3(1.9779984951, -2.428592205, 0.4505937099)),
+    dot(lms, vec3(0.0259040371, 0.7827717662, -0.808675766)));
+}
+vec3 fromLab(vec3 lab) {
+  vec3 lms = vec3(
+    lab.x + 0.3963377774 * lab.y + 0.2158037573 * lab.z,
+    lab.x - 0.1055613458 * lab.y - 0.0638541728 * lab.z,
+    lab.x - 0.0894841775 * lab.y - 1.291485548 * lab.z);
+  lms = lms * lms * lms;
+  return toSrgb(vec3(
+    dot(lms, vec3(4.0767416621, -3.3077115913, 0.2309699292)),
+    dot(lms, vec3(-1.2684380046, 2.6097574011, -0.3413193965)),
+    dot(lms, vec3(-0.0041960863, -0.7034186147, 1.707614701))));
+}
+`;
+
+/**
+ * 光照 + 保留原圖。順序: 色階明暗(陰影色、亮面染色)→ 依「保留原圖光影/紋理」與原圖細節混合
+ * → 再加上環境遮蔽、邊緣光、高光、補光(額外光效, 不會被保留光影吃掉)。
+ * 原圖細節(OKLab)= 原圖 − 平塗取色; 原圖光影是拆解時在區塊內模糊好的那一份, 紋理 = 其餘(即時算)。
+ * 兩個保留都是 1 且沒改色時, 輸出就是原圖。
+ */
+export const LIGHTING_FS = HEADER + REGION + NORMALS + OKLAB + `
 uniform sampler2D uPrev;
 uniform sampler2D uAo;
 uniform sampler2D uSil;
 uniform bool uHasSil;
+uniform sampler2D uSource;
+uniform sampler2D uOrigTable;
+uniform sampler2D uShade;
+uniform bool uHasShade;
+uniform bool uKeepOn;
+uniform float uKeepShade;
+uniform float uKeepTexture;
 uniform bool uEnabled;
 uniform vec3 uLight;
 uniform float uBands;
@@ -101,45 +144,64 @@ uniform vec3 uFillLight;
 uniform vec3 uFillColor;
 uniform float uFillStrength;
 
+vec3 origColor(ivec2 ip) {
+  int id = regionId(ip);
+  return texelFetch(uOrigTable, ivec2(id % 256, id / 256), 0).rgb;
+}
+vec3 shadeLab(ivec2 ip) {
+  if (!uHasShade) return vec3(0.0);
+  vec3 e = texelFetch(uShade, ip, 0).rgb * 255.0 - 128.0;
+  return vec3(e.x / 127.0, e.y / 300.0, e.z / 300.0);
+}
+
 void main() {
   vec3 c = prevAt(uPrev, gl_FragCoord.xy).rgb;
-  if (!uEnabled) { outColor = vec4(c, 1.0); return; }
   ivec2 ip = imgPx(gl_FragCoord.xy);
-  // 只照亮主體, 背景保持原色(避免剪影外出現陰影暈)
-  if (uHasSil && sdfAt(uSil, ip) > 0.5) { outColor = vec4(c, 1.0); return; }
+  // 只照亮主體, 背景不打光(避免剪影外出現陰影暈)
+  bool lit = uEnabled && !(uHasSil && sdfAt(uSil, ip) > 0.5);
   vec3 n = surfaceNormal(ip);
-  // 以「正對畫面」的受光為基準: 平塗原色就是亮面的顏色
-  float t = clamp(dot(n, uLight) / max(uLight.z, 0.2), 0.0, 1.0);
-  if (uEdgeJitter > 0.0) t = clamp(t + (fbm(gl_FragCoord.xy * 0.03 / uScale) - 0.5) * 0.35 * uEdgeJitter, 0.0, 1.0);
   float q = 1.0;
-  if (uBands > 1.5) {
-    float x = t * uBands;
-    float k = min(floor(x), uBands - 1.0);
-    float f = x - k;
-    float w = max(uSoftness, 0.001);
-    q = clamp((k + smoothstep(1.0 - w, 1.0, f)) / (uBands - 1.0), 0.0, 1.0);
+  vec3 o = c;
+  if (lit) {
+    // 以「正對畫面」的受光為基準: 平塗原色就是亮面的顏色
+    float t = clamp(dot(n, uLight) / max(uLight.z, 0.2), 0.0, 1.0);
+    if (uEdgeJitter > 0.0) t = clamp(t + (fbm(gl_FragCoord.xy * 0.03 / uScale) - 0.5) * 0.35 * uEdgeJitter, 0.0, 1.0);
+    if (uBands > 1.5) {
+      float x = t * uBands;
+      float k = min(floor(x), uBands - 1.0);
+      float f = x - k;
+      float w = max(uSoftness, 0.001);
+      q = clamp((k + smoothstep(1.0 - w, 1.0, f)) / (uBands - 1.0), 0.0, 1.0);
+    }
+    q = uAmbient + (1.0 - uAmbient) * q;
+    float s = uShadowStrength;
+    vec3 shadowCol = uShadowMode == 0 ? c * (1.0 - s)
+      : uShadowMode == 1 ? mix(c, c * vec3(0.55, 0.62, 0.95) * (1.0 - 0.3 * s), s)
+      : mix(c, uShadowColor, s);
+    vec3 litCol = mix(c, min(c * uLitColor * 1.15, vec3(1.0)), uLitStrength);
+    o = mix(shadowCol, litCol, q);
   }
-  q = uAmbient + (1.0 - uAmbient) * q;
-
-  float s = uShadowStrength;
-  vec3 shadowCol = uShadowMode == 0 ? c * (1.0 - s)
-    : uShadowMode == 1 ? mix(c, c * vec3(0.55, 0.62, 0.95) * (1.0 - 0.3 * s), s)
-    : mix(c, uShadowColor, s);
-  vec3 litCol = mix(c, min(c * uLitColor * 1.15, vec3(1.0)), uLitStrength);
-  vec3 o = mix(shadowCol, litCol, q);
-  if (uBands > 1.5) o *= 1.0 - uAoStrength * texelFetch(uAo, ip, 0).r;
-
-  if (uRim) {
-    float facing = max(dot(normalize(n.xy + 1e-4), normalize(uLight.xy + 1e-4)), 0.0);
-    o += uRimColor * uRimStrength * smoothstep(0.55, 0.95, 1.0 - n.z) * facing;
+  if (uKeepOn) {
+    vec3 sh = shadeLab(ip);
+    vec3 tex = toLab(texelFetch(uSource, ip, 0).rgb) - toLab(origColor(ip)) - sh;
+    vec3 oLab = toLab(o);
+    oLab += (toLab(c) - oLab) * uKeepShade + sh * uKeepShade + tex * uKeepTexture;
+    o = fromLab(oLab);
   }
-  if (uSpecular) {
-    vec3 h = normalize(uLight + vec3(0.0, 0.0, 1.0));
-    float sp = pow(max(dot(n, h), 0.0), mix(8.0, 128.0, uSpecSharpness));
-    float thr = 1.0 - uSpecSize * 0.9;
-    o += uSpecColor * uSpecStrength * smoothstep(thr - 0.02, thr + 0.02, sp);
+  if (lit) {
+    if (uBands > 1.5) o *= 1.0 - uAoStrength * texelFetch(uAo, ip, 0).r;
+    if (uRim) {
+      float facing = max(dot(normalize(n.xy + 1e-4), normalize(uLight.xy + 1e-4)), 0.0);
+      o += uRimColor * uRimStrength * smoothstep(0.55, 0.95, 1.0 - n.z) * facing;
+    }
+    if (uSpecular) {
+      vec3 h = normalize(uLight + vec3(0.0, 0.0, 1.0));
+      float sp = pow(max(dot(n, h), 0.0), mix(8.0, 128.0, uSpecSharpness));
+      float thr = 1.0 - uSpecSize * 0.9;
+      o += uSpecColor * uSpecStrength * smoothstep(thr - 0.02, thr + 0.02, sp);
+    }
+    if (uFill) o += c * uFillColor * uFillStrength * max(dot(n, uFillLight), 0.0);
   }
-  if (uFill) o += c * uFillColor * uFillStrength * max(dot(n, uFillLight), 0.0);
   outColor = vec4(clamp(o, 0.0, 1.0), q);
 }`;
 

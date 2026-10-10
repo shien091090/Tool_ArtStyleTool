@@ -16,6 +16,7 @@ const OPTIONAL_TEXTURES = {
   normal_detail: new Uint8Array([128, 128, 255, 255]), // 正對畫面的平面法線
   ao: new Uint8Array([0, 0, 0, 255]),                  // 沒有凹處
   silhouette_sdf: new Uint8Array([0, 0, 0, 255]),      // 整張都是主體
+  shade: new Uint8Array([128, 128, 128, 255]),         // 沒有原圖光影(細節全部算進紋理)
 } as const;
 type OptionalTexture = keyof typeof OPTIONAL_TEXTURES;
 
@@ -33,6 +34,8 @@ export class Renderer {
   private packTex: Partial<Record<PackTexture, WebGLTexture>> = {};
   private optTex: Partial<Record<OptionalTexture, WebGLTexture>> = {};
   private hasSil = false;
+  private hasShade = false;
+  private origTableTex: WebGLTexture;
   private tableTex: WebGLTexture;
   private gradTex: WebGLTexture;
   private targets: Target[] = [];
@@ -61,6 +64,7 @@ export class Renderer {
     this.vao = gl.createVertexArray()!;
     this.tableTex = textureFromBytes(gl, TABLE_SIZE, TABLE_SIZE, new Uint8Array(TABLE_SIZE * TABLE_SIZE * 4));
     this.gradTex = textureFromBytes(gl, 256, 1, new Uint8Array(256 * 4));
+    this.origTableTex = textureFromBytes(gl, TABLE_SIZE, TABLE_SIZE, new Uint8Array(TABLE_SIZE * TABLE_SIZE * 4));
   }
 
   get loadedPack(): PackMeta | null {
@@ -89,6 +93,7 @@ export class Renderer {
       bm?.close();
     });
     this.hasSil = !!meta.layers.silhouette_sdf;
+    this.hasShade = !!meta.layers.shade;
     if (meta.width !== this.w || meta.height !== this.h) {
       for (const t of this.targets) { gl.deleteFramebuffer(t.fbo); gl.deleteTexture(t.tex); }
       this.w = meta.width;
@@ -113,7 +118,7 @@ export class Renderer {
     const scale = Math.max(this.w, this.h) / 1024;
     const t = this.packTex, o = this.optTex;
     const [A, B, C] = this.targets;
-    const L = recipe.lighting, N = recipe.lines, E = recipe.effects, F = recipe.filter, G = recipe.grade;
+    const L = recipe.lighting, N = recipe.lines, E = recipe.effects, F = recipe.filter, G = recipe.grade, K = recipe.keep;
     const normals = (u: Uniforms, unit: number) => {
       u.tex('uNormal', t.normal!, unit);
       u.tex('uDetail', o.normal_detail!, unit + 1);
@@ -131,6 +136,15 @@ export class Renderer {
       u.tex('uAo', o.ao!, 3);
       u.tex('uSil', o.silhouette_sdf!, 4);
       u.bool('uHasSil', this.hasSil);
+      u.tex('uRegions', t.regions!, 5);
+      u.tex('uSource', t.source!, 6);
+      u.tex('uOrigTable', this.origTableTex, 7);
+      u.tex('uShade', o.shade!, 8);
+      u.tex('uTable', this.tableTex, 9);
+      u.bool('uHasShade', this.hasShade);
+      u.bool('uKeepOn', K.enabled && (K.shade > 0 || K.texture > 0));
+      u.f('uKeepShade', K.enabled ? K.shade : 0);
+      u.f('uKeepTexture', K.enabled ? K.texture : 0);
       u.bool('uEnabled', L.enabled);
       u.v3('uLight', lightDir(L.azimuth, L.elevation));
       u.f('uBands', L.bands);
@@ -286,6 +300,9 @@ export class Renderer {
     if (key !== this.tableKey) {
       const table = buildRegionTable(meta.regions.colors, meta.regions.areas, recipe.color);
       textureFromBytes(this.gl, TABLE_SIZE, TABLE_SIZE, table, this.tableTex);
+      // 拆解當下取出的顏色(舊分層包沒有就用目前的顏色), 算原圖細節用
+      const orig = buildRegionTable(meta.regions.sampled ?? meta.regions.colors, meta.regions.areas, { ...recipe.color, enabled: false });
+      textureFromBytes(this.gl, TABLE_SIZE, TABLE_SIZE, orig, this.origTableTex);
       this.tableKey = key;
     }
     const gkey = recipe.grade.gradientStops.join(',');

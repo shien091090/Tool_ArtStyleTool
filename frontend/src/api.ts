@@ -25,7 +25,8 @@ export interface PackMeta {
   created: string;
   layers: Record<string, LayerInfo>;
   flat_color_source?: 'source' | 'user_flat';
-  regions: { count: number; colors: Record<string, RGB>; areas: Record<string, number> };
+  /** colors 可在檢查點編輯; sampled 是拆解當下取的顏色, 不會被改(舊分層包沒有)。 */
+  regions: { count: number; colors: Record<string, RGB>; sampled?: Record<string, RGB>; areas: Record<string, number> };
 }
 
 export const RENDER_LAYERS = ['regions', 'normal', 'line_sdf', 'source'] as const;
