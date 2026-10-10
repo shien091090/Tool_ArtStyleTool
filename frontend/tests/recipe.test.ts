@@ -10,7 +10,7 @@ describe('normalizeRecipe', () => {
   it('缺欄位安靜補預設, 不列入提示', () => {
     const { recipe, fixed } = normalizeRecipe({ version: 1, lighting: { bands: 5 } });
     expect(recipe.lighting.bands).toBe(5);
-    expect(recipe.lines).toEqual(DEFAULT_RECIPE.lines);
+    expect(recipe.lines).toEqual({ ...DEFAULT_RECIPE.lines, enabled: true }); // 第 1 版基準: 線條開啟
     expect(fixed).toEqual([]);
   });
   it('越界數值夾回範圍並取整', () => {
@@ -101,5 +101,32 @@ describe('風格效果新欄位', () => {
     const { recipe, fixed } = normalizeRecipe({ color: { preset: 'constructor' } });
     expect(recipe.color.preset).toBe('pico8');
     expect(fixed).toContain('color.preset');
+  });
+});
+
+describe('配方第 2 版: 保留原圖', () => {
+  it('新預設: 保留光影與紋理都是 1、線條關閉', () => {
+    expect(DEFAULT_RECIPE.version).toBe(2);
+    expect(DEFAULT_RECIPE.keep).toEqual({ enabled: true, shade: 1, texture: 1 });
+    expect(DEFAULT_RECIPE.lines.enabled).toBe(false);
+  });
+  it('第 1 版配方: 不保留原圖、線條照舊, 不提示', () => {
+    const { recipe, fixed } = normalizeRecipe({ version: 1, lines: { enabled: true, thickness: 2 } });
+    expect(recipe.keep).toEqual({ enabled: true, shade: 0, texture: 0 });
+    expect(recipe.lines.enabled).toBe(true);
+    expect(recipe.version).toBe(2);
+    expect(fixed).toEqual([]);
+  });
+  it('第 1 版配方缺線條開關時視為開啟', () => {
+    expect(normalizeRecipe({ version: 1, lines: { thickness: 2 } }).recipe.lines.enabled).toBe(true);
+  });
+  it('沒有版本號視為第 1 版', () => {
+    expect(normalizeRecipe({ lighting: { bands: 3 } }).recipe.keep.shade).toBe(0);
+  });
+  it('第 2 版缺 keep 時用新預設', () => {
+    expect(normalizeRecipe({ version: 2 }).recipe.keep.texture).toBe(1);
+  });
+  it('保留值夾在 0~1', () => {
+    expect(normalizeRecipe({ version: 2, keep: { shade: 3 } }).recipe.keep.shade).toBe(1);
   });
 });

@@ -4,6 +4,7 @@ import { isVisible } from '../src/visibility';
 
 const make = (patch: (r: Recipe) => void): Recipe => {
   const r = structuredClone(DEFAULT_RECIPE);
+  r.lines.enabled = true; // 新預設線條關閉, 測線條參數時先打開
   patch(r);
   return r;
 };
@@ -72,15 +73,24 @@ describe('細部立體感', () => {
 
 describe('新效果的顯示規則', () => {
   it('指定陰影色只在 custom 且有陰影時', () => {
-    expect(isVisible('lighting.shadowColor', DEFAULT_RECIPE)).toBe(false);
-    expect(isVisible('lighting.shadowColor', make((r) => { r.lighting.shadowMode = 'custom'; }))).toBe(true);
-    expect(isVisible('lighting.shadowColor', make((r) => { r.lighting.shadowMode = 'custom'; r.lighting.bands = 1; }))).toBe(false);
+    const synth = (r: Recipe) => { r.keep.shade = 0; };
+    expect(isVisible('lighting.shadowColor', make(synth))).toBe(false);
+    expect(isVisible('lighting.shadowColor', make((r) => { synth(r); r.lighting.shadowMode = 'custom'; }))).toBe(true);
+    expect(isVisible('lighting.shadowColor', make((r) => { synth(r); r.lighting.shadowMode = 'custom'; r.lighting.bands = 1; }))).toBe(false);
   });
   it('陰影相關的新參數需要有陰影', () => {
     for (const k of ['litColor', 'litStrength', 'softness', 'edgeJitter', 'ao']) {
-      expect(isVisible('lighting.' + k, DEFAULT_RECIPE)).toBe(true);
-      expect(isVisible('lighting.' + k, make((r) => { r.lighting.bands = 1; }))).toBe(false);
+      expect(isVisible('lighting.' + k, make((r) => { r.keep.shade = 0; }))).toBe(true);
+      expect(isVisible('lighting.' + k, make((r) => { r.keep.shade = 0; r.lighting.bands = 1; }))).toBe(false);
     }
+  });
+  it('完全保留原圖光影時, 陰影上色相關參數沒有效果而隱藏', () => {
+    for (const k of ['shadowMode', 'shadowStrength', 'litColor', 'litStrength']) {
+      expect(isVisible('lighting.' + k, DEFAULT_RECIPE)).toBe(false);
+      expect(isVisible('lighting.' + k, make((r) => { r.keep.shade = 0.5; }))).toBe(true);
+      expect(isVisible('lighting.' + k, make((r) => { r.keep.enabled = false; }))).toBe(true);
+    }
+    expect(isVisible('lighting.softness', DEFAULT_RECIPE)).toBe(true);
   });
   it('開關型效果的子參數', () => {
     const cases: [string, (r: Recipe) => void][] = [

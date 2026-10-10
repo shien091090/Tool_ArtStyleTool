@@ -3,8 +3,11 @@ import { DEFAULT_RECIPE, type Recipe } from './recipe';
 
 type Patch = { [S in keyof Omit<Recipe, 'version'>]?: Partial<Recipe[S]> };
 
+/** 起始配方以「不保留原圖、線條開啟」為基準(它們是完全風格化的畫風), 個別配方再調。 */
 function make(patch: Patch): Recipe {
   const r = structuredClone(DEFAULT_RECIPE);
+  r.keep = { enabled: true, shade: 0, texture: 0 };
+  r.lines.enabled = true;
   for (const [section, values] of Object.entries(patch)) Object.assign(r[section as keyof Patch], values);
   return r;
 }
@@ -25,6 +28,7 @@ export const STARTER_RECIPES: { name: string; recipe: Recipe }[] = [
     recipe: make({
       lighting: { bands: 2, softness: 0.8, shadowStrength: 0.3 },
       lines: { thickness: -0.5, colorMode: 'region', colorDarken: 0.5, pressure: 0.5, breaks: 0.2 },
+      keep: { texture: 0.35 },
       effects: { wcEdge: 0.7, wcBleed: 0.5, wcGranule: 0.35, paper: 0.35 },
       filter: { kuwahara: 2 },
       grade: { satShadow: -0.4 },
@@ -56,6 +60,7 @@ export const STARTER_RECIPES: { name: string; recipe: Recipe }[] = [
         normalStrength: 1.6, detailStrength: 0.35, specular: true, specSize: 0.25, rim: true, rimStrength: 0.5,
       },
       color: { saturation: 1.15 },
+      keep: { texture: 0.3 },
       lines: { thickness: -0.3, outerThickness: 1.5 },
     }),
   },

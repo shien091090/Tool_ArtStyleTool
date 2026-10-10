@@ -2,7 +2,13 @@ import { PRESET_PALETTES } from './palettes';
 
 /** 風格配方: 各層的所有參數。以像素為單位的參數以長邊 1024px 為基準, 渲染時依圖片大小換算。 */
 export interface Recipe {
-  version: 1;
+  version: 2;
+  /** 保留原圖: 都是 1 時渲染結果就是原圖, 往下拉才換成工具算的光影與乾淨色塊。 */
+  keep: {
+    enabled: boolean;
+    shade: number;
+    texture: number;
+  };
   color: {
     enabled: boolean;
     paletteMode: 'source' | 'auto' | 'preset' | 'custom';
@@ -123,7 +129,8 @@ export type GradePreset = 'none' | 'film' | 'faded' | 'warm' | 'night' | 'noir';
 export const GRADE_PRESET_NAMES: GradePreset[] = ['none', 'film', 'faded', 'warm', 'night', 'noir'];
 
 export const DEFAULT_RECIPE: Recipe = {
-  version: 1,
+  version: 2,
+  keep: { enabled: true, shade: 1, texture: 1 },
   color: { enabled: true, paletteMode: 'source', autoCount: 8, preset: 'pico8', custom: [], hue: 0, saturation: 1, temperature: 0 },
   lighting: {
     enabled: true, azimuth: 135, elevation: 45, bands: 3, shadowMode: 'cool', shadowColor: '#3a3f6b', shadowStrength: 0.5,
@@ -133,7 +140,7 @@ export const DEFAULT_RECIPE: Recipe = {
     fill: false, fillAzimuth: 315, fillElevation: 20, fillColor: '#7fa7ff', fillStrength: 0.4,
   },
   lines: {
-    enabled: true, thickness: 0, outerThickness: 0, innerLines: true, variation: 'uniform', variationAmount: 1.5,
+    enabled: false, thickness: 0, outerThickness: 0, innerLines: true, variation: 'uniform', variationAmount: 1.5,
     pressure: 0, pressureScale: 1, breaks: 0, colorMode: 'black', colorDarken: 0.5, texture: 'clean', jitter: 0,
     doubleLine: false, doubleOffset: 3, doubleAngle: 45, doubleColor: '#e04a4a',
   },
@@ -155,10 +162,12 @@ export const DEFAULT_RECIPE: Recipe = {
 };
 
 export type Section = Exclude<keyof Recipe, 'version'>;
-export const SECTIONS: Section[] = ['color', 'lighting', 'lines', 'effects', 'filter', 'grade'];
+export const SECTIONS: Section[] = ['keep', 'color', 'lighting', 'lines', 'effects', 'filter', 'grade'];
 
 /** 數值欄位的合法範圍 [最小, 最大, 是否整數]。 */
 export const LIMITS: Record<string, [number, number, boolean?]> = {
+  'keep.shade': [0, 1],
+  'keep.texture': [0, 1],
   'color.autoCount': [2, 32, true],
   'color.hue': [-180, 180],
   'color.saturation': [0, 2],
@@ -248,14 +257,24 @@ const HEX = /^#[0-9a-fA-F]{6}$/;
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
+/** 第 1 版配方的基準: 當時沒有「保留原圖」, 線條預設開啟。 */
+function v1Base(): Recipe {
+  const r = structuredClone(DEFAULT_RECIPE);
+  r.keep = { enabled: true, shade: 0, texture: 0 };
+  r.lines.enabled = true;
+  return r;
+}
+
 /**
- * 讀入任意 JSON → 合法配方。缺欄位安靜補預設(舊配方沒有新效果很正常);
+ * 讀入任意 JSON → 合法的第 2 版配方。缺欄位安靜補預設(舊配方沒有新效果很正常);
+ * 第 1 版(或沒有版本號)以「不保留原圖、線條開啟」為基準補值, 外觀與以前相同。
  * 型別錯、越界、未知選項才改回預設或夾回範圍, 並列在 fixed 裡。
  */
 export function normalizeRecipe(raw: unknown): { recipe: Recipe; fixed: string[] } {
-  const recipe = structuredClone(DEFAULT_RECIPE);
-  const fixed: string[] = [];
   const input = isObject(raw) ? raw : {};
+  // 不是物件(沒有配方)→ 新預設; 有配方但不是第 2 版 → 第 1 版基準
+  const recipe = !isObject(raw) || input.version === 2 ? structuredClone(DEFAULT_RECIPE) : v1Base();
+  const fixed: string[] = [];
   for (const section of SECTIONS) {
     const src = input[section];
     if (src === undefined) continue;

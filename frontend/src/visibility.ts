@@ -7,6 +7,8 @@ type Rule = (r: Recipe) => boolean;
 const shading: Rule = (r) => r.lighting.enabled && r.lighting.bands >= 2;
 const lit: Rule = (r) => r.lighting.bands >= 2;
 const lightUsed: Rule = (r) => lit(r) || r.lighting.rim || r.lighting.specular || r.lighting.fill;
+/** 陰影上色有沒有機會出現: 完全保留原圖光影時, 工具算的明暗會被原圖光影整個取代。 */
+const synthShade: Rule = (r) => lit(r) && !(r.keep.enabled && r.keep.shade >= 1);
 const when = (flag: Rule) => flag;
 
 const RULES: Record<string, Rule> = {
@@ -17,11 +19,11 @@ const RULES: Record<string, Rule> = {
   'lighting.elevation': lightUsed,
   'lighting.normalStrength': lightUsed,
   'lighting.detailStrength': lightUsed,
-  'lighting.shadowMode': lit,
-  'lighting.shadowColor': (r) => lit(r) && r.lighting.shadowMode === 'custom',
-  'lighting.shadowStrength': lit,
-  'lighting.litColor': lit,
-  'lighting.litStrength': lit,
+  'lighting.shadowMode': synthShade,
+  'lighting.shadowColor': (r) => synthShade(r) && r.lighting.shadowMode === 'custom',
+  'lighting.shadowStrength': synthShade,
+  'lighting.litColor': synthShade,
+  'lighting.litStrength': synthShade,
   'lighting.softness': lit,
   'lighting.edgeJitter': lit,
   'lighting.ambient': lit,
