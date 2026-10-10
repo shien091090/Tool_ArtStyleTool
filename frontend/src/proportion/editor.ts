@@ -14,8 +14,17 @@ export interface EditorState {
   selected: string | null;
   showMasks: boolean;
   lockRatio: boolean;
+  /** AI 呼叫進行中: 不接受改動作品的操作 */
+  locked: boolean;
   /** 結果對照: 左邊主圖, 右邊結果 */
-  compare: { result: HTMLImageElement; split: number } | null;
+  compare: CompareView | null;
+}
+
+/** 結果對照: 結果用當時的畫布擴大量對齊原圖 */
+export interface CompareView {
+  result: HTMLImageElement;
+  split: number;
+  pad: { top: number; left: number };
 }
 
 export interface EditorCallbacks {
@@ -44,6 +53,8 @@ export class Editor {
   private state: EditorState | null = null;
   private base = document.createElement('canvas');
   private scale = 1;
+  private frameW = 1;
+  private frameH = 1;
   private ox = 0;
   private oy = 0;
   private drag: Drag | null = null;
@@ -173,19 +184,22 @@ export class Editor {
     ctx.clearRect(0, 0, cw, ch);
     if (!s || !this.base.width) return;
     const margin = 24 * dpr;
-    this.scale = Math.min((cw - margin * 2) / this.base.width, (ch - margin * 2) / this.base.height);
-    this.ox = (cw - this.base.width * this.scale) / 2;
-    this.oy = (ch - this.base.height * this.scale) / 2;
-    const bw = this.base.width * this.scale;
-    const bh = this.base.height * this.scale;
+    const cmp = s.compare && s.view === 'main' ? s.compare : null;
+    this.frameW = cmp ? cmp.result.naturalWidth : this.base.width;
+    this.frameH = cmp ? cmp.result.naturalHeight : this.base.height;
+    this.scale = Math.min((cw - margin * 2) / this.frameW, (ch - margin * 2) / this.frameH);
+    this.ox = (cw - this.frameW * this.scale) / 2;
+    this.oy = (ch - this.frameH * this.scale) / 2;
+    const bw = this.frameW * this.scale;
+    const bh = this.frameH * this.scale;
 
     // 畫布範圍與主圖範圍
     ctx.fillStyle = '#ffffff10';
     ctx.fillRect(this.ox, this.oy, bw, bh);
     ctx.imageSmoothingQuality = 'high';
 
-    if (s.compare && s.view === 'main') {
-      this.renderCompare(ctx, s.compare, bw, bh);
+    if (cmp) {
+      this.renderCompare(ctx, cmp, bw, bh);
       return;
     }
     ctx.drawImage(this.base, this.ox, this.oy, bw, bh);
@@ -277,7 +291,7 @@ export class Editor {
     ctx.fill();
   }
 
-  private renderCompare(ctx: CanvasRenderingContext2D, cmp: { result: HTMLImageElement; split: number }, bw: number, bh: number) {
+  private renderCompare(ctx: CanvasRenderingContext2D, cmp: CompareView, bw: number, bh: number) {
     const s = this.state!;
     const sx = this.ox + bw * cmp.split;
     // 左: 原主圖(放在擴大後的畫布對應位置)
@@ -286,7 +300,8 @@ export class Editor {
     ctx.rect(this.ox, this.oy, sx - this.ox, bh);
     ctx.clip();
     const main = s.assets.images.get('main')!;
-    const [mx, my] = this.toScreen(0, 0);
+    const mx = this.ox + cmp.pad.left * this.scale;
+    const my = this.oy + cmp.pad.top * this.scale;
     ctx.drawImage(main, mx, my, main.naturalWidth * this.scale, main.naturalHeight * this.scale);
     ctx.restore();
     ctx.save();
@@ -318,6 +333,7 @@ export class Editor {
       this.move(e);
       return;
     }
+    if (s.locked) return;
     if (s.tool === 'box') {
       this.drag = { kind: 'box', x0: x, y0: y, x1: x, y1: y };
       return;
@@ -372,7 +388,7 @@ export class Editor {
       const r = this.canvas.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
       const px = (e.clientX - r.left) * dpr;
-      this.cb.onSplit(Math.min(1, Math.max(0, (px - this.ox) / (this.base.width * this.scale))));
+      this.cb.onSplit(Math.min(1, Math.max(0, (px - this.ox) / (this.frameW * this.scale))));
       return;
     }
     if (d.kind === 'box') {

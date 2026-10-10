@@ -34,6 +34,37 @@ def mask_bbox(mask: np.ndarray) -> list[int]:
     return [int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())]
 
 
+def _edges(bbox: list[int], place) -> tuple[float, float, float, float]:
+    """放到主圖後的外框邊緣(右下 +1), 與前端 placedEdges 相同。"""
+    s = place["scale"] if place else 1.0
+    tx = place["tx"] if place else 0.0
+    ty = place["ty"] if place else 0.0
+    return bbox[0] * s + tx, bbox[1] * s + ty, (bbox[2] + 1) * s + tx, (bbox[3] + 1) * s + ty
+
+
+def _anchor(edges, anchor: str) -> tuple[float, float]:
+    x0, y0, x1, y1 = edges
+    y = y0 if anchor == "top" else y1 if anchor == "bottom" else (y0 + y1) / 2
+    return (x0 + x1) / 2, y
+
+
+def rebase_transform(t: dict, place, old_bbox: list[int], new_bbox: list[int]) -> dict:
+    """遮罩外框變了(重切、拆左右)時改 dx/dy, 讓同一個變形畫出來的位置不跳動。
+    p' = A + off + RS(p − A); 新錨點 A' 時 off' = A + off − A' + RS(A' − A)。"""
+    e0 = _edges(old_bbox, place)
+    e1 = _edges(new_bbox, place)
+    ax, ay = _anchor(e0, t["anchor"])
+    bx, by = _anchor(e1, t["anchor"])
+    off_x = t["dx"] * (e0[2] - e0[0])
+    off_y = t["dy"] * (e0[3] - e0[1])
+    r = math.radians(t["rotation"])
+    vx, vy = (bx - ax) * t["scaleX"], (by - ay) * t["scaleY"]
+    rx, ry = vx * math.cos(r) - vy * math.sin(r), vx * math.sin(r) + vy * math.cos(r)
+    nx = ax + off_x - bx + rx
+    ny = ay + off_y - by + ry
+    return {**t, "dx": nx / (e1[2] - e1[0]), "dy": ny / (e1[3] - e1[1])}
+
+
 def _finite(v, what: str) -> float:
     if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
         raise ValueError(f"{what} 必須是有限數字")
@@ -133,9 +164,13 @@ class Work:
         out = []
         for d in sorted(root.iterdir()):
             p = d / "meta.json"
-            if p.is_file():
+            if not p.is_file():
+                continue
+            try:
                 m = json.loads(p.read_text(encoding="utf-8"))
                 out.append({"name": m["name"], "updated": m.get("updated"), "results": len(m.get("results", []))})
+            except (ValueError, KeyError, TypeError):
+                continue  # 壞掉的作品不拖累整份清單
         return out
 
     def save_meta(self) -> None:
@@ -207,7 +242,9 @@ class Work:
         part = self.part(part_id)
         mask = self._check_mask(part["image"], mask)
         write_png(self.dir / "masks" / f"{part_id}.png", mask)
-        part.update(points=list(points), box=box, bbox=mask_bbox(mask))
+        bbox = mask_bbox(mask)
+        part.update(points=list(points), box=box, bbox=bbox, rev=part.get("rev", 0) + 1,
+                    transform=rebase_transform(part["transform"], part["place"], part["bbox"], bbox))
         self.save_meta()
         return part
 
@@ -224,7 +261,9 @@ class Work:
         staged = copy.deepcopy(self.meta)
         by_id = {p["id"]: p for p in staged["parts"]}
         for entry in parts:
-            pid = entry.get("id") if isinstance(entry, dict) else entry
+            if not isinstance(entry, dict) or not isinstance(entry.get("id"), str):
+                raise ValueError("部位清單格式錯誤")
+            pid = entry["id"]
             if pid not in by_id:
                 raise FileNotFoundError(f"找不到部位 {pid}")
             target = by_id[pid]

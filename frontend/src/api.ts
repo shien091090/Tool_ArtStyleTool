@@ -127,6 +127,8 @@ export const api = {
       }),
     toPack: (name: string, resultId: string) =>
       request<{ pack: string }>(`${work(name)}/results/${resultId}/to-pack`, { method: 'POST' }),
+    resultParams: (name: string, resultId: string) =>
+      request<{ pad?: Pad; model?: string }>(`${work(name)}/files/results/${resultId}.json`),
     listRecipes: () => request<string[]>('/api/proportion/recipes'),
     getRecipe: (name: string) => request<unknown>(`/api/proportion/recipes/${enc(name)}`),
     saveRecipe: (name: string, recipe: ProportionRecipe) =>

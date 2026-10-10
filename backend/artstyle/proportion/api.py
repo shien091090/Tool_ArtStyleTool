@@ -14,7 +14,7 @@ from ..imaging import decode_any, to_gray
 from ..names import validate_name
 from ..pack import Pack
 from . import compose, parts, recipes
-from .work import Work
+from .work import Work, rebase_transform
 
 MAX_EXTRA = 500
 
@@ -169,10 +169,12 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
         part = work.part(part_id)
         left, right = parts.split_left_right(work.mask(part_id))
         base = parts.to_display_name(part["name"])
-        work.update_part_mask(part_id, left, [], None)
+        old_bbox, old_transform = part["bbox"], dict(part["transform"])
+        work.update_part_mask(part_id, left, [], None)  # 內部會重算 dx/dy, 位置不跳
         part["name"] = f"{base}(左)"
         new = work.add_part(f"{base}(右)", part["image"], right, [], None)
-        new.update(placed=part["placed"], place=part["place"], transform={**part["transform"], "z": new["transform"]["z"]})
+        new.update(placed=part["placed"], place=part["place"],
+                   transform={**rebase_transform(old_transform, part["place"], old_bbox, new["bbox"]), "z": new["transform"]["z"]})
         work.save_meta()
         return work.meta
 

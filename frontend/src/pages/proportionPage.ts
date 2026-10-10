@@ -1,7 +1,7 @@
 import { api, type PackMeta } from '../api';
 import { exportCollage, loadImage, WorkAssets } from '../proportion/draw';
 import { Editor, type Tool } from '../proportion/editor';
-import { ANCHORS, EDIT_MODELS, type Anchor, type Part, type PartTransform, type SegBox, type SegPoint, type WorkMeta } from '../proportion/model';
+import { ANCHORS, EDIT_MODELS, ZERO_PAD, type Anchor, type Pad, type Part, type PartTransform, type SegBox, type SegPoint, type WorkMeta } from '../proportion/model';
 import { applyRecipe, parseProportionRecipe, recipeFromParts } from '../proportion/recipe';
 import { autoPad, isChanged, placeForeign } from '../proportion/transform';
 import { el, option, showBanner } from './ui';
@@ -27,7 +27,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
   let selected: string | null = null;
   let showMasks = true;
   let lockRatio = true;
-  let compare: { id: string; img: HTMLImageElement; split: number } | null = null;
+  let compare: { id: string; img: HTMLImageElement; split: number; pad: Pad } | null = null;
   let falOk = false;
   let busy = false;
   let saveTimer: number | undefined;
@@ -178,8 +178,8 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
     const i = num('1');
     i.min = '0';
     i.addEventListener('change', () => {
-      if (!meta) return;
-      const v = Math.max(0, Math.min(4096, Math.round(Number(i.value) || 0)));
+      if (!meta || busy) return;
+      const v =Math.max(0, Math.min(4096, Math.round(Number(i.value) || 0)));
       meta.pad = { ...meta.pad, [k]: v };
       changed();
     });
@@ -187,7 +187,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
   });
   const padLabel: Record<string, string> = { top: '上', right: '右', bottom: '下', left: '左' };
   const autoPadBtn = button('自動', () => {
-    if (!meta) return;
+    if (!meta || busy) return;
     const main = mainInfo();
     meta.pad = autoPad(meta.parts, main.w, main.h);
     changed();
@@ -231,7 +231,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
     },
     onTransform: (id, t, final) => {
       const p = meta?.parts.find((x) => x.id === id);
-      if (!p) return;
+      if (!p || busy) return;
       p.transform = t;
       redraw();
       syncFields();
@@ -249,12 +249,17 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
   const mainInfo = () => meta!.images.find((i) => i.id === 'main')!;
   const selPart = (): Part | undefined => meta?.parts.find((p) => p.id === selected);
   const actionButtons = [createBtn, addImgBtn, segBtn, splitBtn, delBtn, genBtn, applyRecipeBtn, saveRecipeBtn];
+  /** AI 呼叫進行中鎖住所有會改作品的操作: 後端回傳的 meta 會蓋掉期間的修改。 */
+  const lockables = (): (HTMLInputElement | HTMLSelectElement | HTMLButtonElement)[] => [
+    workSel, placeBtn, unplaceBtn, hideChk, resetBtn, upBtn, downBtn, autoPadBtn, anchorSel, lockChk,
+    fScaleX, fScaleY, fRot, fDx, fDy, ...padInputs.map(([, i]) => i), ...toolBtns.values(),
+  ];
 
   function redraw() {
     if (!meta) return;
     editor.set({
-      meta, assets, view, tool, selected, showMasks, lockRatio,
-      compare: compare ? { result: compare.img, split: compare.split } : null,
+      meta, assets, view, tool, selected, showMasks, lockRatio, locked: busy,
+      compare: compare ? { result: compare.img, split: compare.split, pad: compare.pad } : null,
     });
   }
 
@@ -264,6 +269,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
     status.textContent = label;
     showBanner(banner, null);
     syncAll();
+    redraw();
     try {
       await fn();
     } catch (e) {
@@ -271,27 +277,37 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
     } finally {
       busy = false;
       status.textContent = '';
-      if (alive) syncAll();
+      if (alive) {
+        syncAll();
+        redraw();
+      }
     }
   }
 
   function scheduleSave() {
     window.clearTimeout(saveTimer);
-    saveTimer = window.setTimeout(() => void flushSave(), SAVE_DELAY);
+    saveTimer = window.setTimeout(() => {
+      flushSave().catch((e: Error) => showBanner(banner, 'error', e.message));
+    }, SAVE_DELAY);
   }
 
+  /** 存檔失敗會拋錯, 讓後續的 AI 操作停下來, 不要對著舊的作品狀態做事。 */
   async function flushSave() {
     window.clearTimeout(saveTimer);
     saveTimer = undefined;
     const m = meta;
     if (!m) return;
+    let failed: Error | null = null;
     savePromise = savePromise.then(() =>
       api.proportion.putLayout(m.name, m.parts, m.pad).then(
         () => undefined,
-        (e: Error) => showBanner(banner, 'error', `儲存調整失敗: ${e.message}`),
+        (e: Error) => {
+          failed = e;
+        },
       ),
     );
     await savePromise;
+    if (failed) throw new Error(`儲存調整失敗: ${(failed as Error).message}`);
   }
 
   /** 本機調整後: 重畫、同步面板、排程存檔。 */
@@ -304,7 +320,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
 
   function editSelected(fn: (t: PartTransform) => PartTransform) {
     const p = selPart();
-    if (!p) return;
+    if (!p || busy) return;
     p.transform = fn(p.transform);
     changed();
   }
@@ -337,6 +353,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
       s.classList.toggle('hidden', !has);
     }
     for (const b of actionButtons) b.disabled = busy;
+    for (const c of lockables()) c.disabled = busy;
     for (const [t, b] of toolBtns) b.classList.toggle('active', t === tool);
     toolHint.textContent = TOOL_HINT[tool];
     if (!meta) {
@@ -436,7 +453,19 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
   }
 
   async function openWork(name: string) {
-    if (saveTimer !== undefined) await flushSave();
+    if (busy) {
+      workSel.value = meta?.name ?? '';
+      return;
+    }
+    if (saveTimer !== undefined) {
+      try {
+        await flushSave();
+      } catch (e) {
+        showBanner(banner, 'error', `${(e as Error).message}, 已留在目前的作品`);
+        workSel.value = meta?.name ?? '';
+        return;
+      }
+    }
     compare = null;
     selected = null;
     view = 'main';
@@ -575,8 +604,20 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
       await setMeta(await api.proportion.deletePart(meta!.name, p.id));
       selected = null;
       compare = null;
+      if (p.image !== 'main' && p.placed && restoreReplaced(p)) await flushSave();
       redraw();
     });
+  }
+
+  /** 外來部位離開主圖時, 把當初被它替換(自動隱藏)的同名主圖部位放回來。 */
+  function restoreReplaced(removed: Part): boolean {
+    const name = baseName(removed.name);
+    const stillReplaced = meta!.parts.some((q) => q.id !== removed.id && q.image !== 'main' && q.placed && baseName(q.name) === name);
+    const target = meta!.parts.find((q) => q.image === 'main' && q.transform.hidden && baseName(q.name) === name);
+    if (stillReplaced || !target) return false;
+    target.transform = { ...target.transform, hidden: false };
+    showBanner(banner, 'info', `已把主圖的「${target.name}」放回來`);
+    return true;
   }
 
   // ---- 外來部位與圖層 ----
@@ -584,7 +625,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
 
   function placeOnMain() {
     const p = selPart();
-    if (!meta || !p || p.image === 'main') return;
+    if (!meta || !p || p.image === 'main' || busy) return;
     const target = meta.parts.find((q) => q.image === 'main' && baseName(q.name) === baseName(p.name));
     const main = mainInfo();
     p.place = placeForeign(p.bbox, target?.bbox ?? null, main.w, main.h);
@@ -598,7 +639,8 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
 
   function unplace() {
     const p = selPart();
-    if (!p) return;
+    if (!p || busy) return;
+    restoreReplaced(p);
     p.placed = false;
     p.place = null;
     p.transform = identity(p.transform.z);
@@ -607,8 +649,10 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
 
   function restack(dir: 1 | -1) {
     const p = selPart();
-    if (!meta || !p) return;
-    const sorted = [...meta.parts].sort((a, b) => a.transform.z - b.transform.z);
+    if (!meta || !p || busy) return;
+    // 只跟主圖上看得到的部位交換, 否則會跟看不到的部位換了卻沒變化
+    const onMain = (q: Part) => (q.image === 'main' ? !q.transform.hidden : q.placed);
+    const sorted = meta.parts.filter(onMain).sort((a, b) => a.transform.z - b.transform.z);
     const i = sorted.indexOf(p);
     const other = sorted[i + dir];
     if (!other) return;
@@ -632,9 +676,25 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
         if (!falOk) {
           skipped = missing;
         } else {
-          const res = await api.proportion.segment(meta!.name, 'main', missing);
+          // 「手(左)」「手(右)」: 用原名切一次再拆左右, 不能各自用原名切(會變成兩個都含兩隻手)
+          const sided = missing.filter((n) => baseName(n) !== n);
+          const bases = [...new Set(sided.map(baseName))];
+          const plain = missing.filter((n) => baseName(n) === n);
+          const res = await api.proportion.segment(meta!.name, 'main', [...plain, ...bases]);
           await setMeta(res.meta);
-          skipped = res.missing;
+          skipped = res.missing.filter((n) => plain.includes(n));
+          for (const b of bases) {
+            const whole = res.missing.includes(b) ? undefined : [...meta!.parts].reverse().find((q) => q.image === 'main' && q.name === b);
+            if (!whole) {
+              skipped.push(...sided.filter((n) => baseName(n) === b));
+              continue;
+            }
+            try {
+              await setMeta(await api.proportion.split(meta!.name, whole.id));
+            } catch {
+              skipped.push(...sided.filter((n) => baseName(n) === b));
+            }
+          }
         }
       }
       const { transforms } = applyRecipe(meta!.parts, recipe);
@@ -680,18 +740,19 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
       });
       meta!.results = res.meta.results;
       if (res.errors.length) showBanner(banner, 'warn', res.errors.join('; '));
-      if (res.results.length) {
-        busy = false;
-        await openCompare(res.results[0].id);
-      }
+      if (res.results.length) await openCompare(res.results[0].id);
     });
   }
 
   async function openCompare(id: string) {
     if (!meta) return;
     try {
-      const img = await loadImage(api.proportion.fileUrl(meta.name, `results/${id}.png`, id));
-      compare = { id, img, split: 0.5 };
+      const [img, snap] = await Promise.all([
+        loadImage(api.proportion.fileUrl(meta.name, `results/${id}.png`, id)),
+        api.proportion.resultParams(meta.name, id),
+      ]);
+      // 結果是在當時的畫布擴大下生成的, 對照時用當時的擴大量對齊原圖
+      compare = { id, img, split: 0.5, pad: snap.pad ?? ZERO_PAD };
       view = 'main';
       redraw();
       syncAll();

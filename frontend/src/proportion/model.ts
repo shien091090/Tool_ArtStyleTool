@@ -55,6 +55,8 @@ export interface Part {
   place: Place | null;
   transform: PartTransform;
   bbox: BBox;
+  /** 遮罩重切次數(前端快取用) */
+  rev?: number;
 }
 
 export interface WorkImage {

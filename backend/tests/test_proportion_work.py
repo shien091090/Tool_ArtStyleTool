@@ -130,3 +130,55 @@ def test_results_and_file_path(work):
     for bad in ["../meta.json", "results/../meta.json", "meta.json", "images/main.txt", "results\\r1.png"]:
         with pytest.raises(FileNotFoundError):
             work.file_path(bad)
+
+
+def _apply(t, place, bbox, x, y):
+    """與前端 partMatrix 相同的正向變形, 用來驗證 rebase 前後位置不變。"""
+    from artstyle.proportion.work import _anchor, _edges
+    s = place["scale"] if place else 1.0
+    px, py = x * s + (place["tx"] if place else 0), y * s + (place["ty"] if place else 0)
+    e = _edges(bbox, place)
+    ax, ay = _anchor(e, t["anchor"])
+    r = math.radians(t["rotation"])
+    vx, vy = (px - ax) * t["scaleX"], (py - ay) * t["scaleY"]
+    return (ax + t["dx"] * (e[2] - e[0]) + vx * math.cos(r) - vy * math.sin(r),
+            ay + t["dy"] * (e[3] - e[1]) + vx * math.sin(r) + vy * math.cos(r))
+
+
+@pytest.mark.parametrize("anchor", ["top", "center", "bottom"])
+@pytest.mark.parametrize("place", [None, {"scale": 0.6, "tx": 30, "ty": -12}])
+def test_rebase_keeps_rendered_position(anchor, place):
+    from artstyle.proportion.work import rebase_transform
+    t = {"scaleX": 1.5, "scaleY": 0.8, "rotation": 25, "anchor": anchor, "dx": 0.1, "dy": -0.3, "z": 1, "hidden": False}
+    old, new = [10, 20, 69, 59], [40, 25, 69, 50]
+    t2 = rebase_transform(t, place, old, new)
+    for x, y in [(45, 30), (60, 50), (40, 25)]:
+        a = _apply(t, place, old, x, y)
+        b = _apply(t2, place, new, x, y)
+        assert a == pytest.approx(b, abs=1e-6)
+
+
+def test_refine_keeps_position_and_bumps_rev(work):
+    work.add_part("頭", "main", _mask(), [], None)
+    work.set_layout([_layout_entry("p1")], {"top": 0, "right": 0, "bottom": 0, "left": 0})
+    t = dict(work.part("p1")["transform"])
+    m = np.zeros((60, 80), np.uint8)
+    m[10:30, 30:45] = 255
+    work.update_part_mask("p1", m, [], None)
+    p = work.part("p1")
+    assert p["rev"] == 1
+    assert _apply(t, None, [30, 10, 49, 19], 35, 15) == pytest.approx(_apply(p["transform"], None, p["bbox"], 35, 15))
+
+
+@pytest.mark.parametrize("entry", ["p1", ["p1"], {"id": ["p1"]}, {"id": 1}])
+def test_set_layout_rejects_malformed_entries(work, entry):
+    work.add_part("頭", "main", _mask(), [], None)
+    with pytest.raises(ValueError):
+        work.set_layout([entry], {"top": 0, "right": 0, "bottom": 0, "left": 0})
+
+
+def test_list_skips_corrupt_work(tmp_path, work):
+    bad = tmp_path / "壞掉"
+    bad.mkdir()
+    (bad / "meta.json").write_text("{not json", encoding="utf-8")
+    assert [m["name"] for m in Work.list(tmp_path)] == ["作品"]

@@ -54,7 +54,7 @@ export class WorkAssets {
       }
     }
     for (const p of meta.parts) {
-      const key = `${p.bbox.join(',')}|${JSON.stringify(p.points)}|${JSON.stringify(p.box)}|${p.color}`;
+      const key = `${p.rev ?? 0}|${p.bbox.join(',')}|${JSON.stringify(p.points)}|${JSON.stringify(p.box)}|${p.color}`;
       if (this.keys.get(p.id) === key) continue;
       const mask = await loadImage(api.proportion.fileUrl(meta.name, `masks/${p.id}.png`));
       this.layers.set(p.id, this.buildLayer(p, mask));
