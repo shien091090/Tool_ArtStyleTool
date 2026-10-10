@@ -85,8 +85,6 @@ export const api = {
   runStep: (name: string, step: string, params: Record<string, unknown> = {}) =>
     request<PackMeta>(`/api/packs/${enc(name)}/steps/${step}`, json('POST', params)),
   decomposeAll: (name: string) => request<PackMeta>(`/api/packs/${enc(name)}/decompose`, { method: 'POST' }),
-  replaceLayer: (name: string, layer: string, file: File) =>
-    request<PackMeta>(`/api/packs/${enc(name)}/layers/${layer}`, { method: 'PUT', body: form({ file }) }),
   regionAt: (name: string, x: number, y: number) =>
     request<{ id: number; color: RGB | null }>(`/api/packs/${enc(name)}/region?x=${x}&y=${y}`),
   setRegionColor: (name: string, id: number, color: RGB) =>

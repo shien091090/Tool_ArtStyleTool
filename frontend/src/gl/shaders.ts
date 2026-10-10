@@ -64,6 +64,11 @@ vec3 surfaceNormal(ivec2 ip) {
   vec3 d = texelFetch(uDetail, ip, 0).rgb * 2.0 - 1.0;
   return normalize(vec3(n.xy * uNormalStrength + d.xy * uDetailStrength, n.z));
 }
+/** 只有大形: 高光用。細部法線是逐像素的原圖明暗, 拿來算高光會變成滿圖白色雜點。 */
+vec3 formNormal(ivec2 ip) {
+  vec3 n = texelFetch(uNormal, ip, 0).rgb * 2.0 - 1.0;
+  return normalize(vec3(n.xy * uNormalStrength, n.z));
+}
 `;
 
 export const COLOR_FS = HEADER + REGION + `
@@ -196,7 +201,7 @@ void main() {
     }
     if (uSpecular) {
       vec3 h = normalize(uLight + vec3(0.0, 0.0, 1.0));
-      float sp = pow(max(dot(n, h), 0.0), mix(8.0, 128.0, uSpecSharpness));
+      float sp = pow(max(dot(formNormal(ip), h), 0.0), mix(8.0, 128.0, uSpecSharpness));
       float thr = 1.0 - uSpecSize * 0.9;
       o += uSpecColor * uSpecStrength * smoothstep(thr - 0.02, thr + 0.02, sp);
     }

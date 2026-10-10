@@ -82,20 +82,6 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams): 
     actions.push(b);
     return b;
   };
-  const uploadButton = (layer: string) => {
-    const input = el('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.className = 'hidden';
-    input.addEventListener('change', () => {
-      const f = input.files?.[0];
-      input.value = '';
-      if (f && meta) run(`上傳替換${layer}`, () => api.replaceLayer(meta!.name, layer, f));
-    });
-    const b = button('上傳替換', () => input.click());
-    return [b, input];
-  };
-
   const makeCell = (layer: Cell['layer'], title: string, controls: (Node | string)[]): Cell => {
     const origin = el('div', { className: 'origin' });
     const stale = el('span', { className: 'tag-stale' });
@@ -115,7 +101,6 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams): 
     makeCell('source', '原圖', []),
     makeCell('line', '線稿', [
       button('重跑', () => step('重跑線稿', [['line', {}]])),
-      ...uploadButton('line'),
     ]),
     makeCell('flat', '平塗', [
       el('label', {}, ['切法', methodSel]),
@@ -128,13 +113,15 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams): 
           min_area: Number(areaInput.value), gap_radius: Number(gapInput.value), merge: Number(mergeInput.value),
         }], ['flat', {}],
       ])),
-      ...uploadButton('flat'),
       el('span', { className: 'muted', text: '點圖上的區塊可以改色' }),
     ]),
     makeCell('normal', '法線', [
       normalView,
       button('重跑', () => step('重跑法線', [['depth', {}], ['normal', {}], ['normal_detail', {}]])),
-      ...uploadButton('normal'),
+      el('span', {
+        className: 'muted',
+        text: '渲染時兩張都會用: 大形決定整體明暗, 細部疊上去; 各自強度在渲染頁的「大形立體感」「細部立體感」調',
+      }),
     ]),
     makeCell('delight', 'AI 去光影', [
       button('重跑', () => step('重跑去光影', [['delight', {}]])),

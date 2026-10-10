@@ -1,49 +1,27 @@
-/** 參數面板的顯示規則: 調了也不會有效果的參數就隱藏。key 是「層.欄位」, 例如 'filter.ditherLevels'。 */
+/**
+ * 參數面板的顯示規則: 只看核取方塊(與下拉選單選的模式)決定顯示哪些參數。
+ * 不看拉桿的值: 拉桿拉到某個值時其他參數突然消失, 會讓人不知道發生什麼事。
+ * key 是「層.欄位」, 例如 'filter.ditherLevels'。
+ */
 import type { Recipe, Section } from './recipe';
 
 type Rule = (r: Recipe) => boolean;
-
-/** 光照有在產生明暗(有陰影區可言)。 */
-const shading: Rule = (r) => r.lighting.enabled && r.lighting.bands >= 2;
-const lit: Rule = (r) => r.lighting.bands >= 2;
-const lightUsed: Rule = (r) => lit(r) || r.lighting.rim || r.lighting.specular || r.lighting.fill;
-/** 陰影上色有沒有機會出現: 完全保留原圖光影時, 工具算的明暗會被原圖光影整個取代。 */
-const synthShade: Rule = (r) => lit(r) && !(r.keep.enabled && r.keep.shade >= 1);
 const when = (flag: Rule) => flag;
 
 const RULES: Record<string, Rule> = {
   'color.autoCount': (r) => r.color.paletteMode === 'auto',
   'color.preset': (r) => r.color.paletteMode === 'preset',
   'color.custom': (r) => r.color.paletteMode === 'custom',
-  'lighting.azimuth': lightUsed,
-  'lighting.elevation': lightUsed,
-  'lighting.normalStrength': lightUsed,
-  'lighting.detailStrength': lightUsed,
-  'lighting.shadowMode': synthShade,
-  'lighting.shadowColor': (r) => synthShade(r) && r.lighting.shadowMode === 'custom',
-  'lighting.shadowStrength': synthShade,
-  'lighting.litColor': synthShade,
-  'lighting.litStrength': synthShade,
-  'lighting.softness': lit,
-  'lighting.edgeJitter': lit,
-  'lighting.ambient': lit,
-  'lighting.ao': lit,
+  'lighting.shadowColor': (r) => r.lighting.shadowMode === 'custom',
   'lighting.rimStrength': (r) => r.lighting.rim,
   'lighting.rimColor': (r) => r.lighting.rim,
-  'lines.variationAmount': (r) => r.lines.variation === 'shadow' && shading(r),
-  'lines.pressureScale': (r) => r.lines.pressure > 0,
+  'lines.variationAmount': (r) => r.lines.variation === 'shadow',
   'lines.colorDarken': (r) => r.lines.colorMode === 'region',
-  'effects.halftoneShadowOnly': (r) => r.effects.halftone && shading(r),
+  'effects.halftoneShadowOnly': (r) => r.effects.halftone,
   'effects.halftoneSize': (r) => r.effects.halftone,
   'effects.halftoneAngle': (r) => r.effects.halftone,
   'effects.halftoneStrength': (r) => r.effects.halftone,
-  'effects.brushScale': (r) => r.effects.brush > 0,
-  'effects.risoAngle': (r) => r.effects.riso > 0,
   'filter.ditherLevels': (r) => r.filter.dither,
-  'filter.outlineColor': (r) => r.filter.outlineWidth > 0,
-  'filter.bloomThreshold': (r) => r.filter.bloom > 0,
-  'filter.bloomRadius': (r) => r.filter.bloom > 0,
-  'filter.scanSpacing': (r) => r.filter.scan > 0,
   'grade.presetStrength': (r) => r.grade.preset !== 'none',
   'grade.gradientStops': (r) => r.grade.gradientMap,
   'grade.gradientStrength': (r) => r.grade.gradientMap,
