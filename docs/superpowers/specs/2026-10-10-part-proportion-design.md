@@ -154,7 +154,7 @@ results/<結果id>.json        # 生成當下的完整參數快照(部位變形�
 ### 5.4 生成
 
 1. 驗證: 拼貼與改動範圍同尺寸, 改動範圍非空
-2. 補洞: 拼貼透明處(alpha < 128)用 OpenCV Telea 補洞填色 → RGB
+2. 補洞: 拼貼透明處(alpha < 128)一律填原圖背景色(四邊不透明像素中位數, 去背圖用白) → RGB。不用周圍抹色: 大洞會被抹成原部位殘影, AI 會保留下來。前端挖原位置時遮罩外擴 `max(2, 長邊×1.2%)` 像素, 連毛邊一起挖掉
 3. 修圖: 指令 = 固定指令(實驗版本) + 有外來部位時加「統一畫風」那句 + 補充描述
    - Nano Banana: `fal-ai/nano-banana/edit`, `image_urls`, `num_images`
    - Qwen: `fal-ai/qwen-image-edit`, `image_url`, `num_images`, `image_size` = 拼貼尺寸

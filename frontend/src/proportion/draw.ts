@@ -12,6 +12,10 @@ export interface PartLayer {
   white: HTMLCanvasElement;
   /** 部位外框裁切: 部位色 × 遮罩 alpha(畫面疊色用) */
   tint: HTMLCanvasElement;
+  /** 外擴後的白色遮罩: 挖掉原位置用, 連邊緣的毛邊、反鋸齒一起挖掉, 避免留下原部位殘影 */
+  cut: HTMLCanvasElement;
+  cutOx: number;
+  cutOy: number;
   /** 整張圖大小的遮罩(0/255), 點選命中測試用 */
   alpha: Uint8Array;
   w: number;
@@ -34,6 +38,32 @@ export function loadImage(url: string): Promise<HTMLImageElement> {
     img.onerror = () => reject(new Error(`圖片載入失敗: ${url}`));
     img.src = url;
   });
+}
+
+/** 挖原位置時遮罩外擴的半徑(像素)。 */
+export function cutRadius(w: number, h: number): number {
+  return Math.max(2, Math.round(Math.max(w, h) * 0.012));
+}
+
+/** 方形外擴(先橫向再縱向取最大值)。src 為 w×h, 回傳 (w+2r)×(h+2r)。 */
+export function dilate(src: Uint8Array, w: number, h: number, r: number): Uint8Array {
+  const W = w + 2 * r;
+  const H = h + 2 * r;
+  const row = new Uint8Array(W * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!src[y * w + x]) continue;
+      row.fill(255, y * W + x, y * W + x + 2 * r + 1);
+    }
+  }
+  const out = new Uint8Array(W * H);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < W; x++) {
+      if (!row[y * W + x]) continue;
+      for (let k = 0; k <= 2 * r; k++) out[(y + k) * W + x] = 255;
+    }
+  }
+  return out;
 }
 
 /** 作品的圖與部位圖層快取。部位遮罩或圖改變時呼叫 sync 重載。 */
@@ -98,7 +128,20 @@ export class WorkAssets {
     pctx.drawImage(white, 0, 0);
     pctx.globalCompositeOperation = 'source-in';
     pctx.drawImage(src, -e.x0, -e.y0);
-    return { pixels, white, tint, alpha, w: W, h: H, ox: e.x0, oy: e.y0 };
+
+    const r = cutRadius(W, H);
+    const local = new Uint8Array(e.w * e.h);
+    for (let y = 0; y < e.h; y++) local.set(alpha.subarray((y + e.y0) * W + e.x0, (y + e.y0) * W + e.x0 + e.w), y * e.w);
+    const grown = dilate(local, e.w, e.h, r);
+    const cut = canvas(e.w + 2 * r, e.h + 2 * r);
+    const cctx = cut.getContext('2d')!;
+    const cimg = cctx.createImageData(cut.width, cut.height);
+    for (let i = 0; i < grown.length; i++) {
+      cimg.data.fill(255, i * 4, i * 4 + 3);
+      cimg.data[i * 4 + 3] = grown[i];
+    }
+    cctx.putImageData(cimg, 0, 0);
+    return { pixels, white, tint, cut, cutOx: e.x0 - r, cutOy: e.y0 - r, alpha, w: W, h: H, ox: e.x0, oy: e.y0 };
   }
 }
 
@@ -108,9 +151,9 @@ export function layerMatrix(part: Part, layer: PartLayer, padLeft: number, padTo
   return multiply([1, 0, 0, 1, padLeft, padTop], m);
 }
 
-/** 原位置(未變形)的裁切圖座標 → 拼貼畫布座標。 */
-function originMatrix(layer: PartLayer, padLeft: number, padTop: number): Mat {
-  return [1, 0, 0, 1, layer.ox + padLeft, layer.oy + padTop];
+/** 原位置(未變形)外擴遮罩座標 → 拼貼畫布座標。 */
+function cutMatrix(layer: PartLayer, padLeft: number, padTop: number): Mat {
+  return [1, 0, 0, 1, layer.cutOx + padLeft, layer.cutOy + padTop];
 }
 
 export function collageSize(meta: WorkMeta): { w: number; h: number } {
@@ -127,7 +170,7 @@ function drawAt(ctx: CanvasRenderingContext2D, src: CanvasImageSource, m: Mat) {
 const mainParts = (meta: WorkMeta) => meta.parts.filter((p) => p.image === 'main');
 const drawnByZ = (meta: WorkMeta) => meta.parts.filter(isDrawn).sort((a, b) => a.transform.z - b.transform.z);
 
-/** 拼貼: 主圖 → 挖掉動過/隱藏部位原位置 → 依 z 畫上動過的部位; 擴大的區域透明。 */
+/** 拼貼: 主圖 → 挖掉動過/隱藏部位原位置(外擴) → 依 z 畫上動過的部位; 擴大的區域透明。 */
 export function drawCollage(ctx: CanvasRenderingContext2D, meta: WorkMeta, assets: WorkAssets): void {
   const { w, h } = collageSize(meta);
   const { left, top } = meta.pad;
@@ -137,7 +180,7 @@ export function drawCollage(ctx: CanvasRenderingContext2D, meta: WorkMeta, asset
   ctx.globalCompositeOperation = 'destination-out';
   for (const p of mainParts(meta)) {
     const layer = assets.layers.get(p.id);
-    if (layer && isChanged(p)) drawAt(ctx, layer.white, originMatrix(layer, left, top));
+    if (layer && isChanged(p)) drawAt(ctx, layer.cut, cutMatrix(layer, left, top));
   }
   ctx.globalCompositeOperation = 'source-over';
   for (const p of drawnByZ(meta)) {
@@ -156,7 +199,7 @@ export function drawRegion(ctx: CanvasRenderingContext2D, meta: WorkMeta, assets
   ctx.fillRect(0, 0, w, h);
   for (const p of mainParts(meta)) {
     const layer = assets.layers.get(p.id);
-    if (layer && isChanged(p)) drawAt(ctx, layer.white, originMatrix(layer, left, top));
+    if (layer && isChanged(p)) drawAt(ctx, layer.cut, cutMatrix(layer, left, top));
   }
   for (const p of drawnByZ(meta)) {
     const layer = assets.layers.get(p.id);

@@ -3,16 +3,30 @@ import numpy as np
 from artstyle.proportion import compose
 
 
-def test_fill_holes_returns_rgb_without_holes():
+def test_fill_holes_uses_flat_background():
     rgba = np.zeros((40, 40, 4), np.uint8)
     rgba[..., :3] = (10, 200, 30)
     rgba[..., 3] = 255
     rgba[15:25, 15:25, 3] = 0
     rgba[15:25, 15:25, :3] = 0
-    out = compose.fill_holes(rgba)
+    out = compose.fill_holes(rgba, (250, 240, 230))
     assert out.shape == (40, 40, 3)
-    assert abs(int(out[20, 20, 1]) - 200) < 30   # 洞被周圍顏色補上
-    assert (out[:10] == (10, 200, 30)).all()      # 非洞處不變
+    # 洞一律補背景色, 不從周圍抹色(大洞抹出來會變成原圖的殘影)
+    assert (out[15:25, 15:25] == (250, 240, 230)).all()
+    assert (out[:10] == (10, 200, 30)).all()
+
+
+def test_background_color_from_border():
+    img = np.full((30, 30, 3), (200, 210, 220), np.uint8)
+    img[10:20, 10:20] = 0
+    img[0, :5] = 0  # 少數雜點不影響
+    assert compose.background_color(img) == (200, 210, 220)
+
+
+def test_background_color_transparent_border_is_white():
+    img = np.zeros((30, 30, 4), np.uint8)
+    img[10:20, 10:20] = (5, 5, 5, 255)
+    assert compose.background_color(img) == (255, 255, 255)
 
 
 def test_feather_pad():

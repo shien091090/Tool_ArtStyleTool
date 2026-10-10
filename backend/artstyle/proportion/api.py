@@ -224,7 +224,7 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
             raise ValueError("沒有任何改動, 不需要生成")
         has_foreign = any(p["placed"] and p["image"] != "main" for p in work.meta["parts"])
         prompt = compose.build_prompt(has_foreign, extra)
-        filled = compose.fill_holes(col)
+        filled = compose.fill_holes(col, compose.background_color(work.image("main")))
         images = client().edit(model, filled, prompt, count)
         params = {"model": model, "count": count, "extra": extra, "prompt": prompt,
                   "parts": work.meta["parts"], "pad": pad}

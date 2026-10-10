@@ -20,15 +20,24 @@ def build_prompt(has_foreign: bool, extra: str) -> str:
     return f"{p} {extra}" if extra else p
 
 
-def fill_holes(rgba: np.ndarray) -> np.ndarray:
-    """拼貼透明處(alpha < 128)先粗略補色, AI 比較好接手。"""
-    rgb = np.ascontiguousarray(rgba[..., :3])
-    holes = (rgba[..., 3] < 128).astype(np.uint8) * 255
-    if not holes.any():
-        return rgb.copy()
-    if holes.all():
-        return np.full_like(rgb, 255)
-    return cv2.inpaint(rgb, holes, 5, cv2.INPAINT_TELEA)
+def background_color(img: np.ndarray) -> tuple[int, int, int]:
+    """原圖背景色: 四邊不透明像素的中位數; 四邊大多透明(去背圖)就用白色。"""
+    edges = [img[0], img[-1], img[:, 0], img[:, -1]]
+    border = np.concatenate(edges)
+    if border.shape[1] == 4:
+        opaque = border[border[:, 3] >= 128]
+        if len(opaque) < len(border) / 2:
+            return (255, 255, 255)
+        border = opaque
+    return tuple(int(v) for v in np.median(border[:, :3], axis=0))
+
+
+def fill_holes(rgba: np.ndarray, bg: tuple[int, int, int]) -> np.ndarray:
+    """拼貼透明處(alpha < 128)補成背景色。
+    不從周圍抹色: 挖掉的大洞會被抹成原部位的殘影, AI 會把殘影當成內容保留下來。"""
+    rgb = np.ascontiguousarray(rgba[..., :3]).copy()
+    rgb[rgba[..., 3] < 128] = bg
+    return rgb
 
 
 def feather_pad(w: int, h: int) -> int:
