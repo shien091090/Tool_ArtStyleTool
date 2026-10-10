@@ -10,13 +10,13 @@ from . import config
 from .imaging import limit_size, load_rgb, read_png, write_png
 from .names import validate_name
 
-LAYERS = ["source", "depth", "normal", "normal_detail", "line", "line_sdf", "delight", "regions", "flat", "user_flat", "ao", "silhouette_sdf"]
+LAYERS = ["source", "depth", "normal", "normal_detail", "line", "line_sdf", "delight", "regions", "flat", "user_flat", "ao", "silhouette_sdf", "shade"]
 DEPENDENTS = {
-    "source": ["depth", "normal_detail", "line", "delight", "flat"],
+    "source": ["depth", "normal_detail", "line", "delight", "flat", "shade"],
     "depth": ["normal", "normal_detail", "ao", "silhouette_sdf"],
     "line": ["line_sdf", "regions"],
-    "delight": ["regions", "flat"],
-    "regions": ["flat", "silhouette_sdf"],
+    "delight": ["regions", "flat", "shade"],
+    "regions": ["flat", "silhouette_sdf", "shade"],
 }
 
 
@@ -104,9 +104,12 @@ class Pack:
             self._mark_stale(child)
 
     def set_regions_meta(self, colors: dict, areas: dict) -> None:
+        """colors 是拆解當下取出的顏色: 同時存成可編輯的 colors 與不會被改的 sampled(算原圖細節用)。"""
+        packed = {str(k): [int(c) for c in v] for k, v in colors.items()}
         self.meta["regions"] = {
             "count": len(colors),
-            "colors": {str(k): [int(c) for c in v] for k, v in colors.items()},
+            "colors": packed,
+            "sampled": {k: list(v) for k, v in packed.items()},
             "areas": {str(k): int(v) for k, v in areas.items()},
         }
         self.save_meta()

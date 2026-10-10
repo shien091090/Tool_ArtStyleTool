@@ -229,3 +229,13 @@ def test_recut_regions_refreshes_silhouette(pack):
     decompose.run_all(pack, FakeFal())
     decompose.run_step(pack, "regions", None, colors=4)
     assert pack.has("silhouette_sdf") and not pack.is_stale("silhouette_sdf")
+
+
+def test_shade_layer_and_sampled_colors(pack):
+    decompose.run_all(pack, FakeFal())
+    assert pack.read("shade").shape == (60, 80, 3)
+    sampled = dict(pack.meta["regions"]["sampled"])
+    rid = decompose.region_at(pack, 30, 25)
+    decompose.set_region_color(pack, rid, (0, 255, 0))
+    assert pack.meta["regions"]["sampled"] == sampled          # 取色不受編輯影響
+    assert pack.meta["regions"]["colors"][str(rid)] == [0, 255, 0]
