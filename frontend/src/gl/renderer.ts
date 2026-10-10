@@ -93,7 +93,7 @@ export class Renderer {
       bm?.close();
     });
     this.hasSil = !!meta.layers.silhouette_sdf;
-    this.hasShade = !!meta.layers.shade;
+    this.hasShade = !!meta.layers.shade && !meta.layers.shade.stale; // 過期的原圖光影是舊區塊算的, 不用
     if (meta.width !== this.w || meta.height !== this.h) {
       for (const t of this.targets) { gl.deleteFramebuffer(t.fbo); gl.deleteTexture(t.tex); }
       this.w = meta.width;

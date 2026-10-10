@@ -43,3 +43,22 @@ def test_encode_shade_range():
     assert enc[0, 0].tolist() == [128, 128, 128]
     assert enc[0, 1].tolist() == [255, 254, 2]
     assert enc[0, 2, 0] == 1
+
+
+def test_bbox_without_padding_matches_reference():
+    rng = np.random.default_rng(0)
+    labels = np.ones((64, 64), np.int32)
+    labels[20:40, 10:30] = 2
+    flat = np.full((64, 64, 3), 120, np.uint8)
+    src = rng.integers(0, 255, (64, 64, 3), dtype=np.uint8)
+    got = shade.region_shade(src, flat, labels, None)
+    # 參考: 整張圖做正規化卷積(不裁切)
+    import cv2
+    resid = (oklab(src) - oklab(flat)).astype(np.float32)
+    sigma = max(1.0, 64 / 60)
+    for rid in (1, 2):
+        m = (labels == rid).astype(np.float32)
+        den = cv2.GaussianBlur(m, (0, 0), sigma, borderType=cv2.BORDER_CONSTANT)
+        num = cv2.GaussianBlur(resid[..., 0] * m, (0, 0), sigma, borderType=cv2.BORDER_CONSTANT)
+        ref = num / np.maximum(den, 1e-6)
+        assert np.allclose(got[..., 0][labels == rid], ref[labels == rid], atol=1e-4)

@@ -132,11 +132,15 @@ def run_step(pack: Pack, step: str, client: FalClient | None, **params) -> None:
         source = "user_flat" if pack.meta.get("flat_color_source") == "user_flat" else p["color_source"]
         pack.write_layer("flat", paint(labels, colors), "computed", color_source=source)
         pack.set_regions_meta(colors, region_areas(labels))
+        run_step(pack, "shade", None)  # 原圖光影以這次的取色為準, 一起重算
     elif step == "shade":
         _require(pack, "regions")
         labels = decode_labels(pack.read("regions"))
         regions_meta = pack.meta["regions"]
-        sampled = regions_meta.get("sampled") or regions_meta["colors"]
+        if not regions_meta.get("sampled"):
+            regions_meta["sampled"] = {k: list(v) for k, v in regions_meta["colors"].items()}
+            pack.save_meta()
+        sampled = regions_meta["sampled"]
         flat_sampled = paint(labels, {int(k): v for k, v in sampled.items()})
         lines = line_mask(pack.read("line")) if pack.has("line") else None
         pack.write_layer("shade", encode_shade(region_shade(pack.read("source"), flat_sampled, labels, lines)), "computed")

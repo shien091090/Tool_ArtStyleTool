@@ -15,7 +15,6 @@ def region_shade(source: np.ndarray, flat_sampled: np.ndarray, labels: np.ndarra
     resid = (oklab(source) - oklab(flat_sampled)).astype(np.float32)
     valid = np.ones((h, w), bool) if line_mask is None else ~line_mask
     sigma = max(1.0, max(h, w) / 60)
-    pad = int(np.ceil(sigma * 3))
     out = np.zeros_like(resid)
     ids = np.unique(labels)
     # 各區塊的外框, 一次算好
@@ -26,8 +25,9 @@ def region_shade(source: np.ndarray, flat_sampled: np.ndarray, labels: np.ndarra
     for rid, a, b in zip(ids, starts, ends):
         idx = order[a:b]
         ry, rx = idx // w, idx % w
-        y0, y1 = max(0, ry.min() - pad), min(h, ry.max() + pad + 1)
-        x0, x1 = max(0, rx.min() - pad), min(w, rx.max() + pad + 1)
+        # 區塊外的權重為 0, 外框外視為 0(BORDER_CONSTANT), 不必往外擴也和整張圖算的結果相同
+        y0, y1 = ry.min(), ry.max() + 1
+        x0, x1 = rx.min(), rx.max() + 1
         region = labels[y0:y1, x0:x1] == rid
         m = (region & valid[y0:y1, x0:x1]).astype(np.float32)
         if m.sum() == 0:

@@ -239,3 +239,26 @@ def test_shade_layer_and_sampled_colors(pack):
     decompose.set_region_color(pack, rid, (0, 255, 0))
     assert pack.meta["regions"]["sampled"] == sampled          # 取色不受編輯影響
     assert pack.meta["regions"]["colors"][str(rid)] == [0, 255, 0]
+
+
+def test_recut_regions_and_flat_refresh_shade(pack):
+    decompose.run_all(pack, FakeFal())
+    decompose.run_step(pack, "regions", None, colors=4)
+    decompose.run_step(pack, "flat", None)
+    assert not pack.is_stale("shade")
+
+
+def test_user_flat_refreshes_shade(pack):
+    decompose.run_all(pack, FakeFal())
+    before = pack.read("shade").copy()
+    decompose.replace_layer(pack, "flat", _png(np.full((60, 80, 3), (0, 200, 0), np.uint8)))
+    assert not pack.is_stale("shade")
+    assert not np.array_equal(pack.read("shade"), before)      # 取色變了, 原圖光影跟著重算
+
+
+def test_old_pack_gets_sampled_backfilled(pack):
+    decompose.run_all(pack, FakeFal())
+    del pack.meta["regions"]["sampled"]                          # 模擬舊分層包
+    pack.save_meta()
+    decompose.run_step(pack, "shade", None)
+    assert pack.meta["regions"]["sampled"] == pack.meta["regions"]["colors"]
