@@ -112,8 +112,14 @@ def test_segment_parts_and_missing(client, fal):
 def test_refine_split_delete(client, fal):
     _create(client)
     client.post(f"{P}/works/作品/parts", json={"names": ["頭", "翅膀"]})
-    r = client.post(f"{P}/works/作品/parts/p1/refine", json={"points": [{"x": 30, "y": 27, "label": 1}], "box": None})
-    assert r.status_code == 200 and r.json()["parts"][0]["bbox"] == [20, 5, 39, 29]
+    add = {"x": 45, "y": 45, "label": 1}
+    r = client.post(f"{P}/works/作品/parts/p1/refine", json={"points": [add], "box": None})
+    assert r.status_code == 200 and r.json()["parts"][0]["bbox"] == [20, 5, 49, 49]   # 頭 ∪ 點到的物件
+    assert fal.segment_calls[-1][0] == ""                                              # 點選不帶名稱
+    remove = {"x": 44, "y": 44, "label": 0}
+    r = client.post(f"{P}/works/作品/parts/p1/refine", json={"points": [add, remove], "box": None})
+    assert r.json()["parts"][0]["bbox"] == [20, 5, 39, 19] and len(r.json()["parts"][0]["points"]) == 2
+    assert client.post(f"{P}/works/作品/parts/p1/refine", json={"points": [add, remove], "box": None}).status_code == 400
     assert client.post(f"{P}/works/作品/parts/p1/refine", json={"points": [{"x": 999, "y": 0, "label": 1}]}).status_code == 400
     r = client.post(f"{P}/works/作品/parts/p2/split")
     names = [p["name"] for p in r.json()["parts"]]
@@ -138,6 +144,18 @@ def test_refine_falls_back_to_position_only(client, fal):
     fal.segment = original
     assert client.post(f"{P}/works/作品/parts", json={"names": ["燈室"]}).json()["missing"] == ["燈室"]
     assert [c[0] for c in fal.segment_calls] == ["燈室"]
+
+
+def test_add_part_by_box(client, fal):
+    _create(client)
+    box = {"x_min": 35, "y_min": 35, "x_max": 55, "y_max": 55}
+    r = client.post(f"{P}/works/作品/parts", json={"names": ["燈室"], "box": box})
+    assert r.status_code == 200 and r.json()["missing"] == []
+    p = r.json()["meta"]["parts"][0]
+    assert p["name"] == "燈室" and p["bbox"] == [40, 40, 49, 49] and p["box"] == box
+    assert [c[0] for c in fal.segment_calls] == ["燈室", ""]
+    r = client.post(f"{P}/works/作品/parts", json={"names": ["頭", "手"], "box": box})
+    assert r.status_code == 400
 
 
 def test_refine_empty_keeps_previous(client, fal, tmp_path):
@@ -227,8 +245,16 @@ def test_generate_rejects_bad_options(client, opts):
 
 def test_generate_empty_region(client):
     _create(client)
-    r = _generate(client, region_rect=None)
+    r = _generate(client, region_rect=None, alpha_hole=False)
     assert r.status_code == 400 and "沒有任何改動" in r.json()["detail"]
+
+
+def test_generate_transparent_areas_go_to_ai(client):
+    _create(client)
+    r = _generate(client, region_rect=None)  # 改動範圍空, 但拼貼有透明洞(40~50)
+    assert r.status_code == 200
+    img = cv2.imdecode(np.frombuffer(client.get(f"{P}/works/作品/files/results/r1.png").content, np.uint8), cv2.IMREAD_COLOR)
+    assert (img[45, 45] == 9).all() and (img[5, 5] == 200).all()
 
 
 def test_no_client(tmp_path):

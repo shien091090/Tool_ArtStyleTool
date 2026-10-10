@@ -119,12 +119,17 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
             names += [x for x in parts.split_names(n) if x not in names]
         if not names:
             raise ValueError("請輸入至少一個部位名稱")
+        h, w = img.shape[:2]
+        points = _points(body.get("points"), w, h)
+        box = _box(body.get("box"), w, h)
+        if (points or box) and len(names) != 1:
+            raise ValueError("用點選或框選新增部位時一次只能一個名稱")
         c = client()
         missing = []
         for n in names:
-            mask = segment(c, img, n, [], None)
+            mask = segment(c, img, n, points, box)
             if mask.any():
-                work.add_part(n, image_id, mask, [], None)
+                work.add_part(n, image_id, mask, points, box)
             else:
                 missing.append(n)
         return {"meta": work.meta, "missing": missing}
@@ -136,7 +141,23 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
         info = work.image_info(part["image"])
         points = _points(body.get("points"), info["w"], info["h"])
         box = _box(body.get("box"), info["w"], info["h"])
-        mask = segment(client(), work.image(part["image"]), part["name"], points, box)
+        img = work.image(part["image"])
+        c = client()
+        if box != part["box"] or not points:
+            # 換框(或清掉點)= 以名稱 + 框重切, 之前的點作廢
+            mask = segment(c, img, part["name"], [], box)
+            points = []
+        else:
+            # 點選是集合運算: 實測 SAM 帶名稱時會忽略名稱以外的點, 所以每個新點單獨切出點到的物件再加/減
+            mask = work.mask(part_id)
+            new_points = [p for p in points if p not in part["points"]]
+            if not new_points:
+                raise ValueError("沒有新的修正點")
+            for p in new_points:
+                hit = parts.merge_masks(c.segment(img, "", [{**p, "label": 1}], []), img.shape[:2])
+                if not hit.any():
+                    raise ValueError(f"點 ({p['x']}, {p['y']}) 沒有切到任何東西, 已保留上一版")
+                mask = mask | hit if p["label"] == 1 else np.where(hit > 0, 0, mask).astype(np.uint8)
         if not mask.any():
             raise ValueError("修正後沒有切到任何範圍, 已保留上一版")
         work.update_part_mask(part_id, mask, points, box)
@@ -195,7 +216,9 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
         expect = (main["h"] + pad["top"] + pad["bottom"], main["w"] + pad["left"] + pad["right"])
         if col.shape[:2] != expect or reg.shape[:2] != expect:
             raise ValueError(f"拼貼尺寸與作品不符(應為 {expect[1]}x{expect[0]})")
-        if not (reg > 127).any():
+        # 拼貼的透明處(挖掉的洞、擴大的畫布)一定要交給 AI 補, 不能留補洞演算法的糊色
+        reg = np.where((reg > 127) | (col[..., 3] < 128), 255, 0).astype(np.uint8)
+        if not reg.any():
             raise ValueError("沒有任何改動, 不需要生成")
         has_foreign = any(p["placed"] and p["image"] != "main" for p in work.meta["parts"])
         prompt = compose.build_prompt(has_foreign, extra)

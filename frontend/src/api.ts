@@ -106,8 +106,8 @@ export const api = {
       request<WorkMeta>(`${work(name)}/images`, { method: 'POST', body: form(source) }),
     fileUrl: (name: string, path: string, version = '') =>
       `${work(name)}/files/${path}?v=${enc(version || String(Date.now()))}`,
-    segment: (name: string, image: string, names: string[]) =>
-      request<{ meta: WorkMeta; missing: string[] }>(`${work(name)}/parts`, json('POST', { image, names })),
+    segment: (name: string, image: string, names: string[], points: SegPoint[] = [], box: SegBox | null = null) =>
+      request<{ meta: WorkMeta; missing: string[] }>(`${work(name)}/parts`, json('POST', { image, names, points, box })),
     refine: (name: string, partId: string, points: SegPoint[], box: SegBox | null) =>
       request<WorkMeta>(`${work(name)}/parts/${partId}/refine`, json('POST', { points, box })),
     split: (name: string, partId: string) =>
