@@ -44,3 +44,9 @@ def test_split_left_right():
 def test_split_single_blob_errors():
     with pytest.raises(ValueError):
         parts.split_left_right(_m(5, 10, 2, 26))
+
+
+def test_to_prompt_prefers_aliases():
+    assert parts.to_prompt("燈室(左)", {"燈室": "lantern room"}) == "lantern room"
+    assert parts.to_prompt("頭", {"燈室": "x"}) == "head"
+    assert parts.to_prompt("頭") == "head"

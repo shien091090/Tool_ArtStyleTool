@@ -18,7 +18,7 @@ COLORS = ["#e5484d", "#30a46c", "#0090ff", "#f76b15", "#8e4ec6", "#12a594",
 ANCHORS = ("top", "center", "bottom")
 MAX_SCALE = 20
 MAX_PAD = 4096
-_FILE = re.compile(r"(images|masks|results)/[A-Za-z0-9_]+\.(png|json)")
+_FILE = re.compile(r"(images|masks|results|materials)/[A-Za-z0-9_]+\.(png|json)")
 
 
 def _now() -> str:
@@ -139,7 +139,7 @@ class Work:
                                 "images": [], "parts": [], "pad": {"top": 0, "right": 0, "bottom": 0, "left": 0},
                                 "results": [], "counters": {"image": 0, "part": 0, "result": 0}})
         try:
-            for sub in ("images", "masks", "results"):
+            for sub in ("images", "masks", "results", "materials"):
                 (work.dir / sub).mkdir(parents=True)
             work._write_image("main", image_name, img)
             work.save_meta()
@@ -180,6 +180,7 @@ class Work:
         tmp.replace(self.dir / "meta.json")
 
     def _next(self, kind: str) -> int:
+        self.meta["counters"].setdefault(kind, 0)  # 舊作品沒有後來加的計數器
         self.meta["counters"][kind] += 1
         return self.meta["counters"][kind]
 
@@ -250,8 +251,87 @@ class Work:
 
     def delete_part(self, part_id: str) -> None:
         part = self.part(part_id)
+        for v in self.part_material(part_id)["variants"]:
+            self._delete_variant_files(v["id"])
         self.meta["parts"].remove(part)
         (self.dir / "masks" / f"{part_id}.png").unlink(missing_ok=True)
+        self.save_meta()
+
+    # ---- 材質 ----
+    def part_material(self, part_id: str) -> dict:
+        """部位的材質候選; 舊作品沒有這欄時補上預設(只在記憶體, 下次存檔才寫入)。"""
+        return self.part(part_id).setdefault("material", {"current": None, "variants": []})
+
+    def _material_path(self, vid: str, ref: bool = False) -> Path:
+        return self.dir / "materials" / (f"{vid}_ref.png" if ref else f"{vid}.png")
+
+    def _delete_variant_files(self, vid: str) -> None:
+        self._material_path(vid).unlink(missing_ok=True)
+        self._material_path(vid, True).unlink(missing_ok=True)
+
+    def add_material_variant(self, part_id: str, img: np.ndarray, material: str, ref: np.ndarray | None) -> dict:
+        """新增候選(整張來源圖大小); 部位目前是原本材質時自動套用。"""
+        part = self.part(part_id)
+        info = self.image_info(part["image"])
+        if img.shape[:2] != (info["h"], info["w"]):
+            raise ValueError("材質圖尺寸與來源圖不符")
+        mat = self.part_material(part_id)
+        vid = f"m{self._next('material')}"
+        (self.dir / "materials").mkdir(exist_ok=True)
+        write_png(self._material_path(vid), img)
+        if ref is not None:
+            write_png(self._material_path(vid, True), ref)
+        v = {"id": vid, "material": material, "ref": ref is not None, "created": _now()}
+        mat["variants"].append(v)
+        if mat["current"] is None:
+            mat["current"] = vid
+        self.save_meta()
+        return v
+
+    def set_material(self, part_id: str, vid: str | None) -> None:
+        mat = self.part_material(part_id)
+        if vid is not None and vid not in [v["id"] for v in mat["variants"]]:
+            raise FileNotFoundError(f"找不到材質候選 {vid}")
+        mat["current"] = vid
+        self.save_meta()
+
+    def delete_material(self, part_id: str, vid: str) -> None:
+        mat = self.part_material(part_id)
+        v = next((v for v in mat["variants"] if v["id"] == vid), None)
+        if v is None:
+            raise FileNotFoundError(f"找不到材質候選 {vid}")
+        mat["variants"].remove(v)
+        if mat["current"] == vid:
+            mat["current"] = None
+        self._delete_variant_files(vid)
+        self.save_meta()
+
+    def material_image(self, part_id: str) -> np.ndarray:
+        """部位目前的像素來源: 套用中的候選, 否則來源圖。"""
+        part = self.part(part_id)
+        cur = self.part_material(part_id)["current"]
+        return read_png(self._material_path(cur)) if cur else self.image(part["image"])
+
+    def copy_materials(self, src_id: str, dst_id: str) -> None:
+        """拆左右用: 候選檔複製一份(新編號), 套用中的對應過去。"""
+        src = self.part_material(src_id)
+        dst = self.part_material(dst_id)
+        for v in src["variants"]:
+            nid = f"m{self._next('material')}"
+            shutil.copyfile(self._material_path(v["id"]), self._material_path(nid))
+            if v["ref"]:
+                shutil.copyfile(self._material_path(v["id"], True), self._material_path(nid, True))
+            dst["variants"].append({**v, "id": nid})
+            if src["current"] == v["id"]:
+                dst["current"] = nid
+        self.save_meta()
+
+    # ---- 別名(AI 列部位時記下的中文名 → 英文) ----
+    def aliases(self) -> dict:
+        return dict(self.meta.get("aliases") or {})
+
+    def set_alias(self, zh: str, en: str) -> None:
+        self.meta.setdefault("aliases", {})[zh] = en
         self.save_meta()
 
     def set_layout(self, parts: list, pad) -> None:

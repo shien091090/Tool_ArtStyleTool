@@ -182,3 +182,66 @@ def test_list_skips_corrupt_work(tmp_path, work):
     bad.mkdir()
     (bad / "meta.json").write_text("{not json", encoding="utf-8")
     assert [m["name"] for m in Work.list(tmp_path)] == ["作品"]
+
+
+# ---- 材質 ----
+def _var(v=50):
+    return _img(v=v)
+
+
+def test_old_work_without_material_fields(work):
+    p = work.add_part("頭", "main", _mask(), [], None)
+    p.pop("material", None)
+    work.meta["counters"].pop("material", None)
+    work.meta.pop("aliases", None)
+    work.save_meta()
+    again = Work.open(work.root, work.name)
+    assert again.part_material("p1") == {"current": None, "variants": []}
+    assert (again.material_image("p1") == again.image("main")).all()
+    v = again.add_material_variant("p1", _var(), "金屬", None)
+    assert v["id"] == "m1"
+
+
+def test_material_variants_lifecycle(work):
+    work.add_part("頭", "main", _mask(), [], None)
+    v1 = work.add_material_variant("p1", _var(50), "金屬", None)
+    assert work.part_material("p1")["current"] == "m1"  # 原本材質時自動套用第一張
+    v2 = work.add_material_variant("p1", _var(60), "木頭", _img(10, 10, 9))
+    assert v2["ref"] is True and work.part_material("p1")["current"] == "m1"
+    assert work.file_path("materials/m2.png").is_file() and work.file_path("materials/m2_ref.png").is_file()
+    assert work.material_image("p1")[0, 0, 0] == 50
+    work.set_material("p1", "m2")
+    assert work.material_image("p1")[0, 0, 0] == 60
+    work.set_material("p1", None)
+    assert work.material_image("p1")[0, 0, 0] == 200
+    with pytest.raises(FileNotFoundError):
+        work.set_material("p1", "m9")
+    work.set_material("p1", "m2")
+    work.delete_material("p1", "m2")  # 刪套用中 → 切回原本
+    m = work.part_material("p1")
+    assert m["current"] is None and [x["id"] for x in m["variants"]] == ["m1"]
+    assert not (work.dir / "materials" / "m2.png").exists() and not (work.dir / "materials" / "m2_ref.png").exists()
+    assert work.add_material_variant("p1", _var(), "石頭", None)["id"] == "m3"  # 編號不重用
+    with pytest.raises(ValueError):
+        work.add_material_variant("p1", _img(10, 10), "錯尺寸", None)
+
+
+def test_copy_materials_and_delete_part(work):
+    work.add_part("翅膀", "main", _mask(), [], None)
+    work.add_part("翅膀2", "main", _mask(), [], None)
+    work.add_material_variant("p1", _var(50), "金屬", _img(10, 10, 9))
+    work.add_material_variant("p1", _var(60), "木頭", None)
+    work.set_material("p1", "m2")
+    work.copy_materials("p1", "p2")
+    m2 = work.part_material("p2")
+    assert [x["id"] for x in m2["variants"]] == ["m3", "m4"] and m2["current"] == "m4"
+    assert work.file_path("materials/m3_ref.png").is_file()
+    work.delete_part("p1")
+    assert not (work.dir / "materials" / "m1.png").exists()
+    assert (work.material_image("p2")[0, 0, 0]) == 60
+
+
+def test_aliases(work):
+    assert work.aliases() == {}
+    work.set_alias("燈室", "lantern room")
+    assert Work.open(work.root, work.name).aliases() == {"燈室": "lantern room"}

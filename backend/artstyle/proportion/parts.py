@@ -22,9 +22,10 @@ def to_display_name(name: str) -> str:
     return re.sub(r"\((左|右)\)$", "", name.strip()).strip()
 
 
-def to_prompt(name: str) -> str:
+def to_prompt(name: str, aliases: dict | None = None) -> str:
+    """部位名稱 → 切部位用的英文提示。作品別名(AI 列部位時記下的)優先, 再查內建對照表。"""
     name = to_display_name(name)  # 拆左右後重切時用原名
-    return NAMES.get(name, name)
+    return (aliases or {}).get(name) or NAMES.get(name, name)
 
 
 def split_names(text: str) -> list[str]:
