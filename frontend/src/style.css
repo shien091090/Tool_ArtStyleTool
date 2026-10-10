@@ -119,3 +119,17 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .result-item { border: 2px solid transparent; border-radius: 6px; overflow: hidden; cursor: pointer; background: #0003; }
 .result-item.active { border-color: var(--accent); }
 .result-item img { width: 100%; display: block; aspect-ratio: 1; object-fit: contain; }
+
+/* 部位工坊: AI 列部位與材質 */
+.suggest-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--line); cursor: pointer; }
+.mat-box { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line); padding-top: 8px; }
+.swatches { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.swatch { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 3px; font-size: 11px; }
+.swatch img { width: 100%; aspect-ratio: 1; border-radius: 4px; display: block; }
+.variant-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.variant-item { position: relative; }
+.variant { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 3px; width: 76px; font-size: 11px; border: 2px solid transparent; }
+.variant.active { border-color: #6ea8fe; }
+.variant canvas { max-width: 64px; max-height: 64px; background: #0003; }
+.variant span { max-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.variant-del { position: absolute; top: -4px; right: -4px; padding: 0 5px; font-size: 11px; line-height: 16px; border-radius: 999px; }

@@ -1,9 +1,10 @@
 import { api, type PackMeta } from '../api';
-import { exportCollage, loadImage, WorkAssets } from '../proportion/draw';
+import { exportCollage, hasEdits, loadImage, WorkAssets } from '../proportion/draw';
+import { MATERIALS, swatchUrl } from '../proportion/materials';
 import { Editor, type Tool } from '../proportion/editor';
 import { ANCHORS, EDIT_MODELS, ZERO_PAD, type Anchor, type Pad, type Part, type PartTransform, type SegBox, type SegPoint, type WorkMeta } from '../proportion/model';
 import { applyRecipe, parseProportionRecipe, recipeFromParts } from '../proportion/recipe';
-import { autoPad, isChanged, placeForeign } from '../proportion/transform';
+import { autoPad, hasMaterial, isChanged, placeForeign } from '../proportion/transform';
 import { el, option, showBanner } from './ui';
 
 const QUICK_NAMES = ['頭', '手', '腳', '身體', '翅膀', '尾巴'];
@@ -33,6 +34,8 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
   let saveTimer: number | undefined;
   let savePromise: Promise<void> = Promise.resolve();
   let alive = true;
+  /** AI 列出的部位(對目前檢視的圖), 勾選的會跟名稱欄一起切 */
+  let suggested: { name: string; checked: boolean }[] = [];
 
   // ---- 上方工具列 ----
   const banner = el('div');
@@ -97,6 +100,8 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
     return b;
   }));
   const segBtn = button('切部位', () => void segmentNames(), 'primary');
+  const suggestBtn = button('AI 列出部位', () => void suggestParts());
+  const suggestBox = el('div', { className: 'chips' });
   const toolBtns = new Map<Tool, HTMLButtonElement>();
   const toolRow = el('div', { className: 'seg' }, (['move', 'point', 'box'] as Tool[]).map((t) => {
     const b = button({ move: '選取移動', point: '點選修正', box: '框選' }[t], () => {
@@ -115,7 +120,8 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
     showMasks = maskChk.checked;
     redraw();
   });
-  const segSection = section('拆部位', partNames, chips, el('div', { className: 'row' }, [segBtn, el('label', {}, [maskChk, '顯示遮罩'])]),
+  const segSection = section('拆部位', el('div', { className: 'row' }, [partNames, suggestBtn]), suggestBox, chips,
+    el('div', { className: 'row' }, [segBtn, el('label', {}, [maskChk, '顯示遮罩'])]),
     toolRow, toolHint);
 
   // 部位清單
@@ -169,9 +175,35 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
   onNum(fDx, (t, v) => ({ ...t, dx: v }));
   onNum(fDy, (t, v) => ({ ...t, dy: v }));
   anchorSel.addEventListener('change', () => editSelected((t) => ({ ...t, anchor: anchorSel.value as Anchor })));
+  const matInput = el('input');
+  matInput.placeholder = '材質描述, 例如: 長滿青苔的石頭';
+  matInput.maxLength = 200;
+  const swatches = el('div', { className: 'swatches' }, MATERIALS.map((m) => {
+    const img = el('img');
+    img.src = swatchUrl(m.key);
+    img.alt = m.label;
+    const b = el('button', { className: 'swatch', title: m.label }, [img, el('span', { text: m.label })]);
+    b.addEventListener('click', () => {
+      matInput.value = m.label;
+    });
+    return b;
+  }));
+  const refFile = el('input');
+  refFile.type = 'file';
+  refFile.accept = 'image/*';
+  const matCount = el('select');
+  for (const n of [1, 2, 3, 4]) matCount.append(option(String(n), `${n} 張`));
+  matCount.value = '2';
+  const matBtn = button('換材質', () => void changeMaterial(), 'primary');
+  const variantList = el('div', { className: 'variant-list' });
+  const matBox = el('div', { className: 'mat-box' }, [
+    el('h3', { text: '材質' }), swatches, matInput,
+    el('label', { className: 'small', title: '選填: AI 參考這張圖的質感' }, ['參考圖', refFile]),
+    el('div', { className: 'row' }, [matCount, matBtn]), variantList,
+  ]);
   const selSection = section('選中部位', selTitle,
     el('div', { className: 'row' }, [placeBtn, unplaceBtn, hideLabel]),
-    el('div', { className: 'row' }, [splitBtn, resetBtn, delBtn]), fieldBox);
+    el('div', { className: 'row' }, [splitBtn, resetBtn, delBtn]), fieldBox, matBox);
 
   // 畫布擴大
   const padInputs = (['top', 'right', 'bottom', 'left'] as const).map((k) => {
@@ -248,11 +280,12 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
   // ---- 共用 ----
   const mainInfo = () => meta!.images.find((i) => i.id === 'main')!;
   const selPart = (): Part | undefined => meta?.parts.find((p) => p.id === selected);
-  const actionButtons = [createBtn, addImgBtn, segBtn, splitBtn, delBtn, genBtn, applyRecipeBtn, saveRecipeBtn];
+  const actionButtons = [createBtn, addImgBtn, segBtn, suggestBtn, matBtn, splitBtn, delBtn, genBtn, applyRecipeBtn, saveRecipeBtn];
   /** AI 呼叫進行中鎖住所有會改作品的操作: 後端回傳的 meta 會蓋掉期間的修改。 */
   const lockables = (): (HTMLInputElement | HTMLSelectElement | HTMLButtonElement)[] => [
     workSel, placeBtn, unplaceBtn, hideChk, resetBtn, upBtn, downBtn, autoPadBtn, anchorSel, lockChk,
     fScaleX, fScaleY, fRot, fDx, fDy, ...padInputs.map(([, i]) => i), ...toolBtns.values(),
+    matInput, refFile, matCount, viewSel, ...swatches.querySelectorAll('button'),
   ];
 
   function redraw() {
@@ -362,6 +395,9 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
       return;
     }
     segBtn.disabled = busy || !falOk;
+    suggestBtn.disabled = busy || !falOk;
+    matBtn.disabled = busy || !falOk;
+    syncSuggestions();
     // 檢視選單
     viewSel.replaceChildren(...meta.images.map((im) => option(im.id, im.id === 'main' ? '主圖(拼貼)' : `素材: ${im.name}`)));
     viewSel.value = view;
@@ -372,6 +408,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
       if (p.image !== 'main') tags.push(p.placed ? `來自 ${imgName(p.image)} · 已放到主圖` : `來自 ${imgName(p.image)}`);
       if (p.image === 'main' && p.transform.hidden) tags.push('隱藏');
       else if (isChanged(p) && p.image === 'main') tags.push('已調整');
+      if (hasMaterial(p)) tags.push('換材質');
       const row = el('div', { className: `part-row${p.id === selected ? ' active' : ''}` }, [
         el('span', { className: 'dot' }),
         el('span', { text: p.name }),
@@ -398,13 +435,14 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
       hideLabel.classList.toggle('hidden', p.image !== 'main');
       hideChk.checked = p.transform.hidden;
       resetBtn.classList.toggle('hidden', !(p.image === 'main' ? isChanged(p) : p.placed));
+      syncVariants(p);
     }
     syncFields();
     for (const [k, i] of padInputs) i.value = String(meta.pad[k]);
     // 生成
-    const anyChange = meta.parts.some(isChanged);
+    const anyChange = hasEdits(meta);
     genBtn.disabled = busy || !falOk || !anyChange;
-    genHint.textContent = !falOk ? '沒有設定 FAL_KEY, 無法生成(本機調整仍可使用)' : anyChange ? '' : '還沒有調整任何部位';
+    genHint.textContent = !falOk ? '沒有設定 FAL_KEY, 無法生成(本機調整仍可使用)' : anyChange ? '' : '還沒有調整任何部位或換材質';
     // 結果
     resultList.replaceChildren(...[...meta.results].reverse().map((r) => {
       const img = el('img');
@@ -486,6 +524,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
   workSel.addEventListener('change', () => void openWork(workSel.value));
   viewSel.addEventListener('change', () => {
     view = viewSel.value;
+    suggested = [];
     compare = null;
     redraw();
     syncAll();
@@ -523,12 +562,14 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
   async function segmentNames() {
     await run('AI 切部位中…', async () => {
       if (!meta) return;
-      const names = splitNames(partNames.value);
-      if (!names.length) throw new Error('請輸入部位名稱');
+      const picked = suggested.filter((x) => x.checked).map((x) => x.name);
+      const names = [...new Set([...picked, ...splitNames(partNames.value)])];
+      if (!names.length) throw new Error('請輸入部位名稱, 或按「AI 列出部位」後勾選');
       await flushSave();
       const before = new Set(meta.parts.map((p) => p.id));
       const res = await api.proportion.segment(meta.name, view, names);
       await setMeta(res.meta);
+      suggested = [];
       const added = res.meta.parts.filter((p) => !before.has(p.id));
       if (added.length) selected = added[added.length - 1].id;
       if (res.missing.length) {
@@ -618,6 +659,106 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
     target.transform = { ...target.transform, hidden: false };
     showBanner(banner, 'info', `已把主圖的「${target.name}」放回來`);
     return true;
+  }
+
+  // ---- AI 列出部位 ----
+  async function suggestParts() {
+    await run('AI 看圖列部位中…', async () => {
+      if (!meta) return;
+      await flushSave();
+      const res = await api.proportion.suggestParts(meta.name, view);
+      await setMeta(res.meta);
+      const existing = new Set(meta.parts.filter((p) => p.image === view).map((p) => baseName(p.name)));
+      suggested = res.parts.map((x) => ({ name: x.name, checked: !existing.has(x.name) }));
+      redraw();
+    });
+  }
+
+  function syncSuggestions() {
+    suggestBox.replaceChildren(...suggested.map((x) => {
+      const chk = el('input');
+      chk.type = 'checkbox';
+      chk.checked = x.checked;
+      chk.disabled = busy;
+      chk.addEventListener('change', () => {
+        x.checked = chk.checked;
+      });
+      return el('label', { className: 'chip suggest-chip' }, [chk, x.name]);
+    }));
+    if (suggested.length) suggestBox.append(el('span', { className: 'muted small', text: '勾選的會跟名稱欄一起切; 已有的部位預設不勾' }));
+  }
+
+  // ---- 材質 ----
+  /** 候選縮圖: 從整張材質圖(或來源圖)裁出部位外框。 */
+  function partThumb(p: Part, url: string | null): HTMLCanvasElement {
+    const c = el('canvas');
+    const [x0, y0, x1, y1] = p.bbox;
+    const w = x1 - x0 + 1;
+    const h = y1 - y0 + 1;
+    const k = 64 / Math.max(w, h);
+    c.width = Math.max(1, Math.round(w * k));
+    c.height = Math.max(1, Math.round(h * k));
+    const draw = (img: CanvasImageSource) => c.getContext('2d')!.drawImage(img, x0, y0, w, h, 0, 0, c.width, c.height);
+    if (url) void loadImage(url).then(draw, () => undefined);
+    else {
+      const src = assets.images.get(p.image);
+      if (src) draw(src);
+    }
+    return c;
+  }
+
+  function syncVariants(p: Part) {
+    const mat = p.material ?? { current: null, variants: [] };
+    const item = (vid: string | null, label: string, thumb: HTMLCanvasElement) => {
+      const pick = el('button', { className: `variant${mat.current === vid ? ' active' : ''}`, title: label }, [thumb, el('span', { text: label })]);
+      pick.disabled = busy;
+      pick.addEventListener('click', () => void pickMaterial(p.id, vid));
+      const wrap = el('div', { className: 'variant-item' }, [pick]);
+      if (vid) {
+        const del = el('button', { text: '×', className: 'variant-del', title: '刪除這張候選' });
+        del.disabled = busy;
+        del.addEventListener('click', () => void deleteVariant(p.id, vid));
+        wrap.append(del);
+      }
+      return wrap;
+    };
+    variantList.replaceChildren(
+      item(null, '原本材質', partThumb(p, null)),
+      ...mat.variants.map((v) => item(v.id, v.material + (v.ref ? '(參考圖)' : ''),
+        partThumb(p, api.proportion.fileUrl(meta!.name, `materials/${v.id}.png`, v.id)))),
+    );
+  }
+
+  async function changeMaterial() {
+    const p = selPart();
+    if (!p || !meta) return;
+    await run('AI 換材質中(約 15 秒)…', async () => {
+      const text = matInput.value.trim();
+      if (!text) throw new Error('請輸入材質描述, 或點選上面的材質');
+      await flushSave();
+      const res = await api.proportion.addMaterials(meta!.name, p.id, text, Number(matCount.value), refFile.files?.[0] ?? null);
+      await setMeta(res.meta);
+      compare = null;
+      if (res.errors.length) showBanner(banner, 'warn', res.errors.join('; '));
+      redraw();
+    });
+  }
+
+  async function pickMaterial(pid: string, vid: string | null) {
+    await run('套用材質中…', async () => {
+      await flushSave();
+      await setMeta(await api.proportion.setMaterial(meta!.name, pid, vid));
+      compare = null;
+      redraw();
+    });
+  }
+
+  async function deleteVariant(pid: string, vid: string) {
+    await run('刪除候選中…', async () => {
+      await flushSave();
+      await setMeta(await api.proportion.deleteMaterial(meta!.name, pid, vid));
+      redraw();
+    });
   }
 
   // ---- 外來部位與圖層 ----
