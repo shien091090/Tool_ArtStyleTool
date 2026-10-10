@@ -17,6 +17,9 @@ LINE_MODELS = {"lineart": "fal-ai/image-preprocessors/lineart"}
 SAM_MODEL = "fal-ai/sam-3/image"
 # 實驗(2026-10-10): Nano Banana 最忠實, Qwen 次之; Kontext 會整張改色, 不提供
 EDIT_MODELS = {"nano-banana": "fal-ai/nano-banana/edit", "qwen": "fal-ai/qwen-image-edit"}
+# 看圖回文字(列部位): 實測約 2.6 秒、每次 < US$0.001
+VISION_ENDPOINT = "openrouter/router/vision"
+VISION_MODEL = "google/gemini-2.5-flash"
 
 
 class FalError(Exception):
@@ -28,7 +31,10 @@ class FalClient(Protocol):
 
     def segment(self, img: np.ndarray, prompt: str, points: list[dict], boxes: list[dict]) -> list[tuple[np.ndarray, float]]: ...
 
-    def edit(self, model_key: str, img: np.ndarray, prompt: str, num_images: int) -> list[np.ndarray]: ...
+    def edit(self, model_key: str, img: np.ndarray, prompt: str, num_images: int,
+             extra_images: list[np.ndarray] = ()) -> list[np.ndarray]: ...
+
+    def vision(self, img: np.ndarray, prompt: str) -> str: ...
 
 
 class HttpFalClient:
@@ -105,14 +111,27 @@ class HttpFalClient:
             return out
         return self._call(SAM_MODEL, fn)
 
-    def edit(self, model_key, img, prompt, num_images):
+    def vision(self, img, prompt):
+        body = {"model": VISION_MODEL, "prompt": prompt, "image_urls": [to_data_uri(img)]}
+
+        def fn(http):
+            data = self._post(http, VISION_ENDPOINT, body)
+            out = data.get("output") if isinstance(data, dict) else None
+            if not isinstance(out, str):
+                raise FalError(f"fal.ai 回傳格式不符({VISION_ENDPOINT}): {str(data)[:300]}")
+            return out
+        return self._call(VISION_ENDPOINT, fn)
+
+    def edit(self, model_key, img, prompt, num_images, extra_images=()):
         if model_key not in EDIT_MODELS:
             raise ValueError(f"不支援的修圖模型: {model_key}")
         model = EDIT_MODELS[model_key]
         h, w = img.shape[:2]
         body = {"prompt": prompt, "num_images": int(num_images)}
         if model_key == "nano-banana":
-            body["image_urls"] = [to_data_uri(img)]
+            body["image_urls"] = [to_data_uri(img)] + [to_data_uri(x) for x in extra_images]
+        elif extra_images:
+            raise ValueError(f"{model_key} 不支援多張輸入圖")
         else:
             body["image_url"] = to_data_uri(img)
             body["image_size"] = {"width": w, "height": h}

@@ -6,7 +6,7 @@ import httpx
 import numpy as np
 import pytest
 
-from artstyle.fal import EDIT_MODELS, SAM_MODEL, FalError, HttpFalClient
+from artstyle.fal import EDIT_MODELS, SAM_MODEL, VISION_ENDPOINT, VISION_MODEL, FalError, HttpFalClient
 
 
 def _png_uri(img):
@@ -70,3 +70,41 @@ def test_edit_unknown_model_and_http_error():
         c.edit("kontext", np.zeros((4, 4, 3), np.uint8), "x", 1)
     with pytest.raises(FalError):
         c.edit("qwen", np.zeros((4, 4, 3), np.uint8), "x", 1)
+
+
+def test_vision_returns_output_text():
+    sent = {}
+
+    def handler(req):
+        sent["url"] = str(req.url)
+        sent["body"] = json.loads(req.content)
+        return httpx.Response(200, json={"output": "hello"})
+
+    out = _client(handler).vision(np.zeros((8, 8, 3), np.uint8), "list parts")
+    assert out == "hello"
+    assert sent["url"].endswith(VISION_ENDPOINT)
+    assert sent["body"]["model"] == VISION_MODEL and sent["body"]["prompt"] == "list parts"
+    assert len(sent["body"]["image_urls"]) == 1
+
+
+def test_vision_bad_payload_raises():
+    with pytest.raises(FalError):
+        _client(lambda r: httpx.Response(200, json={"nope": 1})).vision(np.zeros((4, 4, 3), np.uint8), "x")
+
+
+def test_edit_extra_images():
+    sent = []
+    res = np.full((10, 12, 3), 200, np.uint8)
+
+    def handler(req):
+        if req.method == "GET":
+            return httpx.Response(200, content=cv2.imencode(".png", res)[1].tobytes())
+        sent.append(json.loads(req.content))
+        return httpx.Response(200, json={"images": [{"url": "https://x/a.png"}]})
+
+    c = _client(handler)
+    img = np.zeros((20, 30, 3), np.uint8)
+    c.edit("nano-banana", img, "fix", 1, [np.zeros((5, 5, 3), np.uint8)])
+    assert len(sent[0]["image_urls"]) == 2
+    with pytest.raises(ValueError):
+        c.edit("qwen", img, "fix", 1, [np.zeros((5, 5, 3), np.uint8)])
