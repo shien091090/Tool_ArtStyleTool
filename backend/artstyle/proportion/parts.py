@@ -17,8 +17,13 @@ NAMES = {
 }
 
 
+def to_display_name(name: str) -> str:
+    """去掉拆左右加上的「(左)」「(右)」。"""
+    return re.sub(r"\((左|右)\)$", "", name.strip()).strip()
+
+
 def to_prompt(name: str) -> str:
-    name = name.strip()
+    name = to_display_name(name)  # 拆左右後重切時用原名
     return NAMES.get(name, name)
 
 

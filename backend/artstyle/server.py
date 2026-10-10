@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse, Response
 from . import config, decompose, lospec, recipes
 from .fal import FalClient, FalError, HttpFalClient
 from .pack import LAYERS, Pack
+from .proportion.api import create_router as create_proportion_router
 
 
 APP_HEADER = "X-ArtStyle"
@@ -119,6 +120,7 @@ def create_app(data_dir: Path, client_factory: Callable[[], FalClient | None] = 
         recipes.save_recipe(recipes_dir, name, data)
         return {"ok": True}
 
+    app.include_router(create_proportion_router(data_dir, client_factory))
     return app
 
 

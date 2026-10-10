@@ -9,6 +9,7 @@ def test_to_prompt():
     assert parts.to_prompt(" 翅膀 ") == "wing"
     assert parts.to_prompt("lantern") == "lantern"
     assert parts.to_prompt("燈室") == "燈室"
+    assert parts.to_prompt("翅膀(左)") == "wing"
 
 
 def test_split_names():
