@@ -71,6 +71,12 @@ export function mountRenderPage(root: HTMLElement, params: URLSearchParams): () 
     gradientEditor.setColors(recipe.grade.gradientStops);
   };
 
+  // 都是 1 = 原圖; 往下拉才換成工具算的光影與乾淨色塊
+  const fKeep = pane.addFolder({ title: '保留原圖' });
+  track('keep.enabled', fKeep.addBinding(recipe.keep, 'enabled', { label: '啟用' }));
+  track('keep.shade', fKeep.addBinding(recipe.keep, 'shade', { label: '保留原圖光影', ...range('keep.shade') }));
+  track('keep.texture', fKeep.addBinding(recipe.keep, 'texture', { label: '保留原圖紋理', ...range('keep.texture') }));
+
   const fColor = pane.addFolder({ title: '色彩' });
   track('color.enabled', fColor.addBinding(recipe.color, 'enabled', { label: '啟用' }));
   track('color.paletteMode', fColor.addBinding(recipe.color, 'paletteMode', {
