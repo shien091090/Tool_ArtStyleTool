@@ -47,8 +47,17 @@ class FakeFal:
             return [(m, 0.6)]
         return []
 
-    def edit(self, model_key, img, prompt, num_images):
+    vision_reply = '{"parts": [{"zh": "頭", "en": "head"}, {"zh": "燈室", "en": "lantern room"}]}'
+
+    def vision(self, img, prompt):
+        self.vision_calls = getattr(self, "vision_calls", []) + [img.shape]
+        if self.fail:
+            raise FalError("模擬失敗")
+        return self.vision_reply
+
+    def edit(self, model_key, img, prompt, num_images, extra_images=()):
         self.edit_calls.append((model_key, img.shape, prompt, num_images))
+        self.edit_extra = list(extra_images)
         if self.fail:
             raise FalError("模擬失敗")
         n = num_images if self.returned is None else self.returned
@@ -290,3 +299,94 @@ def test_file_access_rejects_traversal(client):
     _create(client)
     assert client.get(f"{P}/works/作品/files/images/main.png").status_code == 200
     assert client.get(f"{P}/works/作品/files/..%2F/meta.json").status_code == 404
+
+
+# ---- AI 列部位 ----
+def test_suggest_parts_records_aliases(client, fal):
+    _create(client)
+    r = client.post(f"{P}/works/作品/suggest-parts", json={"image": "main"})
+    assert r.status_code == 200, r.text
+    assert r.json()["parts"] == [{"name": "頭", "en": "head"}, {"name": "燈室", "en": "lantern room"}]
+    assert r.json()["meta"]["aliases"] == {"燈室": "lantern room"}  # 內建對照表有的不記
+    client.post(f"{P}/works/作品/parts", json={"image": "main", "names": ["燈室"]})
+    assert fal.segment_calls[-1][0] == "lantern room"
+
+
+def test_suggest_parts_bad_reply(client, fal):
+    _create(client)
+    fal.vision_reply = "抱歉我看不出來"
+    r = client.post(f"{P}/works/作品/suggest-parts", json={"image": "main"})
+    assert r.status_code == 400 and "AI 沒有列出部位" in r.json()["detail"]
+    assert client.post(f"{P}/works/作品/suggest-parts", json={"image": "s9"}).status_code == 404
+
+
+# ---- 材質 ----
+def _with_head(client):
+    _create(client)
+    return client.post(f"{P}/works/作品/parts", json={"image": "main", "names": ["頭"]}).json()["meta"]
+
+
+def test_material_variants_api(client, fal):
+    _with_head(client)
+    src = cv2.imdecode(np.frombuffer(client.get(f"{P}/works/作品/files/images/main.png").content, np.uint8), 1)
+    r = client.post(f"{P}/works/作品/parts/p1/materials", data={"material": "生鏽金屬", "count": "2"})
+    assert r.status_code == 200, r.text
+    part = r.json()["meta"]["parts"][0]
+    assert [v["id"] for v in part["material"]["variants"]] == ["m1", "m2"] and part["material"]["current"] == "m1"
+    assert "rust" not in fal.edit_calls[-1][2] and "生鏽金屬" in fal.edit_calls[-1][2] and "head" in fal.edit_calls[-1][2]
+    # 只送部位外框 + 邊距的裁切
+    h, w = src.shape[:2]
+    assert fal.edit_calls[-1][1][0] < h and fal.edit_calls[-1][1][1] < w
+    out = cv2.imdecode(np.frombuffer(client.get(f"{P}/works/作品/files/materials/m1.png").content, np.uint8), 1)
+    assert out.shape == src.shape
+    assert (out[45:] == src[45:]).all()  # 部位(5~20 列)遠處完全不動
+    assert (out[10, 30] == 9).all()        # 部位內換成 AI 結果
+    r = client.put(f"{P}/works/作品/parts/p1/material", json={"variant": "m2"})
+    assert r.json()["parts"][0]["material"]["current"] == "m2"
+    r = client.delete(f"{P}/works/作品/parts/p1/materials/m2")
+    assert r.json()["parts"][0]["material"]["current"] is None
+    assert client.put(f"{P}/works/作品/parts/p1/material", json={"variant": "m9"}).status_code == 404
+
+
+def test_material_reference_and_short_count(client, fal):
+    _with_head(client)
+    fal.returned = 1
+    r = client.post(f"{P}/works/作品/parts/p1/materials", data={"material": "木頭", "count": "3"},
+                    files={"reference": ("wood.png", _png(np.full((8, 8, 3), 77, np.uint8)), "image/png")})
+    assert r.status_code == 200, r.text
+    assert len(fal.edit_extra) == 1 and "second image" in fal.edit_calls[-1][2]
+    assert r.json()["errors"] and len(r.json()["meta"]["parts"][0]["material"]["variants"]) == 1
+    assert r.json()["meta"]["parts"][0]["material"]["variants"][0]["ref"] is True
+
+
+@pytest.mark.parametrize("data", [{"material": " ", "count": "1"}, {"material": "x" * 201, "count": "1"},
+                                  {"material": "金屬", "count": "5"}, {"material": "金屬", "count": "a"}])
+def test_material_validation(client, fal, data):
+    _with_head(client)
+    assert client.post(f"{P}/works/作品/parts/p1/materials", data=data).status_code == 400
+    assert fal.edit_calls == []
+
+
+def test_material_bad_reference(client, fal):
+    _with_head(client)
+    r = client.post(f"{P}/works/作品/parts/p1/materials", data={"material": "金屬", "count": "1"},
+                    files={"reference": ("x.png", b"not image", "image/png")})
+    assert r.status_code == 400
+
+
+def test_material_fal_error_keeps_part(client, fal):
+    _with_head(client)
+    fal.fail = True
+    r = client.post(f"{P}/works/作品/parts/p1/materials", data={"material": "金屬", "count": "1"})
+    assert r.status_code >= 400
+    assert client.get(f"{P}/works/作品").json()["parts"][0].get("material", {"variants": []})["variants"] == []
+
+
+def test_split_inherits_materials(client, fal):
+    _create(client)
+    client.post(f"{P}/works/作品/parts", json={"image": "main", "names": ["翅膀"]})
+    client.post(f"{P}/works/作品/parts/p1/materials", data={"material": "羽毛", "count": "1"})
+    meta = client.post(f"{P}/works/作品/parts/p1/split").json()
+    left, right = meta["parts"]
+    assert left["material"]["current"] == "m1" and right["material"]["current"] == "m2"
+    assert client.get(f"{P}/works/作品/files/materials/m2.png").status_code == 200

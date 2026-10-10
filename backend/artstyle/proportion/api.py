@@ -10,10 +10,10 @@ from fastapi.responses import Response
 from .. import recipes as recipe_files
 from ..decompose import NoClientError
 from ..fal import EDIT_MODELS, FalClient
-from ..imaging import decode_any, to_gray
+from ..imaging import decode_any, limit_size, load_rgb, to_gray
 from ..names import validate_name
 from ..pack import Pack
-from . import compose, parts, recipes
+from . import compose, material as materials, parts, recipes, suggest
 from .work import Work, rebase_transform
 
 MAX_EXTRA = 500
@@ -66,9 +66,9 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
     def open_work(name: str) -> Work:
         return Work.open(works_dir, name)
 
-    def segment(c: FalClient, img: np.ndarray, name: str, points: list, box) -> np.ndarray:
+    def segment(c: FalClient, img: np.ndarray, name: str, points: list, box, aliases: dict) -> np.ndarray:
         boxes = [box] if box else []
-        merged = parts.merge_masks(c.segment(img, parts.to_prompt(name), points, boxes), img.shape[:2])
+        merged = parts.merge_masks(c.segment(img, parts.to_prompt(name, aliases), points, boxes), img.shape[:2])
         if not merged.any() and (points or boxes):
             # 細部位名稱 SAM 常認不得: 有點選或框選時改成只靠位置再試一次
             merged = parts.merge_masks(c.segment(img, "", points, boxes), img.shape[:2])
@@ -127,7 +127,7 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
         c = client()
         missing = []
         for n in names:
-            mask = segment(c, img, n, points, box)
+            mask = segment(c, img, n, points, box, work.aliases())
             if mask.any():
                 work.add_part(n, image_id, mask, points, box)
             else:
@@ -145,7 +145,7 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
         c = client()
         if box != part["box"] or not points:
             # 換框(或清掉點)= 以名稱 + 框重切, 之前的點作廢
-            mask = segment(c, img, part["name"], [], box)
+            mask = segment(c, img, part["name"], [], box, work.aliases())
             points = []
         else:
             # 點選是集合運算: 實測 SAM 帶名稱時會忽略名稱以外的點, 所以每個新點單獨切出點到的物件再加/減
@@ -175,7 +175,59 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
         new = work.add_part(f"{base}(右)", part["image"], right, [], None)
         new.update(placed=part["placed"], place=part["place"],
                    transform={**rebase_transform(old_transform, part["place"], old_bbox, new["bbox"]), "z": new["transform"]["z"]})
-        work.save_meta()
+        work.copy_materials(part_id, new["id"])  # 內部會存檔
+        return work.meta
+
+    @r.post("/works/{name}/suggest-parts")
+    def suggest_parts(name: str, body: dict = Body(...)):
+        work = open_work(name)
+        img = work.image(body.get("image", "main"))
+        items = suggest.parse(client().vision(img, suggest.PROMPT))
+        for it in items:
+            if it["name"] not in parts.NAMES:
+                work.set_alias(it["name"], it["en"])
+        return {"parts": items, "meta": work.meta}
+
+    @r.post("/works/{name}/parts/{part_id}/materials")
+    async def add_materials(name: str, part_id: str, material: str = Form(...), count: str = Form(...),
+                            reference: UploadFile | None = File(None)):
+        work = open_work(name)
+        part = work.part(part_id)
+        material = material.strip()
+        if not 1 <= len(material) <= materials.MAX_MATERIAL:
+            raise ValueError(f"材質描述必須是 1~{materials.MAX_MATERIAL} 字")
+        if not count.isdigit() or not 1 <= int(count) <= materials.MAX_COUNT:
+            raise ValueError(f"候選張數必須是 1~{materials.MAX_COUNT}")
+        ref = None
+        if reference is not None:
+            try:
+                ref = limit_size(load_rgb(await reference.read()), 1024)  # 參考圖只看質感, 不用大圖
+            except ValueError:
+                raise ValueError("參考圖無法讀取, 請換一張圖")
+        src = work.image(part["image"])
+        mask = work.mask(part_id)
+        box = materials.crop_box(mask)
+        x0, y0, x1, y1 = box
+        prompt = materials.build_prompt(parts.to_prompt(part["name"], work.aliases()), material, ref is not None)
+        images = client().edit("nano-banana", src[y0:y1, x0:x1], prompt, int(count), [ref] if ref is not None else [])
+        for ai in images:
+            work.add_material_variant(part_id, materials.paste(src, ai, mask, box), material, ref)
+        errors = [] if len(images) >= int(count) else [f"要求 {count} 張, AI 只回傳 {len(images)} 張"]
+        return {"meta": work.meta, "errors": errors}
+
+    @r.put("/works/{name}/parts/{part_id}/material")
+    def set_material(name: str, part_id: str, body: dict = Body(...)):
+        work = open_work(name)
+        vid = body.get("variant")
+        if vid is not None and not isinstance(vid, str):
+            raise ValueError("材質候選格式錯誤")
+        work.set_material(part_id, vid)
+        return work.meta
+
+    @r.delete("/works/{name}/parts/{part_id}/materials/{variant_id}")
+    def delete_material(name: str, part_id: str, variant_id: str):
+        work = open_work(name)
+        work.delete_material(part_id, variant_id)
         return work.meta
 
     @r.delete("/works/{name}/parts/{part_id}")
