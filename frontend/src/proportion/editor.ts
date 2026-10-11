@@ -1,7 +1,7 @@
 /** 部位比例的畫布: 顯示拼貼或素材圖、遮罩疊色、選取把手、拖曳變形、點選/框選修正、結果對照。 */
 import type { Part, PartTransform, SegBox, WorkMeta } from './model';
 import { collageSize, drawCollage, drawSourceView, hitPart, layerMatrix, type WorkAssets } from './draw';
-import { anchorPoint, applyMat, bboxEdges, invert, isDrawn, partMatrix, placedEdges, type Mat } from './transform';
+import { anchorPoint, applyMat, bboxEdges, hasMaterial, invert, isDrawn, partMatrix, placedEdges, type Mat } from './transform';
 
 export type Tool = 'move' | 'point' | 'box';
 
@@ -215,6 +215,8 @@ export class Editor {
     if (s.showMasks) {
       ctx.globalAlpha = 0.45;
       for (const p of [...this.visibleParts()].reverse()) {
+        // 換過材質的部位不蓋色, 才看得到新材質; 點選修正時照樣蓋, 方便看範圍
+        if (hasMaterial(p) && s.tool !== 'point') continue;
         const layer = s.assets.layers.get(p.id);
         if (!layer) continue;
         const pad = this.padOf();
