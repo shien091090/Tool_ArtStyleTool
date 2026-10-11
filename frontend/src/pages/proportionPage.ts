@@ -27,6 +27,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
   let tool: Tool = 'move';
   let selected: string | null = null;
   let showMasks = true;
+  const maskOff = new Set<string>();
   let lockRatio = true;
   let compare: { id: string; img: HTMLImageElement; split: number; pad: Pad } | null = null;
   let falOk = false;
@@ -291,7 +292,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
   function redraw() {
     if (!meta) return;
     editor.set({
-      meta, assets, view, tool, selected, showMasks, lockRatio, locked: busy,
+      meta, assets, view, tool, selected, showMasks, maskOff, lockRatio, locked: busy,
       compare: compare ? { result: compare.img, split: compare.split, pad: compare.pad } : null,
     });
   }
@@ -403,6 +404,19 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
     viewSel.value = view;
     // 部位清單
     const imgName = (id: string) => (id === 'main' ? '主圖' : meta!.images.find((i) => i.id === id)?.name ?? id);
+    const maskToggle = (pid: string) => {
+      const chk = el('input');
+      chk.type = 'checkbox';
+      chk.checked = !maskOff.has(pid);
+      chk.title = '顯示這個部位的遮罩上色';
+      chk.addEventListener('click', (e) => e.stopPropagation());
+      chk.addEventListener('change', () => {
+        if (chk.checked) maskOff.delete(pid);
+        else maskOff.add(pid);
+        redraw();
+      });
+      return chk;
+    };
     partList.replaceChildren(...meta.parts.map((p) => {
       const tags: string[] = [];
       if (p.image !== 'main') tags.push(p.placed ? `來自 ${imgName(p.image)} · 已放到主圖` : `來自 ${imgName(p.image)}`);
@@ -413,6 +427,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
         el('span', { className: 'dot' }),
         el('span', { text: p.name }),
         el('span', { className: 'muted small', text: tags.join(' · ') }),
+        maskToggle(p.id),
       ]);
       (row.firstChild as HTMLElement).style.background = p.color;
       row.addEventListener('click', () => {
