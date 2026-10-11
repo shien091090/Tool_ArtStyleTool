@@ -94,6 +94,11 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
     def get_work(name: str):
         return open_work(name).meta
 
+    @r.delete("/works/{name}")
+    def delete_work(name: str):
+        open_work(name).delete()
+        return {"ok": True}
+
     @r.get("/works/{name}/files/{folder}/{filename}")
     def get_file(name: str, folder: str, filename: str):
         path = open_work(name).file_path(f"{folder}/{filename}")
@@ -310,6 +315,11 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
     @r.put("/recipes/{name}")
     def put_recipe(name: str, data=Body(...)):
         recipe_files.save_recipe(recipes_dir, name, recipes.validate(data))
+        return {"ok": True}
+
+    @r.delete("/recipes/{name}")
+    def delete_recipe(name: str):
+        recipe_files.delete_recipe(recipes_dir, name)
         return {"ok": True}
 
     return r

@@ -5,7 +5,7 @@ import { Editor, type Tool } from '../proportion/editor';
 import { ANCHORS, EDIT_MODELS, ZERO_PAD, type Anchor, type Pad, type Part, type PartTransform, type SegBox, type SegPoint, type WorkMeta } from '../proportion/model';
 import { applyRecipe, parseProportionRecipe, recipeFromParts } from '../proportion/recipe';
 import { autoPad, hasMaterial, isChanged, placeForeign } from '../proportion/transform';
-import { el, option, showBanner } from './ui';
+import { confirmDelete, el, option, showBanner } from './ui';
 
 const QUICK_NAMES = ['頭', '手', '腳', '身體', '翅膀', '尾巴'];
 const ANCHOR_LABEL: Record<Anchor, string> = { top: '上', center: '中', bottom: '下' };
@@ -48,9 +48,12 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
   fileInput.accept = 'image/*';
   const packSel = el('select');
   const createBtn = el('button', { text: '建立作品' });
+  const deleteWorkBtn = el('button', { text: '刪除' });
+  deleteWorkBtn.addEventListener('click', () => void deleteWork());
   const status = el('span', { className: 'muted' });
   const toolbar = el('div', { className: 'toolbar' }, [
     el('label', {}, ['作品', workSel]),
+    deleteWorkBtn,
     status,
     el('span', { className: 'spacer' }),
     nameInput, fileInput, el('label', {}, ['或從分層包', packSel]), createBtn,
@@ -234,7 +237,8 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
   const recipeName = el('input');
   recipeName.placeholder = '配方名稱';
   const saveRecipeBtn = button('存成配方', () => void saveRecipe());
-  const recipeSection = section('比例配方', el('div', { className: 'row' }, [recipeSel, applyRecipeBtn]),
+  const deleteRecipeBtn = button('刪除', () => void deleteRecipe());
+  const recipeSection = section('比例配方', el('div', { className: 'row' }, [recipeSel, applyRecipeBtn, deleteRecipeBtn]),
     el('div', { className: 'row' }, [recipeName, saveRecipeBtn]),
     el('div', { className: 'muted small', text: '只記主圖上調整過的部位; 套到別張圖時依名稱自動切部位' }));
 
@@ -281,7 +285,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
   // ---- 共用 ----
   const mainInfo = () => meta!.images.find((i) => i.id === 'main')!;
   const selPart = (): Part | undefined => meta?.parts.find((p) => p.id === selected);
-  const actionButtons = [createBtn, addImgBtn, segBtn, suggestBtn, matBtn, splitBtn, delBtn, genBtn, applyRecipeBtn, saveRecipeBtn];
+  const actionButtons = [createBtn, addImgBtn, segBtn, suggestBtn, matBtn, splitBtn, delBtn, genBtn, applyRecipeBtn, saveRecipeBtn, deleteRecipeBtn, deleteWorkBtn];
   /** AI 呼叫進行中鎖住所有會改作品的操作: 後端回傳的 meta 會蓋掉期間的修改。 */
   const lockables = (): (HTMLInputElement | HTMLSelectElement | HTMLButtonElement)[] => [
     workSel, placeBtn, unplaceBtn, hideChk, resetBtn, upBtn, downBtn, autoPadBtn, anchorSel, lockChk,
@@ -387,6 +391,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
       s.classList.toggle('hidden', !has);
     }
     for (const b of actionButtons) b.disabled = busy;
+    deleteWorkBtn.disabled = busy || !has;
     for (const c of lockables()) c.disabled = busy;
     for (const [t, b] of toolBtns) b.classList.toggle('active', t === tool);
     toolHint.textContent = TOOL_HINT[tool];
@@ -533,6 +538,26 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
       await setMeta(await api.proportion.getWork(name));
       history.replaceState(null, '', `#/workshop?work=${encodeURIComponent(name)}`);
       redraw();
+    });
+  }
+
+  async function deleteWork() {
+    if (!meta || busy) return;
+    const name = meta.name;
+    if (!confirmDelete(`作品「${name}」(含素材圖、部位、材質候選與生成結果)`)) return;
+    await run('刪除中…', async () => {
+      // 待存的調整不送了, 作品要刪掉
+      window.clearTimeout(saveTimer);
+      saveTimer = undefined;
+      await api.proportion.deleteWork(name);
+      compare = null;
+      selected = null;
+      view = 'main';
+      meta = null;
+      assets = new WorkAssets();
+      history.replaceState(null, '', '#/workshop');
+      await refreshWorks('');
+      showBanner(banner, 'info', `已刪除作品「${name}」`);
     });
   }
 
@@ -882,6 +907,17 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
       await refreshRecipes();
       recipeSel.value = name;
       showBanner(banner, 'info', `已存成配方「${name}」`);
+    });
+  }
+
+  async function deleteRecipe() {
+    const name = recipeSel.value;
+    if (!name || busy) return;
+    if (!confirmDelete(`比例配方「${name}」`)) return;
+    await run('刪除中…', async () => {
+      await api.proportion.deleteRecipe(name);
+      await refreshRecipes();
+      showBanner(banner, 'info', `已刪除比例配方「${name}」`);
     });
   }
 

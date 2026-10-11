@@ -82,6 +82,7 @@ export const api = {
   getPack: (name: string) => request<PackMeta>(`/api/packs/${enc(name)}`),
   createPack: (name: string, file: File) =>
     request<PackMeta>('/api/packs', { method: 'POST', body: form({ name, file }) }),
+  deletePack: (name: string) => request<{ ok: boolean }>(`/api/packs/${enc(name)}`, { method: 'DELETE' }),
   runStep: (name: string, step: string, params: Record<string, unknown> = {}) =>
     request<PackMeta>(`/api/packs/${enc(name)}/steps/${step}`, json('POST', params)),
   decomposeAll: (name: string) => request<PackMeta>(`/api/packs/${enc(name)}/decompose`, { method: 'POST' }),
@@ -95,9 +96,11 @@ export const api = {
   listRecipes: () => request<string[]>('/api/recipes'),
   getRecipe: (name: string) => request<unknown>(`/api/recipes/${enc(name)}`),
   saveRecipe: (name: string, recipe: Recipe) => request<{ ok: boolean }>(`/api/recipes/${enc(name)}`, json('PUT', recipe)),
+  deleteRecipe: (name: string) => request<{ ok: boolean }>(`/api/recipes/${enc(name)}`, { method: 'DELETE' }),
   proportion: {
     listWorks: () => request<{ name: string; updated: string; results: number }[]>('/api/proportion/works'),
     getWork: (name: string) => request<WorkMeta>(work(name)),
+    deleteWork: (name: string) => request<{ ok: boolean }>(work(name), { method: 'DELETE' }),
     createWork: (name: string, source: { file: File } | { pack: string }) =>
       request<WorkMeta>('/api/proportion/works', { method: 'POST', body: form({ name, ...source }) }),
     addImage: (name: string, source: { file: File } | { pack: string }) =>
@@ -142,5 +145,7 @@ export const api = {
     getRecipe: (name: string) => request<unknown>(`/api/proportion/recipes/${enc(name)}`),
     saveRecipe: (name: string, recipe: ProportionRecipe) =>
       request<{ ok: boolean }>(`/api/proportion/recipes/${enc(name)}`, json('PUT', recipe)),
+    deleteRecipe: (name: string) =>
+      request<{ ok: boolean }>(`/api/proportion/recipes/${enc(name)}`, { method: 'DELETE' }),
   },
 };

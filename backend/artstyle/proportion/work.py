@@ -156,6 +156,10 @@ class Work:
             raise FileNotFoundError(f"找不到作品「{name}」")
         return cls(root, name, json.loads(meta_path.read_text(encoding="utf-8")))
 
+    def delete(self) -> None:
+        """整個資料夾從硬碟刪掉, 無法復原。"""
+        shutil.rmtree(self.dir)
+
     @classmethod
     def list(cls, root) -> list[dict]:
         root = Path(root)

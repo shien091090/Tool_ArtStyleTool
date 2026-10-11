@@ -22,6 +22,14 @@ def load_recipe(directory, name: str) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def delete_recipe(directory, name: str) -> None:
+    validate_name(name)
+    path = Path(directory) / f"{name}.json"
+    if not path.is_file():
+        raise FileNotFoundError(f"找不到配方「{name}」")
+    path.unlink()
+
+
 def save_recipe(directory, name: str, data) -> None:
     validate_name(name)
     if not isinstance(data, dict):

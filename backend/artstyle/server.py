@@ -60,6 +60,11 @@ def create_app(data_dir: Path, client_factory: Callable[[], FalClient | None] = 
     def get_pack(name: str):
         return open_pack(name).meta
 
+    @app.delete("/api/packs/{name}")
+    def delete_pack(name: str):
+        open_pack(name).delete()
+        return {"ok": True}
+
     @app.get("/api/packs/{name}/files/{filename}")
     def get_file(name: str, filename: str):
         layer = filename.removesuffix(".png")
@@ -118,6 +123,11 @@ def create_app(data_dir: Path, client_factory: Callable[[], FalClient | None] = 
     @app.put("/api/recipes/{name}")
     def put_recipe(name: str, data=Body(...)):
         recipes.save_recipe(recipes_dir, name, data)
+        return {"ok": True}
+
+    @app.delete("/api/recipes/{name}")
+    def delete_recipe(name: str):
+        recipes.delete_recipe(recipes_dir, name)
         return {"ok": True}
 
     app.include_router(create_proportion_router(data_dir, client_factory))

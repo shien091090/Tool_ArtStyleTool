@@ -108,3 +108,27 @@ def test_mutations_require_app_header(tmp_path):
 def test_lospec_endpoint_rejects_other_hosts(client):
     r = client.get("/api/lospec", params={"url": "https://evil.com/palette-list/x"})
     assert r.status_code == 400
+
+
+def test_delete_pack(client, tmp_path):
+    _upload(client)
+    assert client.delete("/api/packs/騎士").status_code == 200
+    assert client.get("/api/packs").json() == []
+    assert not (tmp_path / "packs" / "騎士").exists()
+    assert client.delete("/api/packs/騎士").status_code == 404
+
+
+@pytest.mark.parametrize("name", ["..", "a.b"])
+def test_delete_rejects_bad_names(client, tmp_path, name):
+    _upload(client)
+    assert client.delete(f"/api/packs/{name}").status_code in (400, 404)
+    assert client.delete(f"/api/recipes/{name}").status_code in (400, 404)
+    assert (tmp_path / "packs" / "騎士" / "meta.json").is_file()
+
+
+def test_delete_recipe(client):
+    client.put("/api/recipes/漫畫風", json={"version": 1})
+    client.put("/api/recipes/水彩", json={"version": 1})
+    assert client.delete("/api/recipes/漫畫風").status_code == 200
+    assert client.get("/api/recipes").json() == ["水彩"]
+    assert client.delete("/api/recipes/漫畫風").status_code == 404

@@ -390,3 +390,22 @@ def test_split_inherits_materials(client, fal):
     left, right = meta["parts"]
     assert left["material"]["current"] == "m1" and right["material"]["current"] == "m2"
     assert client.get(f"{P}/works/作品/files/materials/m2.png").status_code == 200
+
+
+def test_delete_work(client, tmp_path):
+    _create(client)
+    _create(client, "另一個")
+    assert client.delete(f"{P}/works/作品").status_code == 200
+    assert [w["name"] for w in client.get(f"{P}/works").json()] == ["另一個"]
+    assert not (tmp_path / "proportion" / "作品").exists()
+    assert client.delete(f"{P}/works/作品").status_code == 404
+    assert client.delete(f"{P}/works/..").status_code in (400, 404)
+    assert (tmp_path / "proportion" / "另一個" / "meta.json").is_file()
+
+
+def test_delete_proportion_recipe(client):
+    recipe = {"version": 1, "parts": [{"name": "頭", "scaleX": 1.5, "scaleY": 1.5, "rotation": 0, "anchor": "bottom", "dx": 0, "dy": 0, "z": 1}]}
+    assert client.put(f"{P}/recipes/Q版", json=recipe).status_code == 200
+    assert client.delete(f"{P}/recipes/Q版").status_code == 200
+    assert client.get(f"{P}/recipes").json() == []
+    assert client.delete(f"{P}/recipes/Q版").status_code == 404

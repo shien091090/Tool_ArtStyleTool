@@ -1,6 +1,6 @@
 import { api, type PackMeta, type RGB } from '../api';
 import { hexToRgb, rgbToHex } from '../colorMath';
-import { el, option, showBanner } from './ui';
+import { confirmDelete, el, option, showBanner } from './ui';
 
 const STEP_ORDER = ['depth', 'normal', 'normal_detail', 'line', 'line_sdf', 'delight', 'regions', 'flat', 'shade', 'ao', 'silhouette_sdf'];
 
@@ -34,6 +34,7 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams): 
   const createBtn = el('button', { text: '建立' });
   const packSel = el('select');
   const runAllBtn = el('button', { text: '全部拆解', className: 'primary' });
+  const deleteBtn = el('button', { text: '刪除' });
   const status = el('span', { className: 'muted' });
   const overlayChk = el('input');
   overlayChk.type = 'checkbox';
@@ -75,7 +76,7 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams): 
   normalView.append(option('normal', '看大形'), option('normal_detail', '看細部'));
   normalView.addEventListener('change', () => renderCells());
 
-  const actions: HTMLButtonElement[] = [createBtn, runAllBtn];
+  const actions: HTMLButtonElement[] = [createBtn, runAllBtn, deleteBtn];
   const button = (text: string, onClick: () => void) => {
     const b = el('button', { text });
     b.addEventListener('click', onClick);
@@ -135,7 +136,7 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams): 
     el('div', { className: 'toolbar' }, [
       el('strong', { text: '新增' }), nameInput, fileInput, createBtn,
       el('span', { className: 'spacer' }),
-      el('label', {}, ['分層包', packSel]), runAllBtn, status,
+      el('label', {}, ['分層包', packSel]), deleteBtn, runAllBtn, status,
     ]),
     el('div', { className: 'toolbar' }, [
       el('label', {}, [overlayChk, '疊上線稿比對']),
@@ -276,6 +277,24 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams): 
     }
   });
   packSel.addEventListener('change', () => selectPack(packSel.value));
+  deleteBtn.addEventListener('click', async () => {
+    if (!meta || busy) return;
+    const name = meta.name;
+    if (!confirmDelete(`分層包「${name}」`)) return;
+    setBusy(true, '刪除中…');
+    try {
+      await api.deletePack(name);
+      packs = packs.filter((p) => p.name !== name);
+      refreshPackList(packs[0]?.name);
+      selectPack(packs[0]?.name ?? '');
+      showBanner(banner, 'info', `已刪除分層包「${name}」`);
+    } catch (e) {
+      showBanner(banner, 'error', `刪除失敗: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+      renderCells();
+    }
+  });
   runAllBtn.addEventListener('click', () => meta && run('拆解', () => api.decomposeAll(meta!.name)));
   overlayChk.addEventListener('change', renderCells);
   overlayOpacity.addEventListener('input', () => {

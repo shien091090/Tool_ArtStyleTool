@@ -27,3 +27,9 @@ export function showBanner(node: HTMLElement, kind: 'error' | 'warn' | 'info' | 
   node.className = kind ? `banner ${kind}` : '';
   node.textContent = kind ? text : '';
 }
+
+/** 刪除前確認; 會直接從硬碟刪掉, 無法復原。 */
+export function confirmDelete(what: string): boolean {
+  return confirm(`確定要刪除${what}嗎?
+會直接從硬碟刪掉, 無法復原。`);
+}

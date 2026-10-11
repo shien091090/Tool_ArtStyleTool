@@ -7,7 +7,7 @@ import { DEFAULT_RECIPE, GRADE_PRESET_NAMES, LIMITS, normalizeRecipe, SECTIONS, 
 import { isVisible } from '../visibility';
 import { createPaletteEditor } from './paletteEditor';
 import { fillRecipeSelect, isStarter, loadRecipeValue, STARTER_PREFIX } from './recipeOptions';
-import { el, option, showBanner } from './ui';
+import { confirmDelete, el, option, showBanner } from './ui';
 
 const range = (path: string, step?: number) => {
   const [min, max, integer] = LIMITS[path];
@@ -29,6 +29,7 @@ export function mountRenderPage(root: HTMLElement, params: URLSearchParams): () 
   const loadBtn = el('button', { text: '讀取' });
   const saveBtn = el('button', { text: '存檔' });
   const saveAsBtn = el('button', { text: '另存新檔' });
+  const deleteRecipeBtn = el('button', { text: '刪除配方' });
   const compareBtn = el('button', { text: '按住看原圖' });
   const exportBtn = el('button', { text: '匯出 PNG', className: 'primary' });
   const banner = el('div');
@@ -40,7 +41,7 @@ export function mountRenderPage(root: HTMLElement, params: URLSearchParams): () 
   root.append(
     el('div', { className: 'toolbar' }, [
       el('label', {}, ['分層包', packSel]),
-      el('label', {}, ['配方', recipeSel]), loadBtn, saveBtn, saveAsBtn,
+      el('label', {}, ['配方', recipeSel]), loadBtn, saveBtn, saveAsBtn, deleteRecipeBtn,
       el('span', { className: 'spacer' }), compareBtn, exportBtn,
     ]),
     banner,
@@ -300,6 +301,17 @@ export function mountRenderPage(root: HTMLElement, params: URLSearchParams): () 
   saveAsBtn.addEventListener('click', () => {
     const name = prompt('另存新配方名稱', currentRecipeName)?.trim();
     if (name) saveAs(name);
+  });
+  deleteRecipeBtn.addEventListener('click', async () => {
+    const name = recipeSel.value;
+    if (!name || isStarter(name)) { showBanner(banner, 'warn', '請在「我的配方」選一份要刪除的配方(起始配方不能刪)'); return; }
+    if (!confirmDelete(`配方「${name}」`)) return;
+    try {
+      await api.deleteRecipe(name);
+      if (currentRecipeName === name) currentRecipeName = '';
+      await refreshRecipes();
+      showBanner(banner, 'info', `已刪除配方「${name}」, 畫面上的參數保留著, 要的話可以另存`);
+    } catch (e) { showBanner(banner, 'error', (e as Error).message); }
   });
   const setSource = (on: boolean) => { showingSource = on; scheduleRender(); };
   compareBtn.addEventListener('pointerdown', () => setSource(true));
