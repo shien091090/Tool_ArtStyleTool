@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { cellAt } from '../src/pixel/gridPicker';
 import { candidateLabel, defaultColors, displayScale, estimateCost, toGpl } from '../src/pixel/model';
 
 describe('像素素材', () => {
@@ -30,5 +31,11 @@ describe('像素素材', () => {
     const base = { id: 'c1', created: '', model: 'nano-banana-pro' as const, colors: 8, note: '' };
     expect(candidateLabel({ ...base, mode: 'grid', cols: 1, rows: 2 })).toBe('寬1×高2格(8×16)');
     expect(candidateLabel({ ...base, mode: 'auto', cols: 0, rows: 0, model: 'kontext' })).toBe('自動 · Kontext');
+  });
+
+  it('拖拉位置換算格數並限制在 1~16', () => {
+    expect(cellAt(0, 0, 18, 16)).toEqual({ cols: 1, rows: 1 });
+    expect(cellAt(19, 40, 18, 16)).toEqual({ cols: 2, rows: 3 });
+    expect(cellAt(-5, 999, 18, 16)).toEqual({ cols: 1, rows: 16 });
   });
 });

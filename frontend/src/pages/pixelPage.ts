@@ -3,9 +3,11 @@ import {
   candidateLabel, defaultColors, displayScale, estimateCost, MAX_CELLS, MODEL_LABEL, toGpl, ZOOM_EXPORT, CELL,
   type PixelMode, type PixelModel, type PixelResult, type PixelWorkMeta,
 } from '../pixel/model';
+import { createGridPicker } from '../pixel/gridPicker';
 import { confirmDelete, el, option, showBanner } from './ui';
 
 const RESULT_BOX = 400;
+const PICKER_CELL = 18;
 
 function download(href: string, filename: string) {
   const a = el('a');
@@ -96,24 +98,14 @@ export function mountPixelPage(root: HTMLElement, params: URLSearchParams): () =
   const modelSel = el('select');
   for (const m of Object.keys(MODEL_LABEL) as PixelModel[]) modelSel.append(option(m, MODEL_LABEL[m]));
   const modelRow = el('label', {}, ['模型', modelSel]);
-  const cellInput = (v: string) => {
-    const i = el('input');
-    i.type = 'number';
-    i.min = '1';
-    i.max = String(MAX_CELLS);
-    i.value = v;
-    i.addEventListener('input', () => {
-      resetColors();
-      sync();
-    });
-    return i;
-  };
-  const colsInput = cellInput('1');
-  const rowsInput = cellInput('2');
+  const picker = createGridPicker(MAX_CELLS, PICKER_CELL, 1, 2, () => {
+    resetColors();
+    sync();
+  });
+  const gridSize = el('div', { className: 'px-picker-size' });
   const gridHint = el('div', { className: 'muted small' });
   const gridRow = el('div', { className: 'col' }, [
-    el('div', { className: 'row' }, [el('label', {}, ['寬', colsInput, '格']), el('label', {}, ['高', rowsInput, '格'])]),
-    gridHint,
+    el('div', { className: 'muted small', text: '從左上角拖拉選格數(一格 8px)' }), picker.root, gridSize, gridHint,
   ]);
   const genColors = el('input');
   genColors.type = 'number';
@@ -137,15 +129,11 @@ export function mountPixelPage(root: HTMLElement, params: URLSearchParams): () =
 
   root.append(toolbar, banner, el('div', { className: 'prop-layout' }, [mainArea, panel]));
 
-  const cells = () => ({ cols: Number(colsInput.value), rows: Number(rowsInput.value) });
-  const cellsOk = () => {
-    const { cols, rows } = cells();
-    return [cols, rows].every((v) => Number.isInteger(v) && v >= 1 && v <= MAX_CELLS);
-  };
+  const cells = () => picker.get();
 
   function resetColors() {
     const { cols, rows } = cells();
-    if (mode === 'auto' || cellsOk()) genColors.value = String(defaultColors(mode, cols, rows));
+    genColors.value = String(defaultColors(mode, cols, rows));
   }
 
   function sync() {
@@ -153,12 +141,12 @@ export function mountPixelPage(root: HTMLElement, params: URLSearchParams): () =
     modelRow.classList.toggle('hidden', mode !== 'auto');
     gridRow.classList.toggle('hidden', mode !== 'grid');
     const { cols, rows } = cells();
-    gridHint.textContent = cellsOk()
-      ? `${cols * CELL}×${rows * CELL} 像素(一格 ${CELL}px); 比例跟原圖不同時 AI 會重新設計, 例如正方形畫成 Q 版。固定用 Nano Banana Pro`
-      : `寬、高請填 1~${MAX_CELLS} 的整數`;
+    gridSize.innerHTML = '';
+    gridSize.append(el('b', { text: `寬 ${cols} × 高 ${rows} 格` }), el('span', { className: 'muted small', text: `實際尺寸 ${cols * CELL}×${rows * CELL} 像素` }));
+    gridHint.textContent = '比例跟原圖不同時 AI 會重新設計, 例如正方形畫成 Q 版。固定用 Nano Banana Pro';
     const cost = estimateCost(mode, modelSel.value as PixelModel, Number(countSel.value));
     costHint.textContent = `約 ${cost.toFixed(2)} 美元`;
-    genBtn.disabled = busy || !falOk || !meta || (mode === 'grid' && !cellsOk());
+    genBtn.disabled = busy || !falOk || !meta;
     genBtn.title = falOk ? '' : '沒有設定 FAL_KEY';
     deleteWorkBtn.disabled = busy || !meta;
     createBtn.disabled = busy;

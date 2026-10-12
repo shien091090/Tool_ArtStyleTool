@@ -150,3 +150,8 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .px-palette { display: flex; flex-wrap: wrap; gap: 2px; }
 .px-palette span { width: 14px; height: 14px; border-radius: 2px; border: 1px solid #0006; }
 .prop-section .col { display: flex; flex-direction: column; gap: 6px; }
+.px-picker { display: grid; width: max-content; border-top: 1px dashed #6a6f78; border-left: 1px dashed #6a6f78; cursor: crosshair; touch-action: none; user-select: none; }
+.px-picker div { aspect-ratio: 1; border-right: 1px dashed #6a6f78; border-bottom: 1px dashed #6a6f78; }
+.px-picker div.preview { background: #2f5ea844; }
+.px-picker div.on { background: #2f5ea8; }
+.px-picker-size { display: flex; flex-direction: column; gap: 2px; }
