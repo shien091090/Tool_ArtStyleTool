@@ -32,6 +32,11 @@ class PixelWork:
         if (root / name).exists():
             raise FileExistsError(f"作品「{name}」已存在")
         img = limit_size(load_rgb(image_bytes), config.MAX_SIDE)  # 先解碼, 壞圖不留下空資料夾
+        return cls.create_from_image(root, name, img, source)
+
+    @classmethod
+    def create_from_image(cls, root, name: str, img: np.ndarray, source: str) -> "PixelWork":
+        root = Path(root)
         now = _now()
         work = cls(root, name, {"version": 1, "name": name, "created": now, "updated": now, "source": source,
                                 "candidates": [], "counters": {"candidate": 0}})
@@ -78,6 +83,11 @@ class PixelWork:
         tmp = self.dir / "meta.json.tmp"
         tmp.write_text(json.dumps(self.meta, ensure_ascii=False, indent=2), encoding="utf-8")
         tmp.replace(self.dir / "meta.json")
+
+    def set_source(self, img: np.ndarray, source: str) -> None:
+        write_png(self.dir / "source.png", img)
+        self.meta["source"] = source
+        self.save_meta()
 
     def source(self) -> np.ndarray:
         return read_png(self.dir / "source.png")

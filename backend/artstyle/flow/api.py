@@ -1,0 +1,160 @@
+"""節點流程 API(前綴 /api/flows)。"""
+import json
+from pathlib import Path
+from typing import Callable
+
+import numpy as np
+from fastapi import APIRouter, Body, File, Form, UploadFile
+from fastapi.responses import Response
+
+from .. import config
+from ..decompose import NoClientError
+from ..fal import FalClient
+from ..imaging import limit_size, load_rgba
+from ..pack import Pack
+from ..pixel import service
+from ..pixel.work import PixelWork
+from ..proportion.work import Work
+from .store import Flow
+
+
+def to_ai_source(img: np.ndarray) -> np.ndarray:
+    """節點輸出(RGBA) → 送像素化 AI 的 RGB: 有透明先裁到不透明範圍, 再鋪白底。"""
+    if img.ndim == 2:
+        img = np.repeat(img[..., None], 3, axis=2)
+    if img.shape[2] == 3:
+        return img
+    a = img[..., 3]
+    ys, xs = np.nonzero(a > 0)
+    if not len(xs):
+        raise ValueError("上游輸出整張都是透明的")
+    img = img[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+    alpha = img[..., 3:4].astype(np.float32) / 255
+    return (img[..., :3] * alpha + 255 * (1 - alpha)).round().astype(np.uint8)
+
+
+def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]) -> APIRouter:
+    flows_dir = Path(data_dir) / "flows"
+    packs_dir = Path(data_dir) / "packs"
+    workshop_dir = Path(data_dir) / "proportion"
+    r = APIRouter(prefix="/api/flows")
+
+    def client() -> FalClient:
+        c = client_factory()
+        if c is None:
+            raise NoClientError("沒有設定 FAL_KEY 環境變數, 無法呼叫 fal.ai")
+        return c
+
+    def open_flow(name: str) -> Flow:
+        return Flow.open(flows_dir, name)
+
+    def pixel_node(flow: Flow, nid: str) -> dict:
+        n = flow.node(nid)
+        if n["type"] != "pixel":
+            raise ValueError(f"節點 {nid} 不是像素化節點")
+        return n
+
+    def pixel_work(flow: Flow, nid: str) -> PixelWork | None:
+        try:
+            return PixelWork.open(flow.dir / "nodes", nid)
+        except FileNotFoundError:
+            return None
+
+    @r.get("")
+    def list_flows():
+        return Flow.list(flows_dir)
+
+    @r.post("")
+    def create_flow(body: dict = Body(...)):
+        return Flow.create(flows_dir, body.get("name")).meta
+
+    @r.get("/{name}")
+    def get_flow(name: str):
+        return open_flow(name).meta
+
+    @r.delete("/{name}")
+    def delete_flow(name: str):
+        open_flow(name).delete()
+        return {"ok": True}
+
+    @r.put("/{name}/graph")
+    def put_graph(name: str, body: dict = Body(...)):
+        return open_flow(name).set_graph(body)
+
+    @r.get("/{name}/files/{path:path}")
+    def get_file(name: str, path: str):
+        return Response(open_flow(name).file_path(path).read_bytes(), media_type="image/png",
+                        headers={"Cache-Control": "no-store"})
+
+    @r.post("/{name}/nodes/{nid}/output")
+    async def set_output(name: str, nid: str, file: UploadFile | None = File(None), pack: str | None = Form(None),
+                         workshop: str | None = Form(None), inputRev: int | None = Form(None),
+                         params: str | None = Form(None)):
+        flow = open_flow(name)
+        node = flow.node(nid)
+        p = None
+        if params is not None:
+            try:
+                p = json.loads(params)
+            except ValueError:
+                raise ValueError("節點參數格式錯誤") from None
+            if not isinstance(p, dict):
+                raise ValueError("節點參數格式錯誤")
+        if (pack or workshop) and node["type"] != "input":
+            raise ValueError("只有圖片輸入節點能選分層包或部位工坊結果")
+        if pack:
+            data = Pack.open(packs_dir, pack).path("source").read_bytes()
+        elif workshop:
+            wname, _, rid = workshop.rpartition("/")
+            data = Work.open(workshop_dir, wname).file_path(f"results/{rid}.png").read_bytes()
+        elif file is not None:
+            data = await file.read()
+        else:
+            raise ValueError("請上傳圖片、選擇分層包或部位工坊結果")
+        img = limit_size(load_rgba(data), config.MAX_SIDE)
+        return flow.set_output(nid, img, inputRev if node["type"] != "input" else None, p)
+
+    # ---- 像素化節點 ----
+
+    @r.get("/{name}/nodes/{nid}/pixel")
+    def get_pixel(name: str, nid: str):
+        flow = open_flow(name)
+        pixel_node(flow, nid)
+        work = pixel_work(flow, nid)
+        return work.meta if work else {"name": nid, "source": "", "candidates": []}
+
+    @r.post("/{name}/nodes/{nid}/pixel/candidates")
+    def add_candidates(name: str, nid: str, body: dict = Body(...)):
+        flow = open_flow(name)
+        pixel_node(flow, nid)
+        service.check_settings(body)  # 先驗證, 參數錯就不動來源
+        up = flow.upstream(nid)
+        if up is None or not up.get("rev"):
+            raise ValueError("上游還沒有輸出")
+        src = to_ai_source(flow.output(up["id"]))
+        label = f"上游 {up['id']} 第 {up['rev']} 版"
+        work = pixel_work(flow, nid)
+        if work is None:
+            work = PixelWork.create_from_image(flow.dir / "nodes", nid, src, label)
+        else:
+            work.set_source(src, label)
+        return service.generate(work, body, client(), extra={"inputRev": up["rev"]})
+
+    def existing_work(flow: Flow, nid: str) -> PixelWork:
+        pixel_node(flow, nid)
+        work = pixel_work(flow, nid)
+        if work is None:
+            raise FileNotFoundError("這個節點還沒有候選")
+        return work
+
+    @r.delete("/{name}/nodes/{nid}/pixel/candidates/{cid}")
+    def delete_candidate(name: str, nid: str, cid: str):
+        work = existing_work(open_flow(name), nid)
+        work.delete_candidate(cid)
+        return work.meta
+
+    @r.post("/{name}/nodes/{nid}/pixel/candidates/{cid}/pixelate")
+    def pixelate(name: str, nid: str, cid: str, body: dict | None = Body(default=None)):
+        return service.pixelate(existing_work(open_flow(name), nid), cid, body)
+
+    return r
