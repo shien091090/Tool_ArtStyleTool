@@ -197,7 +197,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
   refFile.accept = 'image/*';
   const matCount = el('select');
   for (const n of [1, 2, 3, 4]) matCount.append(option(String(n), `${n} 張`));
-  matCount.value = '2';
+  matCount.value = '1';
   const matBtn = button('換材質', () => void changeMaterial(), 'primary');
   const variantList = el('div', { className: 'variant-list' });
   const matBox = el('div', { className: 'mat-box' }, [
