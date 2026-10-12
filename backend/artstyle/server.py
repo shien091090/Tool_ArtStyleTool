@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse, Response
 from . import config, decompose, lospec, recipes
 from .fal import FalClient, FalError, HttpFalClient
 from .pack import LAYERS, Pack
+from .pixel.api import create_router as create_pixel_router
 from .proportion.api import create_router as create_proportion_router
 
 
@@ -131,6 +132,7 @@ def create_app(data_dir: Path, client_factory: Callable[[], FalClient | None] = 
         return {"ok": True}
 
     app.include_router(create_proportion_router(data_dir, client_factory))
+    app.include_router(create_pixel_router(data_dir, client_factory))
     return app
 
 

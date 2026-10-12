@@ -2,6 +2,7 @@ fastapi
 uvicorn
 httpx
 numpy
-opencv-python-headless
+opencv-python
 python-multipart
 pytest
+unfake

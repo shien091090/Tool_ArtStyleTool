@@ -62,6 +62,9 @@ def test_edit_payload_per_model():
     c.edit("qwen", img, "fix", 1)
     url, body = sent[1]
     assert url.endswith(EDIT_MODELS["qwen"]) and "image_url" in body and body["image_size"] == {"width": 30, "height": 20}
+    c.edit("nano-banana-pro", img, "fix", 1)
+    url, body = sent[2]
+    assert url.endswith("fal-ai/nano-banana-pro/edit") and len(body["image_urls"]) == 1
 
 
 def test_edit_unknown_model_and_http_error():
