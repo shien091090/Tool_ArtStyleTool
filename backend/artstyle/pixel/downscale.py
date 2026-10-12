@@ -103,6 +103,18 @@ def auto(img: np.ndarray, colors: int) -> np.ndarray:
     return rgba[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
 
 
+def limit_colors(rgba: np.ndarray, colors: int) -> np.ndarray:
+    """不透明像素超過色數時再減一次(背景白那一群可能落在主體上)。"""
+    opaque = rgba[..., 3] > 0
+    px = rgba[opaque][:, :3]
+    if len(np.unique(px, axis=0)) <= colors:
+        return rgba
+    lab, cen = _kmeans(px, colors)
+    out = rgba.copy()
+    out[opaque, :3] = cen[lab]
+    return out
+
+
 def palette(rgba: np.ndarray) -> list[str]:
     """不透明像素的顏色, 依出現次數多到少。"""
     px = rgba[rgba[..., 3] > 0][:, :3]
@@ -116,6 +128,6 @@ def run(method: str, img: np.ndarray, colors: int, cols: int = 0, rows: int = 0)
     if img[..., :3].min() > BG_WHITE:
         raise ValueError("AI 圖整張是白的")
     if method == "auto":
-        return auto(img, colors)
+        return limit_colors(auto(img, colors), colors)
     fn = {"dominant": dominant, "contrast": contrast, "adaptive": adaptive}[method]
-    return fn(img, cols * CELL, rows * CELL, colors)
+    return limit_colors(fn(img, cols * CELL, rows * CELL, colors), colors)

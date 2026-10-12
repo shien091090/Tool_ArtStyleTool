@@ -2,6 +2,7 @@
 import type { Recipe } from './recipe';
 import type { Pad, Part, Place, PartTransform, ResultInfo, SegBox, SegPoint, WorkMeta } from './proportion/model';
 import type { ProportionRecipe } from './proportion/recipe';
+import type { PixelCandidate, PixelMode, PixelModel, PixelResult, PixelWorkMeta } from './pixel/model';
 
 export type RGB = [number, number, number];
 
@@ -75,6 +76,7 @@ function form(fields: Record<string, string | Blob>): FormData {
 }
 
 const work = (name: string) => `/api/proportion/works/${enc(name)}`;
+const pwork = (name: string) => `/api/pixel/works/${enc(name)}`;
 
 export const api = {
   getStatus: () => request<{ fal: boolean }>('/api/status'),
@@ -147,5 +149,22 @@ export const api = {
       request<{ ok: boolean }>(`/api/proportion/recipes/${enc(name)}`, json('PUT', recipe)),
     deleteRecipe: (name: string) =>
       request<{ ok: boolean }>(`/api/proportion/recipes/${enc(name)}`, { method: 'DELETE' }),
+  },
+  pixel: {
+    listWorks: () => request<{ name: string; updated: string; candidates: number }[]>('/api/pixel/works'),
+    getWork: (name: string) => request<PixelWorkMeta>(pwork(name)),
+    deleteWork: (name: string) => request<{ ok: boolean }>(pwork(name), { method: 'DELETE' }),
+    workshopResults: () => request<{ work: string; id: string }[]>('/api/pixel/workshop-results'),
+    createWork: (name: string, source: { file: File } | { pack: string } | { workshop: string }) =>
+      request<PixelWorkMeta>('/api/pixel/works', { method: 'POST', body: form({ name, ...source }) }),
+    fileUrl: (name: string, path: string) => `${pwork(name)}/files/${path}`,
+    addCandidates: (name: string, settings: {
+      mode: PixelMode; model: PixelModel; cols: number; rows: number; colors: number; note: string; count: number;
+    }) => request<{ meta: PixelWorkMeta; candidates: PixelCandidate[]; errors: string[] }>(
+      `${pwork(name)}/candidates`, json('POST', settings)),
+    deleteCandidate: (name: string, cid: string) =>
+      request<PixelWorkMeta>(`${pwork(name)}/candidates/${cid}`, { method: 'DELETE' }),
+    pixelate: (name: string, cid: string, colors: number) =>
+      request<{ results: PixelResult[]; colors: number }>(`${pwork(name)}/candidates/${cid}/pixelate`, json('POST', { colors })),
   },
 };

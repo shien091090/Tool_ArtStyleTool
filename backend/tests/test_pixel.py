@@ -84,9 +84,14 @@ def test_grid_methods_exact_size_colors_and_background(method):
     out = downscale.run(method, ai, 4, 2, 4)
     assert out.shape == (H, W, 4)
     opaque = out[out[..., 3] > 0][:, :3]
-    assert len(np.unique(opaque, axis=0)) <= 5
+    assert len(np.unique(opaque, axis=0)) <= 4
     assert out[0, 0, 3] == 0 and out[-1, -1, 3] == 0  # 邊緣白去背
     assert out[H // 2, W // 2, 3] == 255  # 主體中間保留
+
+
+def test_auto_respects_color_limit():
+    out = downscale.run("auto", _ai_render(_sprite(20, 30), 8), 2)
+    assert len(downscale.palette(out)) <= 2
 
 
 def test_inner_white_kept_by_background_removal():

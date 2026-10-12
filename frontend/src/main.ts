@@ -3,6 +3,7 @@ import { mountDecomposePage } from './pages/decomposePage';
 import { mountRenderPage } from './pages/renderPage';
 import { mountGridPage } from './pages/gridPage';
 import { mountProportionPage } from './pages/proportionPage';
+import { mountPixelPage } from './pages/pixelPage';
 import { canonicalPath } from './routes';
 
 type Mount = (el: HTMLElement, params: URLSearchParams) => () => void;
@@ -12,6 +13,7 @@ const ROUTES: { path: string; label: string; mount: Mount }[] = [
   { path: 'render', label: '渲染', mount: mountRenderPage },
   { path: 'grid', label: '對照網格', mount: mountGridPage },
   { path: 'workshop', label: '部位工坊', mount: mountProportionPage },
+  { path: 'pixel', label: '像素素材', mount: mountPixelPage },
 ];
 
 const nav = document.querySelector<HTMLElement>('#nav')!;
