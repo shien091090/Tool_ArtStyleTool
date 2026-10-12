@@ -7,3 +7,5 @@ __pycache__/
 .superpowers/
 scratch/
 data/proportion/
+data/pixel/
+data/flows/

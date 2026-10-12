@@ -2,7 +2,8 @@
 import type { Recipe } from './recipe';
 import type { Pad, Part, Place, PartTransform, ResultInfo, SegBox, SegPoint, WorkMeta } from './proportion/model';
 import type { ProportionRecipe } from './proportion/recipe';
-import type { PixelCandidate, PixelMode, PixelModel, PixelResult, PixelWorkMeta } from './pixel/model';
+import type { FlowMeta, FlowNode, FlowLink } from './flow/model';
+import type { PixelCandidate, PixelResult, PixelSettings, PixelWorkMeta } from './pixel/model';
 
 export type RGB = [number, number, number];
 
@@ -77,6 +78,7 @@ function form(fields: Record<string, string | Blob>): FormData {
 
 const work = (name: string) => `/api/proportion/works/${enc(name)}`;
 const pwork = (name: string) => `/api/pixel/works/${enc(name)}`;
+const pflow = (name: string) => `/api/flows/${enc(name)}`;
 
 export const api = {
   getStatus: () => request<{ fal: boolean }>('/api/status'),
@@ -158,13 +160,38 @@ export const api = {
     createWork: (name: string, source: { file: File } | { pack: string } | { workshop: string }) =>
       request<PixelWorkMeta>('/api/pixel/works', { method: 'POST', body: form({ name, ...source }) }),
     fileUrl: (name: string, path: string) => `${pwork(name)}/files/${path}`,
-    addCandidates: (name: string, settings: {
-      mode: PixelMode; model: PixelModel; cols: number; rows: number; colors: number; note: string; count: number;
-    }) => request<{ meta: PixelWorkMeta; candidates: PixelCandidate[]; errors: string[] }>(
+    addCandidates: (name: string, settings: PixelSettings) => request<{ meta: PixelWorkMeta; candidates: PixelCandidate[]; errors: string[] }>(
       `${pwork(name)}/candidates`, json('POST', settings)),
     deleteCandidate: (name: string, cid: string) =>
       request<PixelWorkMeta>(`${pwork(name)}/candidates/${cid}`, { method: 'DELETE' }),
     pixelate: (name: string, cid: string, colors: number) =>
       request<{ results: PixelResult[]; colors: number }>(`${pwork(name)}/candidates/${cid}/pixelate`, json('POST', { colors })),
+  },
+  flows: {
+    list: () => request<{ name: string; updated: string; nodes: number }[]>('/api/flows'),
+    create: (name: string) => request<FlowMeta>('/api/flows', json('POST', { name })),
+    get: (name: string) => request<FlowMeta>(pflow(name)),
+    delete: (name: string) => request<{ ok: boolean }>(pflow(name), { method: 'DELETE' }),
+    saveGraph: (name: string, nodes: Pick<FlowNode, 'id' | 'type' | 'x' | 'y' | 'params'>[], links: FlowLink[]) =>
+      request<FlowMeta>(`${pflow(name)}/graph`, json('PUT', { nodes, links })),
+    fileUrl: (name: string, path: string, version: string | number = Date.now()) =>
+      `${pflow(name)}/files/${path}?v=${version}`,
+    setOutput: (name: string, nid: string,
+      source: { file: Blob } | { pack: string } | { workshop: string },
+      opts: { inputRev?: number | null; params?: Record<string, unknown> } = {}) => {
+      const fields: Record<string, string | Blob> = { ...source };
+      if (opts.inputRev != null) fields.inputRev = String(opts.inputRev);
+      if (opts.params) fields.params = JSON.stringify(opts.params);
+      return request<FlowMeta>(`${pflow(name)}/nodes/${nid}/output`, { method: 'POST', body: form(fields) });
+    },
+    getPixel: (name: string, nid: string) => request<PixelWorkMeta>(`${pflow(name)}/nodes/${nid}/pixel`),
+    addCandidates: (name: string, nid: string, settings: PixelSettings) =>
+      request<{ meta: PixelWorkMeta; candidates: PixelCandidate[]; errors: string[] }>(
+        `${pflow(name)}/nodes/${nid}/pixel/candidates`, json('POST', settings)),
+    deleteCandidate: (name: string, nid: string, cid: string) =>
+      request<PixelWorkMeta>(`${pflow(name)}/nodes/${nid}/pixel/candidates/${cid}`, { method: 'DELETE' }),
+    pixelate: (name: string, nid: string, cid: string, colors: number) =>
+      request<{ results: PixelResult[]; colors: number }>(
+        `${pflow(name)}/nodes/${nid}/pixel/candidates/${cid}/pixelate`, json('POST', { colors })),
   },
 };

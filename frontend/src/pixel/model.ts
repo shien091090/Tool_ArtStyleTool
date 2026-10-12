@@ -23,6 +23,18 @@ export interface PixelCandidate {
   rows: number;
   colors: number;
   note: string;
+  /** 流程像素化節點: 產生時的上游版本 */
+  inputRev?: number;
+}
+
+export interface PixelSettings {
+  mode: PixelMode;
+  model: PixelModel;
+  cols: number;
+  rows: number;
+  colors: number;
+  note: string;
+  count: number;
 }
 
 export interface PixelWorkMeta {

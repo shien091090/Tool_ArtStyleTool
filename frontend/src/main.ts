@@ -4,11 +4,13 @@ import { mountRenderPage } from './pages/renderPage';
 import { mountGridPage } from './pages/gridPage';
 import { mountProportionPage } from './pages/proportionPage';
 import { mountPixelPage } from './pages/pixelPage';
+import { mountFlowPage } from './pages/flowPage';
 import { canonicalPath } from './routes';
 
 type Mount = (el: HTMLElement, params: URLSearchParams) => () => void;
 
 const ROUTES: { path: string; label: string; mount: Mount }[] = [
+  { path: 'flow', label: '流程', mount: mountFlowPage },
   { path: 'decompose', label: '拆解檢查', mount: mountDecomposePage },
   { path: 'render', label: '渲染', mount: mountRenderPage },
   { path: 'grid', label: '對照網格', mount: mountGridPage },
