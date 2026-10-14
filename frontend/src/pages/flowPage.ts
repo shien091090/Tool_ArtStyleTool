@@ -45,6 +45,7 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
     onDelete: (sel) => void remove(sel),
     onOpen: (id) => openEditor(id),
     onContextMenu: (x, y, cx, cy) => showMenu(x, y, cx, cy),
+    onDropLink: (from, x, y, cx, cy) => showMenu(x, y, cx, cy, from),
     thumbUrl: (n) => (flow && n.rev ? api.flows.fileUrl(flow.name, `out/${n.id}.png`, n.rev) : null),
     status: (n) => (running.has(n.id) ? 'running' : flow ? nodeStatus(flow, n) : 'idle'),
   });
@@ -127,11 +128,13 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
   }
 
   // ---- 編輯圖結構 ----
-  async function addNode(type: FlowNodeType, x: number, y: number) {
+  /** 新增節點; 帶 from 時順便從該節點連線過來 */
+  async function addNode(type: FlowNodeType, x: number, y: number, from?: string) {
     if (!flow) return;
     const n: FlowNode = { id: newNodeId(flow.nodes), type, x, y, params: {}, rev: 0, inputRev: null, error: null };
     try {
-      await saveGraph({ ...flow, nodes: [...flow.nodes, n] });
+      await saveGraph({ ...flow, nodes: [...flow.nodes, n], links: from ? connect(flow.links, from, n.id) : flow.links });
+      if (from) await rerunCutout(n.id);
     } catch (e) {
       error(e);
     }
@@ -175,16 +178,18 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
     }
   }
 
-  function showMenu(x: number, y: number, cx: number, cy: number) {
+  /** 新增節點選單; 從拉線叫出時只列有輸入接點的種類 */
+  function showMenu(x: number, y: number, cx: number, cy: number, from?: string) {
     if (!flow) return;
     const r = area.getBoundingClientRect();
     menu.style.left = `${cx - r.left}px`;
     menu.style.top = `${cy - r.top}px`;
-    menu.replaceChildren(...TYPES.map((t) => {
+    const types = from ? TYPES.filter((t) => NODE_INFO[t].hasInput) : TYPES;
+    menu.replaceChildren(...types.map((t) => {
       const b = el('button', { text: NODE_INFO[t].label });
       b.addEventListener('click', () => {
         hideMenu();
-        void addNode(t, x, y);
+        void addNode(t, x, y, from);
       });
       return b;
     }));

@@ -18,6 +18,8 @@ export interface CanvasHandlers {
   onOpen(id: string): void;
   /** 畫布右鍵: 世界座標與畫面座標 */
   onContextMenu(x: number, y: number, clientX: number, clientY: number): void;
+  /** 從輸出接點拉線放到空地: 新節點的左上角(輸入接點對齊放開處)與畫面座標 */
+  onDropLink(from: string, x: number, y: number, clientX: number, clientY: number): void;
   thumbUrl(node: FlowNode): string | null;
   status(node: FlowNode): NodeStatus;
 }
@@ -170,9 +172,14 @@ export function createFlowCanvas(h: CanvasHandlers): FlowCanvas {
         pout.removeEventListener('pointermove', move);
         pout.removeEventListener('pointerup', up);
         temp.setAttribute('d', '');
-        const target = document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>('.fc-node');
+        const hit = document.elementFromPoint(ev.clientX, ev.clientY);
+        const target = hit?.closest<HTMLElement>('.fc-node');
         const to = target?.dataset.id;
         if (to && to !== n.id && target?.querySelector('.fc-port.in')) h.onConnect(n.id, to);
+        else if (!target && hit && root.contains(hit)) {
+          const p = toWorld(ev.clientX, ev.clientY);
+          h.onDropLink(n.id, Math.round(p.x), Math.round(p.y - PORT_Y), ev.clientX, ev.clientY);
+        }
       };
       pout.addEventListener('pointermove', move);
       pout.addEventListener('pointerup', up);
