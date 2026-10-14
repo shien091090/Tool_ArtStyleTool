@@ -1,5 +1,6 @@
 /** 像素化節點: 沿用像素素材的面板, 來源是上游輸出, 多一顆「設為輸出」。 */
 import { api } from '../../api';
+import { NODE_INFO } from '../model';
 import { confirmDelete, el, showBanner } from '../../pages/ui';
 import { createPixelPanel, type PixelBackend } from '../../pixel/pixelPanel';
 import type { EditorContext, NodeEditor } from './types';
@@ -36,7 +37,7 @@ export function mountPixelEditor(body: HTMLElement, ctx: EditorContext): NodeEdi
       const meta = await api.flows.getPixel(flow, node.id);
       const up = ctx.upstream;
       panel.setWork(backend, meta, ctx.upstreamUrl && up
-        ? { url: ctx.upstreamUrl, label: `上游 ${up.id} 第 ${up.rev} 版(AI 重畫用這張)` } : null);
+        ? { url: ctx.upstreamUrl, label: `上游「${NODE_INFO[up.type].label}」第 ${up.rev} 版(AI 重畫用這張)` } : null);
     } catch (e) {
       showBanner(ctx.banner, 'error', (e as Error).message);
     }

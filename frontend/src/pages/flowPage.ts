@@ -207,7 +207,7 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
     const stateText = el('span', { className: 'muted small' });
     const body = el('div', { className: 'fe-body' });
     const shell = el('div', { className: 'fe-shell' }, [
-      el('div', { className: 'toolbar' }, [back, el('b', { text: `${NODE_INFO[node.type].label}(${node.id})` }), stateText,
+      el('div', { className: 'toolbar' }, [back, el('b', { text: NODE_INFO[node.type].label }), stateText,
         edStatus, el('span', { className: 'spacer' }), dl]),
       edBanner, body,
     ]);
