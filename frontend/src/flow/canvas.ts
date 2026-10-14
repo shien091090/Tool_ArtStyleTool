@@ -25,8 +25,6 @@ export interface CanvasHandlers {
 export interface FlowCanvas {
   root: HTMLElement;
   render(flow: FlowMeta | null): void;
-  /** 畫面中央的世界座標(新增節點用) */
-  center(): { x: number; y: number };
   destroy(): void;
 }
 
@@ -274,11 +272,6 @@ export function createFlowCanvas(h: CanvasHandlers): FlowCanvas {
   return {
     root,
     render,
-    center() {
-      const r = root.getBoundingClientRect();
-      const p = toWorld(r.left + r.width / 2, r.top + r.height / 2);
-      return { x: Math.round(p.x - NODE_W / 2), y: Math.round(p.y - NODE_H / 2) };
-    },
     destroy() {
       views.clear();
     },

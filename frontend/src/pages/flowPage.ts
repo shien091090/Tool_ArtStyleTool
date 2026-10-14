@@ -1,6 +1,6 @@
 /** 節點流程頁: 畫布 + 節點編輯面板, 免費節點自動往下游重跑。 */
 import { api } from '../api';
-import { createFlowCanvas, NODE_W, type Selection } from '../flow/canvas';
+import { createFlowCanvas, type Selection } from '../flow/canvas';
 import { mountCutoutEditor, imgToBlob, loadImageData, readOps } from '../flow/editors/cutoutEditor';
 import { mountInputEditor } from '../flow/editors/inputEditor';
 import { mountPixelEditor } from '../flow/editors/pixelEditor';
@@ -31,11 +31,9 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
   const nameInput = el('input');
   nameInput.placeholder = '新流程名稱';
   const createBtn = el('button', { text: '新流程' });
-  const addSel = el('select');
-  addSel.append(option('', '+ 節點'), ...TYPES.map((t) => option(t, NODE_INFO[t].label)));
   const status = el('span', { className: 'muted' });
   const toolbar = el('div', { className: 'toolbar' }, [
-    el('label', {}, ['流程', flowSel]), deleteBtn, addSel, status, el('span', { className: 'spacer' }),
+    el('label', {}, ['流程', flowSel]), deleteBtn, status, el('span', { className: 'spacer' }),
     el('span', { className: 'muted small', text: '拖空白處平移、滾輪縮放、右鍵新增、雙擊節點開啟、Delete 刪除' }),
     nameInput, createBtn,
   ]);
@@ -55,7 +53,6 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
 
   function sync() {
     deleteBtn.disabled = !flow;
-    addSel.disabled = !flow;
   }
 
   function error(e: unknown) {
@@ -130,12 +127,9 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
   }
 
   // ---- 編輯圖結構 ----
-  async function addNode(type: FlowNodeType, x?: number, y?: number) {
+  async function addNode(type: FlowNodeType, x: number, y: number) {
     if (!flow) return;
-    // 工具列新增: 放在最後一個節點右邊
-    const last = flow.nodes.at(-1);
-    const pos = x !== undefined && y !== undefined ? { x, y } : last ? { x: last.x + NODE_W + 60, y: last.y } : canvas.center();
-    const n: FlowNode = { id: newNodeId(flow.nodes), type, ...pos, params: {}, rev: 0, inputRev: null, error: null };
+    const n: FlowNode = { id: newNodeId(flow.nodes), type, x, y, params: {}, rev: 0, inputRev: null, error: null };
     try {
       await saveGraph({ ...flow, nodes: [...flow.nodes, n] });
     } catch (e) {
@@ -289,11 +283,6 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
   }
 
   flowSel.addEventListener('change', () => void openFlow(flowSel.value));
-  addSel.addEventListener('change', () => {
-    const t = addSel.value as FlowNodeType;
-    addSel.value = '';
-    if (t) void addNode(t);
-  });
   createBtn.addEventListener('click', () => void (async () => {
     try {
       const name = nameInput.value.trim();
