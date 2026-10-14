@@ -16,8 +16,12 @@ export interface CanvasHandlers {
   onConnect(from: string, to: string): void;
   onDelete(sel: NonNullable<Selection>): void;
   onOpen(id: string): void;
-  /** 畫布右鍵: 世界座標與畫面座標 */
+  /** 畫布空白處右鍵: 世界座標與畫面座標 */
   onContextMenu(x: number, y: number, clientX: number, clientY: number): void;
+  /** 節點右鍵 */
+  onNodeMenu(id: string, clientX: number, clientY: number): void;
+  /** 連線右鍵 */
+  onLinkMenu(link: FlowLink, clientX: number, clientY: number): void;
   /** 從輸出接點拉線放到空地: 新節點的左上角(輸入接點對齊放開處)與畫面座標 */
   onDropLink(from: string, x: number, y: number, clientX: number, clientY: number): void;
   thumbUrl(node: FlowNode): string | null;
@@ -91,6 +95,11 @@ export function createFlowCanvas(h: CanvasHandlers): FlowCanvas {
         e.stopPropagation();
         select({ kind: 'link', link: l });
       });
+      hit.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        h.onLinkMenu(l, e.clientX, e.clientY);
+      });
       svg.append(line, hit);
     }
     svg.append(temp);
@@ -128,6 +137,12 @@ export function createFlowCanvas(h: CanvasHandlers): FlowCanvas {
       if (e.button !== 0) return;
       e.stopPropagation();
       select({ kind: 'node', id: n.id });
+    });
+    r.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      select({ kind: 'node', id: n.id });
+      h.onNodeMenu(n.id, e.clientX, e.clientY);
     });
     r.addEventListener('dblclick', (e) => {
       e.stopPropagation();

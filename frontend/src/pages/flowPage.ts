@@ -1,6 +1,6 @@
 /** 節點流程頁: 畫布 + 節點編輯面板, 免費節點自動往下游重跑。 */
 import { api } from '../api';
-import { createFlowCanvas, type Selection } from '../flow/canvas';
+import { createFlowCanvas, NODE_H, type Selection } from '../flow/canvas';
 import { mountCutoutEditor, imgToBlob, loadImageData, readOps } from '../flow/editors/cutoutEditor';
 import { mountInputEditor } from '../flow/editors/inputEditor';
 import { mountPixelEditor } from '../flow/editors/pixelEditor';
@@ -44,8 +44,10 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
     onConnect: (from, to) => void link(from, to),
     onDelete: (sel) => void remove(sel),
     onOpen: (id) => openEditor(id),
-    onContextMenu: (x, y, cx, cy) => showMenu(x, y, cx, cy),
-    onDropLink: (from, x, y, cx, cy) => showMenu(x, y, cx, cy, from),
+    onContextMenu: (x, y, cx, cy) => showAddMenu(x, y, cx, cy),
+    onDropLink: (from, x, y, cx, cy) => showAddMenu(x, y, cx, cy, from),
+    onNodeMenu: (id, cx, cy) => showNodeMenu(id, cx, cy),
+    onLinkMenu: (l, cx, cy) => showMenu(cx, cy, [{ label: '刪除連線', danger: true, run: () => remove({ kind: 'link', link: l }) }]),
     thumbUrl: (n) => (flow && n.rev ? api.flows.fileUrl(flow.name, `out/${n.id}.png`, n.rev) : null),
     status: (n) => (running.has(n.id) ? 'running' : flow ? nodeStatus(flow, n) : 'idle'),
   });
@@ -178,22 +180,73 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
     }
   }
 
-  /** 新增節點選單; 從拉線叫出時只列有輸入接點的種類 */
-  function showMenu(x: number, y: number, cx: number, cy: number, from?: string) {
+  /** 複製節點: 同種類同設定、不帶輸出, 放在原節點下方, 接同一個上游 */
+  async function duplicateNode(nid: string) {
+    if (!flow) return;
+    const src = flow.nodes.find((n) => n.id === nid);
+    if (!src) return;
+    // 只有去除區塊的設定(點過的位置)存在節點上; 其他種類的設定跟著輸出走, 不複製
+    const params = src.type === 'cutout' ? structuredClone(src.params) : {};
+    const n: FlowNode = { id: newNodeId(flow.nodes), type: src.type, x: src.x, y: src.y + NODE_H + 40, params, rev: 0, inputRev: null, error: null };
+    const up = upstreamOf(flow, nid);
+    try {
+      await saveGraph({ ...flow, nodes: [...flow.nodes, n], links: up ? connect(flow.links, up.id, n.id) : flow.links });
+      if (up) await rerunCutout(n.id);
+    } catch (e) {
+      error(e);
+    }
+  }
+
+  async function disconnectNode(nid: string) {
+    if (!flow) return;
+    try {
+      await saveGraph({ ...flow, links: flow.links.filter((l) => l.from !== nid && l.to !== nid) });
+    } catch (e) {
+      error(e);
+    }
+  }
+
+  function downloadOutput(nid: string) {
+    const cur = flow?.nodes.find((n) => n.id === nid);
+    if (flow && cur?.rev) download(api.flows.fileUrl(flow.name, `out/${nid}.png`, cur.rev), `${flow.name}_${nid}.png`);
+  }
+
+  interface MenuItem { label: string; run: () => unknown; disabled?: boolean; danger?: boolean }
+
+  function showMenu(cx: number, cy: number, items: MenuItem[]) {
     if (!flow) return;
     const r = area.getBoundingClientRect();
     menu.style.left = `${cx - r.left}px`;
     menu.style.top = `${cy - r.top}px`;
-    const types = from ? TYPES.filter((t) => NODE_INFO[t].hasInput) : TYPES;
-    menu.replaceChildren(...types.map((t) => {
-      const b = el('button', { text: NODE_INFO[t].label });
+    menu.replaceChildren(...items.map((it) => {
+      const b = el('button', { text: it.label, className: it.danger ? 'danger' : '' });
+      b.disabled = !!it.disabled;
       b.addEventListener('click', () => {
         hideMenu();
-        void addNode(t, x, y, from);
+        void it.run();
       });
       return b;
     }));
     menu.classList.remove('hidden');
+  }
+
+  /** 新增節點選單; 從拉線叫出時只列有輸入接點的種類 */
+  function showAddMenu(x: number, y: number, cx: number, cy: number, from?: string) {
+    const types = from ? TYPES.filter((t) => NODE_INFO[t].hasInput) : TYPES;
+    showMenu(cx, cy, types.map((t) => ({ label: NODE_INFO[t].label, run: () => addNode(t, x, y, from) })));
+  }
+
+  function showNodeMenu(nid: string, cx: number, cy: number) {
+    const n = flow?.nodes.find((m) => m.id === nid);
+    if (!flow || !n) return;
+    const linked = flow.links.some((l) => l.from === nid || l.to === nid);
+    showMenu(cx, cy, [
+      { label: '開啟設定', run: () => openEditor(nid) },
+      { label: '下載輸出 PNG', disabled: !n.rev, run: () => downloadOutput(nid) },
+      { label: '複製節點', run: () => duplicateNode(nid) },
+      { label: '中斷連線', disabled: !linked, run: () => disconnectNode(nid) },
+      { label: '刪除', danger: true, run: () => remove({ kind: 'node', id: nid }) },
+    ]);
   }
   const hideMenu = () => menu.classList.add('hidden');
 
@@ -239,10 +292,7 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
     const mount = { input: mountInputEditor, cutout: mountCutoutEditor, pixel: mountPixelEditor }[node.type];
     const ed = mount(body, ctx);
     back.addEventListener('click', () => closeEditor(false));
-    dl.addEventListener('click', () => {
-      const cur = flow?.nodes.find((n) => n.id === nid);
-      if (cur?.rev) download(api.flows.fileUrl(fname, `out/${nid}.png`, cur.rev), `${fname}_${nid}.png`);
-    });
+    dl.addEventListener('click', () => downloadOutput(nid));
     editor = { node: nid, ed, root: shell };
     area.append(shell);
     refreshHeader();
