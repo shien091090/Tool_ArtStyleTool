@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { connect, newNodeId, nodeStatus, wouldCycle, type FlowMeta, type FlowNode } from '../src/flow/model';
-import { applyOps, growMask, selectRegion, type Img, type WandOp } from '../src/flow/magicWand';
+import { applyOps, growMask, selectRegion, type EraseOp, type Img, type WandOp } from '../src/flow/magicWand';
 
 const node = (id: string, type: FlowNode['type'], rev = 0, inputRev: number | null = null): FlowNode =>
   ({ id, type, x: 0, y: 0, params: {}, rev, inputRev, error: null });
@@ -113,5 +113,32 @@ describe('魔術棒', () => {
       'WWWWWWWWWW', 'RRWWWWWWWW', 'RRWWWWWWWW']);
     const out = alphaMap(applyOps(big, [op({ mode: 'keep', x: 0.7, y: 0.3 })]));
     expect(out[2]).toBe('......##..');
+  });
+});
+
+describe('橡皮擦', () => {
+  const blank = (w: number, h: number) => img(Array.from({ length: h }, () => 'W'.repeat(w)));
+  const erase = (points: [number, number][], r: number): EraseOp => ({ tool: 'erase', points, r });
+
+  it('單點: 半徑很小也至少擦掉游標那一格', () => {
+    expect(alphaMap(applyOps(blank(5, 5), [erase([[0.5, 0.5]], 0)]))).toEqual(
+      ['#####', '#####', '##.##', '#####', '#####']);
+  });
+
+  it('一筆橫線: 沿路徑擦成一條', () => {
+    // 半徑 = 0.2 × 5 = 1 格
+    expect(alphaMap(applyOps(blank(5, 5), [erase([[0.1, 0.5], [0.9, 0.5]], 0.2)]))).toEqual(
+      ['#####', '.....', '.....', '.....', '#####']);
+  });
+
+  it('相對座標: 換成兩倍大的圖, 擦的範圍跟著放大', () => {
+    const out = alphaMap(applyOps(blank(10, 10), [erase([[0.1, 0.5], [0.9, 0.5]], 0.2)]));
+    expect(out.filter((row) => row === '..........').length).toBe(4);
+  });
+
+  it('跟魔術棒混用: 依序套用', () => {
+    const pic = img(['WWWWW', 'WRRBW', 'WRrBW', 'WWWWW', 'RWWWW']);
+    const out = applyOps(pic, [op({ x: 0, y: 0 }), erase([[0.1, 0.9]], 0)]);
+    expect(alphaMap(out)).toEqual(['.....', '.###.', '.###.', '.....', '.....']);
   });
 });

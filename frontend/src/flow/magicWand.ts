@@ -1,4 +1,4 @@
-/** 魔術棒: 點一下選出一塊區域, 移除或只保留它。純函式, 吃 ImageData 形狀的物件。 */
+/** 去除區塊的操作: 魔術棒(點一下選出一塊區域, 移除或只保留)與橡皮擦。純函式, 吃 ImageData 形狀的物件。 */
 
 export interface Img {
   data: Uint8ClampedArray;
@@ -17,6 +17,20 @@ export interface WandOp {
   contiguous: boolean;
   grow: boolean;
 }
+
+/** 橡皮擦一筆: 沿路徑擦成透明 */
+export interface EraseOp {
+  tool: 'erase';
+  /** 路徑點, 0~1 相對位置 */
+  points: [number, number][];
+  /** 筆刷半徑, 相對於圖的長邊 */
+  r: number;
+}
+
+/** 舊資料的魔術棒操作沒有 tool 欄位 */
+export type CutoutOp = WandOp | EraseOp;
+
+export const isErase = (op: CutoutOp): op is EraseOp => (op as EraseOp).tool === 'erase';
 
 export const DEFAULT_TOL = 40;
 export const MAX_TOL = 150;
@@ -94,9 +108,46 @@ export function applyOp(img: Img, op: WandOp): boolean {
   return true;
 }
 
+/** 橡皮擦: 擦掉 from→to 線段附近(像素中心距離 ≤ 半徑)的像素, 就地修改。座標是像素單位 */
+export function eraseSegment(img: Img, x1: number, y1: number, x2: number, y2: number, radius: number) {
+  const { width: w, height: h, data } = img;
+  // 至少擦到游標所在的那一格
+  const r = Math.max(0.71, radius);
+  const x0 = Math.max(0, Math.floor(Math.min(x1, x2) - r));
+  const xe = Math.min(w - 1, Math.ceil(Math.max(x1, x2) + r));
+  const y0 = Math.max(0, Math.floor(Math.min(y1, y2) - r));
+  const ye = Math.min(h - 1, Math.ceil(Math.max(y1, y2) + r));
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len2 = dx * dx + dy * dy;
+  for (let y = y0; y <= ye; y++) {
+    for (let x = x0; x <= xe; x++) {
+      const cx = x + 0.5;
+      const cy = y + 0.5;
+      const t = len2 ? Math.max(0, Math.min(1, ((cx - x1) * dx + (cy - y1) * dy) / len2)) : 0;
+      const ex = cx - (x1 + t * dx);
+      const ey = cy - (y1 + t * dy);
+      if (ex * ex + ey * ey <= r * r) data[(y * w + x) * 4 + 3] = 0;
+    }
+  }
+}
+
+/** 套一筆橡皮擦(就地修改) */
+export function applyErase(img: Img, op: EraseOp) {
+  const radius = op.r * Math.max(img.width, img.height);
+  const pts = op.points.map(([x, y]) => [x * img.width, y * img.height]);
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[Math.max(0, i - 1)];
+    eraseSegment(img, a[0], a[1], pts[i][0], pts[i][1], radius);
+  }
+}
+
 /** 從原圖依序套所有操作, 回傳新圖(不改原圖) */
-export function applyOps(src: Img, ops: WandOp[]): Img {
+export function applyOps(src: Img, ops: CutoutOp[]): Img {
   const img = { data: new Uint8ClampedArray(src.data), width: src.width, height: src.height };
-  for (const op of ops) applyOp(img, op);
+  for (const op of ops) {
+    if (isErase(op)) applyErase(img, op);
+    else applyOp(img, op);
+  }
   return img;
 }
