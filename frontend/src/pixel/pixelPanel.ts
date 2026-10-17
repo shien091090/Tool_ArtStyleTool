@@ -148,7 +148,7 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
   });
   const gridSize = el('div', { className: 'px-picker-size' });
   const gridRow = el('div', { className: 'col' }, [
-    el('div', { className: 'muted small', text: '從左上角拖拉選格數(一格 8px)' }), picker.root,
+    el('div', { className: 'muted small', text: '從左上角拖拉選格數(一格 8px)' }), picker.root, gridSize,
   ]);
   const suggestBtn = el('button', { text: '請 AI 建議尺寸' });
   const suggestList = el('div', { className: 'px-suggests' });
@@ -192,7 +192,7 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
     el('div', { className: 'row' }, [genBtn, costHint]));
   const side = el('div', { className: 'panel-wrap prop-panel' }, [
     section('轉換方式', methodSeg.root),
-    section('尺寸', sizeSeg.root, gridRow, autoRow, gridSize),
+    section('尺寸', sizeSeg.root, gridRow, autoRow),
     convertSection,
     aiSection,
   ]);
