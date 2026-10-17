@@ -109,6 +109,12 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
   let busy = false;
   let alive = true;
   let token = 0;
+  /** 每張候選目前選的頁籤(縮小方式的索引), 預設第一個 */
+  const tabs = new Map<string, number>();
+  /** 預覽圖更新過幾次, 加在網址上避免讀到舊圖 */
+  const previewVer = new Map<string, number>();
+  /** 選中候選的縮小結果(切頁籤時直接用, 不再叫後端) */
+  let shown: { cand: PixelCandidate; results: PixelResult[] } | null = null;
   let method: PixelMethod = 'convert';
   let sizeMode: 'grid' | 'auto' = 'auto';
   let suggestions: SizeSuggestion[] | null = null;
@@ -368,10 +374,26 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
     const cands = meta?.candidates ?? [];
     if (!cands.length) candList.append(el('div', { className: 'muted', text: '還沒有候選, 在右側設定後按「直接轉換」或「AI 重畫」' }));
     for (const c of cands) {
+      const items = c.previews?.items ?? [];
+      const tab = tabIndex(c);
       const img = el('img');
-      img.src = backend.fileUrl(`ai/${c.id}.png`);
+      if (items.length) {
+        const url = backend.fileUrl(`ai/${c.id}_${items[tab].method}.png`);
+        img.src = `${url}${url.includes('?') ? '&' : '?'}p=${previewVer.get(c.id) ?? 0}`;
+        img.classList.add('pixelated');
+      } else {
+        img.src = backend.fileUrl(`ai/${c.id}.png`);
+      }
+      const tabRow = el('div', { className: 'px-tabs' }, items.length > 1 ? items.map((it, i) => {
+        const b = el('button', { text: String(i + 1), title: it.label, className: i === tab ? 'active' : '' });
+        b.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          setTab(c.id, i);
+        });
+        return b;
+      }) : []);
       const item = el('div', { className: `px-cand${c.id === selected ? ' active' : ''}`, title: c.note }, [
-        img, el('span', { text: candidateLabel(c) }),
+        img, tabRow, el('span', { text: candidateLabel(c) }),
       ]);
       item.addEventListener('click', () => selectCandidate(c.id));
       const del = el('button', { text: '×', className: 'variant-del', title: '刪除這張候選' });
@@ -388,15 +410,36 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
     renderCandidates();
   }
 
+  function tabIndex(c: PixelCandidate): number {
+    const n = c.previews?.items.length ?? 0;
+    return Math.max(0, Math.min(tabs.get(c.id) ?? 0, n - 1));
+  }
+
+  function setTab(cid: string, i: number) {
+    if (busy) return;
+    tabs.set(cid, i);
+    if (cid !== selected) {
+      selectCandidate(cid);
+      return;
+    }
+    renderCandidates();
+    if (shown) void renderResults(shown.results, shown.cand);
+  }
+
+  /** 結果區顯示選中候選目前頁籤的那一種縮小方式 */
   async function renderResults(results: PixelResult[], cand: PixelCandidate) {
-    const my = token;
+    const my = ++token;
+    shown = { cand, results };
+    const want = cand.previews?.items[tabIndex(cand)]?.method;
+    const r = results.find((x) => x.method === want) ?? results[0];
     const cards: HTMLElement[] = [];
-    for (const r of results) {
+    if (r) {
       const card = el('div', { className: 'px-result' }, [el('div', { className: 'sel-title', text: r.label })]);
       cards.push(card);
       if (r.error || !r.png || !r.w || !r.h) {
         card.append(el('div', { className: 'muted', text: r.error ?? '縮小失敗' }));
-        continue;
+        resultGrid.replaceChildren(...cards);
+        return;
       }
       const img = await loadImage(r.png);
       if (my !== token) return;
@@ -446,6 +489,10 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
       const res = await be.pixelate(cand.id, colors);
       if (my !== token) return;
       colorsInput.value = String(res.colors);
+      // 後端已把各方式的結果存成預覽圖, 這裡同步候選縮圖
+      cand.previews = { colors: res.colors, items: res.results.filter((r) => r.png).map(({ method, label }) => ({ method, label })) };
+      previewVer.set(cand.id, (previewVer.get(cand.id) ?? 0) + 1);
+      renderCandidates();
       await renderResults(res.results, cand);
     });
   }
@@ -454,6 +501,7 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
     if (busy) return;
     selected = cid;
     token++;
+    shown = null;
     resultGrid.replaceChildren();
     const c = meta?.candidates.find((x) => x.id === cid);
     if (c) colorsInput.value = String(c.colors);
@@ -467,6 +515,7 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
     if (selected && !meta?.candidates.some((c) => c.id === selected)) {
       selected = null;
       token++;
+      shown = null;
       resultGrid.replaceChildren();
     }
     renderCandidates();
@@ -560,6 +609,7 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
       source = src;
       selected = null;
       token++;
+      shown = null;
       resultGrid.replaceChildren();
       renderSource();
       setMeta(m);

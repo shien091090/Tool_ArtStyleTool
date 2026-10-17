@@ -11,7 +11,7 @@ from .. import config
 from ..imaging import limit_size, load_rgb, read_png, write_png
 from ..names import validate_name
 
-_FILE = re.compile(r"source\.png|ai/c[0-9]+\.png")
+_FILE = re.compile(r"source\.png|ai/c[0-9]+(_[a-z_]+)?\.png")
 
 
 def _now() -> str:
@@ -112,8 +112,19 @@ class PixelWork:
         self.save_meta()
         return entry
 
+    def save_previews(self, cid: str, colors: int, items: list[tuple[str, str, np.ndarray]]) -> dict:
+        """各縮小方式的結果存成預覽圖 ai/<候選>_<方式>.png, 候選記下色數與方式(依序)。"""
+        cand = self.candidate(cid)
+        for method, _, img in items:
+            write_png(self.dir / "ai" / f"{cid}_{method}.png", img)
+        cand["previews"] = {"colors": colors, "items": [{"method": m, "label": label} for m, label, _ in items]}
+        self.save_meta()
+        return cand["previews"]
+
     def delete_candidate(self, cid: str) -> None:
-        self.candidate(cid)
+        cand = self.candidate(cid)
+        for it in (cand.get("previews") or {}).get("items", []):
+            (self.dir / "ai" / f"{cid}_{it['method']}.png").unlink(missing_ok=True)
         (self.dir / "ai" / f"{cid}.png").unlink(missing_ok=True)
         self.meta["candidates"] = [c for c in self.meta["candidates"] if c["id"] != cid]
         self.save_meta()

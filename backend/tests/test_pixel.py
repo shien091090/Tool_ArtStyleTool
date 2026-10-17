@@ -206,6 +206,7 @@ def test_grid_candidates_and_pixelate(client, fal):
     kind, model, shape, prompt, n = fal.calls[0]
     assert model == "gpt-image-2" and n == 2 and shape[:2] == (1024, 512) and "Additional instructions: 劍" in prompt
     assert body["candidates"][0]["colors"] == 8
+    assert [i["method"] for i in body["candidates"][0]["previews"]["items"]] == ["dominant", "contrast", "adaptive"]
     r = client.post(f"{P}/works/像素/candidates/c1/pixelate", json={"colors": 6})
     res = r.json()["results"]
     assert [x["method"] for x in res] == ["dominant", "contrast", "adaptive"]

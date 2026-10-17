@@ -88,6 +88,7 @@ def convert(work: PixelWork, body, src: np.ndarray, extra: dict | None = None) -
     """直接轉換: 存一張候選(圖是來源快照, 保留透明), 縮小時才真的轉。"""
     s = check_convert(body)
     entry = work.add_candidate(src, s | (extra or {}), keep_alpha=True)
+    pixelate(work, entry["id"], None)  # 先存預覽, 候選縮圖直接看得到結果
     return {"meta": work.meta, "candidate": entry}
 
 
@@ -101,6 +102,8 @@ def generate(work: PixelWork, body, c: FalClient, extra: dict | None = None) -> 
     images = c.edit(s["model"], img, prompt, s["count"])
     settings = {k: s[k] for k in ("mode", "model", "cols", "rows", "colors", "note")} | (extra or {})
     added = [work.add_candidate(im, settings) for im in images[:s["count"]]]
+    for cand in added:
+        pixelate(work, cand["id"], None)
     if len(added) < s["count"] and not errors:
         errors.append(f"要求 {s['count']} 張, AI 只回傳 {len(added)} 張")
     return {"meta": work.meta, "candidates": added, "errors": errors}
@@ -115,7 +118,7 @@ def pixelate(work: PixelWork, cid: str, body) -> dict:
         methods = ["convert", "convert_lines"]
     else:
         methods = ["auto"] if cand["mode"] == "auto" else ["dominant", "contrast", "adaptive"]
-    results = []
+    results, previews = [], []
     for m in methods:
         entry = {"method": m, "label": CONVERT_METHODS.get(m) or downscale.METHODS[m]}
         try:
@@ -127,7 +130,9 @@ def pixelate(work: PixelWork, cid: str, body) -> dict:
                 out = downscale.run(m, img, colors, cand["cols"], cand["rows"])
             entry.update(png=to_data_uri(out), w=int(out.shape[1]), h=int(out.shape[0]),
                          palette=downscale.palette(out))
+            previews.append((m, entry["label"], out))
         except Exception as e:  # 單一方法失敗不影響其他方法
             entry["error"] = f"縮小失敗: {e}"
         results.append(entry)
+    work.save_previews(cid, colors, previews)
     return {"results": results, "colors": colors}

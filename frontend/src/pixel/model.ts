@@ -47,6 +47,8 @@ export interface PixelCandidate {
   outline?: boolean;
   eyes?: EyeMark[];
   eye?: EyeMark | null;
+  /** 各縮小方式的預覽圖(ai/<候選>_<方式>.png), 依頁籤順序; 舊候選沒有 */
+  previews?: { colors: number; items: { method: string; label: string }[] };
 }
 
 /** AI 重畫的設定; 模型由後端依尺寸選 */

@@ -85,6 +85,14 @@ def test_work_convert_and_pixelate(client):  # noqa: F811
     res = client.post(f"{P}/works/像素/candidates/{cand['id']}/pixelate", json={"colors": 6}).json()
     assert [x["method"] for x in res["results"]] == ["convert", "convert_lines"]
     assert all(x["w"] == 32 and x["h"] == 32 for x in res["results"])
+    # 產生候選時就存好各方式的預覽, 重新縮小時跟著更新
+    assert cand["previews"]["colors"] == 16
+    assert [i["method"] for i in cand["previews"]["items"]] == ["convert", "convert_lines"]
+    meta = client.get(f"{P}/works/像素").json()
+    assert meta["candidates"][0]["previews"]["colors"] == 6
+    assert client.get(f"{P}/works/像素/files/ai/{cand['id']}_convert_lines.png").status_code == 200
+    client.delete(f"{P}/works/像素/candidates/{cand['id']}")
+    assert client.get(f"{P}/works/像素/files/ai/{cand['id']}_convert.png").status_code == 404
 
 
 @pytest.mark.parametrize("body, msg", [
