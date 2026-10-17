@@ -122,6 +122,8 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .result-item { border: 2px solid transparent; border-radius: 6px; overflow: hidden; cursor: pointer; background: #0003; }
 .result-item.active { border-color: var(--accent); }
 .result-item img { width: 100%; display: block; aspect-ratio: 1; object-fit: contain; }
+.result-item { position: relative; }
+.result-tag { position: absolute; top: 4px; left: 4px; padding: 0 6px; font-size: 11px; border-radius: 8px; color: #fff; background: var(--accent); }
 
 /* 部位工坊: AI 列部位與材質 */
 .suggest-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--line); cursor: pointer; }
@@ -209,6 +211,9 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .fc-menu button.danger { color: var(--danger); }
 .fe-shell { position: absolute; inset: 0; z-index: 6; display: flex; flex-direction: column; background: var(--bg, #1e1f22); }
 .fe-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.fe-embed { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.fe-empty { padding: 24px; }
+.fe-notice { display: flex; align-items: center; gap: 12px; padding: 6px 16px; color: #f0b54a; background: #f0b54a1a; }
 .fe-scroll { flex: 1; overflow: auto; padding-bottom: 16px; display: flex; flex-direction: column; gap: 8px; }
 .fe-scroll > .muted { padding: 0 16px; }
 .fe-preview { margin: 0 16px; align-self: flex-start; min-width: 200px; min-height: 120px; display: flex; align-items: center; justify-content: center; border-radius: 6px; }

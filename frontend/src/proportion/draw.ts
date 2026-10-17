@@ -112,18 +112,20 @@ const sourceKey = (p: Part) => (p.material?.current ? `mat:${p.material.current}
 
 /** 作品的圖與部位圖層快取。部位遮罩或圖改變時呼叫 sync 重載。 */
 export class WorkAssets {
+  constructor(private fileUrl: (name: string, path: string) => string = api.proportion.fileUrl) {}
+
   images = new Map<string, HTMLImageElement>();
   layers = new Map<string, PartLayer>();
   private keys = new Map<string, string>();
 
   async sync(meta: WorkMeta): Promise<void> {
     for (const im of meta.images) {
-      if (!this.images.has(im.id)) this.images.set(im.id, await loadImage(api.proportion.fileUrl(meta.name, `images/${im.id}.png`)));
+      if (!this.images.has(im.id)) this.images.set(im.id, await loadImage(this.fileUrl(meta.name, `images/${im.id}.png`)));
     }
     for (const p of meta.parts) {
       const cur = p.material?.current;
       if (cur && !this.images.has(`mat:${cur}`)) {
-        this.images.set(`mat:${cur}`, await loadImage(api.proportion.fileUrl(meta.name, `materials/${cur}.png`)));
+        this.images.set(`mat:${cur}`, await loadImage(this.fileUrl(meta.name, `materials/${cur}.png`)));
       }
     }
     const alive = new Set(meta.parts.map((p) => p.id));
@@ -136,7 +138,7 @@ export class WorkAssets {
     for (const p of meta.parts) {
       const key = `${p.rev ?? 0}|${p.bbox.join(',')}|${JSON.stringify(p.points)}|${JSON.stringify(p.box)}|${p.color}|${sourceKey(p)}`;
       if (this.keys.get(p.id) === key) continue;
-      const mask = await loadImage(api.proportion.fileUrl(meta.name, `masks/${p.id}.png`));
+      const mask = await loadImage(this.fileUrl(meta.name, `masks/${p.id}.png`));
       this.layers.set(p.id, this.buildLayer(p, mask));
       this.keys.set(p.id, key);
     }

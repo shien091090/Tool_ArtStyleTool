@@ -1,4 +1,4 @@
-import { api, type PackMeta } from '../api';
+import { api, type PackMeta, type WorkshopApi } from '../api';
 import { exportCollage, hasEdits, loadImage, WorkAssets } from '../proportion/draw';
 import { MATERIALS, swatchUrl } from '../proportion/materials';
 import { Editor, type Tool } from '../proportion/editor';
@@ -20,9 +20,23 @@ const identity = (z: number): PartTransform => ({ scaleX: 1, scaleY: 1, rotation
 const baseName = (n: string) => n.replace(/\((左|右)\)$/, '');
 const splitNames = (t: string) => [...new Set(t.split(/[、,，;；\n]/).map((s) => s.trim()).filter(Boolean))];
 
-export function mountProportionPage(root: HTMLElement, params: URLSearchParams): () => void {
+/** 嵌入流程節點時的設定: 固定一個作品, 不顯示作品列 */
+export interface WorkshopEmbed {
+  api: WorkshopApi;
+  /** 讀作品; 還沒有作品回 null */
+  load(): Promise<WorkMeta | null>;
+  banner: HTMLElement;
+  status: HTMLElement;
+  /** 對照列多出的按鈕(例如「設為輸出」) */
+  compareActions(resultId: string): HTMLElement[];
+  /** 結果縮圖上的標籤(例如「輸出」) */
+  resultTag(resultId: string): string | null;
+}
+
+export function mountProportionPage(root: HTMLElement, params: URLSearchParams, embed?: WorkshopEmbed): () => void {
+  const wapi = embed?.api ?? api.proportion;
   let meta: WorkMeta | null = null;
-  let assets = new WorkAssets();
+  let assets = new WorkAssets(wapi.fileUrl);
   let view = 'main';
   let tool: Tool = 'move';
   let selected: string | null = null;
@@ -39,7 +53,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
   let suggested: { name: string; checked: boolean }[] = [];
 
   // ---- 上方工具列 ----
-  const banner = el('div');
+  const banner = embed?.banner ?? el('div');
   const workSel = el('select');
   const nameInput = el('input');
   nameInput.placeholder = '新作品名稱';
@@ -50,7 +64,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
   const createBtn = el('button', { text: '建立作品' });
   const deleteWorkBtn = el('button', { text: '刪除' });
   deleteWorkBtn.addEventListener('click', () => void deleteWork());
-  const status = el('span', { className: 'muted' });
+  const status = embed?.status ?? el('span', { className: 'muted' });
   const toolbar = el('div', { className: 'toolbar' }, [
     el('label', {}, ['作品', workSel]),
     deleteWorkBtn,
@@ -259,7 +273,8 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
   const resultSection = section('結果', resultList);
 
   panel.append(viewSection, segSection, listSection, selSection, padSection, recipeSection, genSection, resultSection);
-  root.append(toolbar, banner, el('div', { className: 'prop-layout' }, [stage, panel]));
+  if (embed) root.append(el('div', { className: 'prop-layout' }, [stage, panel]));
+  else root.append(toolbar, banner, el('div', { className: 'prop-layout' }, [stage, panel]));
 
   const editor = new Editor(canvasWrap, {
     onSelect: (id) => {
@@ -337,7 +352,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
     if (!m) return;
     let failed: Error | null = null;
     savePromise = savePromise.then(() =>
-      api.proportion.putLayout(m.name, m.parts, m.pad).then(
+      wapi.putLayout(m.name, m.parts, m.pad).then(
         () => undefined,
         (e: Error) => {
           failed = e;
@@ -466,9 +481,11 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
     // 結果
     resultList.replaceChildren(...[...meta.results].reverse().map((r) => {
       const img = el('img');
-      img.src = api.proportion.fileUrl(meta!.name, `results/${r.id}.png`, r.created);
+      img.src = wapi.fileUrl(meta!.name, `results/${r.id}.png`, r.created);
       img.title = `${r.id} · ${r.model} · ${r.created}`;
-      const item = el('div', { className: `result-item${compare?.id === r.id ? ' active' : ''}` }, [img]);
+      const tag = embed?.resultTag(r.id);
+      const item = el('div', { className: `result-item${compare?.id === r.id ? ' active' : ''}` },
+        tag ? [img, el('span', { className: 'result-tag', text: tag })] : [img]);
       item.addEventListener('click', () => void openCompare(r.id));
       return item;
     }));
@@ -480,8 +497,8 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
       compareBar.replaceChildren(
         el('span', { text: `對照 ${id}: 左 = 原圖, 右 = 結果(拖曳畫面調整分界)` }),
         el('span', { className: 'spacer' }),
-        button('送到拆解檢查', () => void toPack(id)),
-        button('開新分頁看原尺寸', () => window.open(api.proportion.fileUrl(meta!.name, `results/${id}.png`), '_blank')),
+        ...(embed ? embed.compareActions(id) : [button('送到拆解檢查', () => void toPack(id))]),
+        button('開新分頁看原尺寸', () => window.open(wapi.fileUrl(meta!.name, `results/${id}.png`), '_blank')),
         button('回到編輯', () => {
           compare = null;
           redraw();
@@ -528,15 +545,15 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
     selected = null;
     view = 'main';
     meta = null;
-    assets = new WorkAssets();
+    assets = new WorkAssets(wapi.fileUrl);
     syncAll();
     if (!name) {
       redraw();
       return;
     }
     await run('載入中…', async () => {
-      await setMeta(await api.proportion.getWork(name));
-      history.replaceState(null, '', `#/workshop?work=${encodeURIComponent(name)}`);
+      await setMeta(await wapi.getWork(name));
+      if (!embed) history.replaceState(null, '', `#/workshop?work=${encodeURIComponent(name)}`);
       redraw();
     });
   }
@@ -554,7 +571,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
       selected = null;
       view = 'main';
       meta = null;
-      assets = new WorkAssets();
+      assets = new WorkAssets(wapi.fileUrl);
       history.replaceState(null, '', '#/workshop');
       await refreshWorks('');
       showBanner(banner, 'info', `已刪除作品「${name}」`);
@@ -590,7 +607,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
       if (!file && !imgPackSel.value) throw new Error('請選擇圖片或分層包');
       await flushSave();
       const before = new Set(meta.images.map((i) => i.id));
-      await setMeta(await api.proportion.addImage(meta.name, file ? { file } : { pack: imgPackSel.value }));
+      await setMeta(await wapi.addImage(meta.name, file ? { file } : { pack: imgPackSel.value }));
       imgFile.value = '';
       view = meta.images.find((i) => !before.has(i.id))?.id ?? view;
       selected = null;
@@ -607,7 +624,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
       if (!names.length) throw new Error('請輸入部位名稱, 或按「AI 列出部位」後勾選');
       await flushSave();
       const before = new Set(meta.parts.map((p) => p.id));
-      const res = await api.proportion.segment(meta.name, view, names);
+      const res = await wapi.segment(meta.name, view, names);
       await setMeta(res.meta);
       suggested = [];
       const added = res.meta.parts.filter((p) => !before.has(p.id));
@@ -632,7 +649,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
     const names = splitNames(partNames.value);
     if (names.length !== 1) throw new Error('沒有選中部位時, 請在「部位名稱」輸入一個名稱再點選或框選');
     const before = new Set(meta.parts.map((p) => p.id));
-    const res = await api.proportion.segment(meta.name, view, names, points, box);
+    const res = await wapi.segment(meta.name, view, names, points, box);
     await setMeta(res.meta);
     const added = res.meta.parts.find((p) => !before.has(p.id));
     if (added) selected = added.id;
@@ -650,7 +667,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
       } else {
         const img = meta!.images.find((i) => i.id === p.image)!;
         if (x < 0 || y < 0 || x >= img.w || y >= img.h) throw new Error('點的位置超出這個部位所屬的圖');
-        await setMeta(await api.proportion.refine(meta!.name, p.id, [...p.points, { x, y, label }], p.box));
+        await setMeta(await wapi.refine(meta!.name, p.id, [...p.points, { x, y, label }], p.box));
       }
       redraw();
     });
@@ -662,7 +679,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
       await flushSave();
       const p = refineTarget();
       if (!p) await addByGeometry([], box);
-      else await setMeta(await api.proportion.refine(meta!.name, p.id, [], box));
+      else await setMeta(await wapi.refine(meta!.name, p.id, [], box));
       redraw();
     });
   }
@@ -672,7 +689,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
     if (!p || !meta) return;
     await run('拆分中…', async () => {
       await flushSave();
-      await setMeta(await api.proportion.split(meta!.name, p.id));
+      await setMeta(await wapi.split(meta!.name, p.id));
       redraw();
     });
   }
@@ -682,7 +699,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
     if (!p || !meta) return;
     await run('刪除中…', async () => {
       await flushSave();
-      await setMeta(await api.proportion.deletePart(meta!.name, p.id));
+      await setMeta(await wapi.deletePart(meta!.name, p.id));
       selected = null;
       compare = null;
       if (p.image !== 'main' && p.placed && restoreReplaced(p)) await flushSave();
@@ -706,7 +723,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
     await run('AI 看圖列部位中…', async () => {
       if (!meta) return;
       await flushSave();
-      const res = await api.proportion.suggestParts(meta.name, view);
+      const res = await wapi.suggestParts(meta.name, view);
       await setMeta(res.meta);
       const existing = new Set(meta.parts.filter((p) => p.image === view).map((p) => baseName(p.name)));
       suggested = res.parts.map((x) => ({ name: x.name, checked: !existing.has(x.name) }));
@@ -765,7 +782,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
     variantList.replaceChildren(
       item(null, '原本材質', partThumb(p, null)),
       ...mat.variants.map((v) => item(v.id, v.material + (v.ref ? '(參考圖)' : ''),
-        partThumb(p, api.proportion.fileUrl(meta!.name, `materials/${v.id}.png`, v.id)))),
+        partThumb(p, wapi.fileUrl(meta!.name, `materials/${v.id}.png`, v.id)))),
     );
   }
 
@@ -776,7 +793,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
       const text = matInput.value.trim();
       if (!text) throw new Error('請輸入材質描述, 或點選上面的材質');
       await flushSave();
-      const res = await api.proportion.addMaterials(meta!.name, p.id, text, Number(matCount.value), refFile.files?.[0] ?? null);
+      const res = await wapi.addMaterials(meta!.name, p.id, text, Number(matCount.value), refFile.files?.[0] ?? null);
       await setMeta(res.meta);
       compare = null;
       if (res.errors.length) showBanner(banner, 'warn', res.errors.join('; '));
@@ -787,7 +804,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
   async function pickMaterial(pid: string, vid: string | null) {
     await run('套用材質中…', async () => {
       await flushSave();
-      await setMeta(await api.proportion.setMaterial(meta!.name, pid, vid));
+      await setMeta(await wapi.setMaterial(meta!.name, pid, vid));
       compare = null;
       redraw();
     });
@@ -796,7 +813,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
   async function deleteVariant(pid: string, vid: string) {
     await run('刪除候選中…', async () => {
       await flushSave();
-      await setMeta(await api.proportion.deleteMaterial(meta!.name, pid, vid));
+      await setMeta(await wapi.deleteMaterial(meta!.name, pid, vid));
       redraw();
     });
   }
@@ -861,7 +878,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
           const sided = missing.filter((n) => baseName(n) !== n);
           const bases = [...new Set(sided.map(baseName))];
           const plain = missing.filter((n) => baseName(n) === n);
-          const res = await api.proportion.segment(meta!.name, 'main', [...plain, ...bases]);
+          const res = await wapi.segment(meta!.name, 'main', [...plain, ...bases]);
           await setMeta(res.meta);
           skipped = res.missing.filter((n) => plain.includes(n));
           for (const b of bases) {
@@ -871,7 +888,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
               continue;
             }
             try {
-              await setMeta(await api.proportion.split(meta!.name, whole.id));
+              await setMeta(await wapi.split(meta!.name, whole.id));
             } catch {
               skipped.push(...sided.filter((n) => baseName(n) === b));
             }
@@ -927,7 +944,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
     await run('AI 生成中(約 15 秒)…', async () => {
       await flushSave();
       const { collage, region } = await exportCollage(meta!, assets);
-      const res = await api.proportion.generate(meta!.name, collage, region, {
+      const res = await wapi.generate(meta!.name, collage, region, {
         model: modelSel.value, count: Number(countSel.value), extra: extra.value,
       });
       meta!.results = res.meta.results;
@@ -940,8 +957,8 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
     if (!meta) return;
     try {
       const [img, snap] = await Promise.all([
-        loadImage(api.proportion.fileUrl(meta.name, `results/${id}.png`, id)),
-        api.proportion.resultParams(meta.name, id),
+        loadImage(wapi.fileUrl(meta.name, `results/${id}.png`, id)),
+        wapi.resultParams(meta.name, id),
       ]);
       // 結果是在當時的畫布擴大下生成的, 對照時用當時的擴大量對齊原圖
       compare = { id, img, split: 0.5, pad: snap.pad ?? ZERO_PAD };
@@ -956,7 +973,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
   async function toPack(id: string) {
     if (!meta) return;
     await run('建立分層包中…', async () => {
-      const { pack } = await api.proportion.toPack(meta!.name, id);
+      const { pack } = await wapi.toPack(meta!.name, id);
       location.hash = `#/decompose?pack=${encodeURIComponent(pack)}`;
     });
   }
@@ -966,6 +983,16 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams):
   void (async () => {
     try {
       falOk = (await api.getStatus()).fal;
+      if (embed) {
+        await Promise.all([refreshPacks(), refreshRecipes()]);
+        await run('載入中…', async () => {
+          const m = await embed.load();
+          if (m) await setMeta(m);
+        });
+        syncAll();
+        redraw();
+        return;
+      }
       await Promise.all([refreshWorks(), refreshPacks(), refreshRecipes()]);
       const want = params.get('work');
       if (want) {

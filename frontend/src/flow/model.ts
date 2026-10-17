@@ -1,6 +1,6 @@
 /** 節點流程: 型別與純函式(狀態推導、連線規則)。 */
 
-export type FlowNodeType = 'input' | 'cutout' | 'pixel';
+export type FlowNodeType = 'input' | 'cutout' | 'workshop' | 'pixel';
 
 export interface FlowNode {
   id: string;
@@ -31,6 +31,7 @@ export type NodeStatus = 'idle' | 'running' | 'done' | 'stale' | 'error';
 export const NODE_INFO: Record<FlowNodeType, { label: string; hasInput: boolean; free: boolean }> = {
   input: { label: '圖片輸入', hasInput: false, free: true },
   cutout: { label: '去除區塊', hasInput: true, free: true },
+  workshop: { label: '改部位', hasInput: true, free: false },
   pixel: { label: '像素化', hasInput: true, free: false },
 };
 

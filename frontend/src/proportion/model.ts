@@ -89,6 +89,8 @@ export interface ResultInfo {
 
 export interface WorkMeta {
   version: number;
+  /** 流程改部位節點: 主圖取自上游第幾版 */
+  inputRev?: number;
   name: string;
   created: string;
   updated: string;

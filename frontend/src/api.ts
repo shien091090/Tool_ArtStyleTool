@@ -82,6 +82,54 @@ const work = (name: string) => `/api/proportion/works/${enc(name)}`;
 const pwork = (name: string) => `/api/pixel/works/${enc(name)}`;
 const pflow = (name: string) => `/api/flows/${enc(name)}`;
 
+/** 單一部位工坊作品的呼叫; base 由作品名組出網址(流程節點忽略作品名) */
+function workshopApi(base: (name: string) => string) {
+  return {
+    getWork: (name: string) => request<WorkMeta>(base(name)),
+    addImage: (name: string, source: { file: File } | { pack: string }) =>
+      request<WorkMeta>(`${base(name)}/images`, { method: 'POST', body: form(source) }),
+    fileUrl: (name: string, path: string, version = '') =>
+      `${base(name)}/files/${path}?v=${enc(version || String(Date.now()))}`,
+    segment: (name: string, image: string, names: string[], points: SegPoint[] = [], box: SegBox | null = null) =>
+      request<{ meta: WorkMeta; missing: string[] }>(`${base(name)}/parts`, json('POST', { image, names, points, box })),
+    refine: (name: string, partId: string, points: SegPoint[], box: SegBox | null) =>
+      request<WorkMeta>(`${base(name)}/parts/${partId}/refine`, json('POST', { points, box })),
+    split: (name: string, partId: string) =>
+      request<WorkMeta>(`${base(name)}/parts/${partId}/split`, { method: 'POST' }),
+    deletePart: (name: string, partId: string) =>
+      request<WorkMeta>(`${base(name)}/parts/${partId}`, { method: 'DELETE' }),
+    putLayout: (name: string, parts: Part[], pad: Pad) =>
+      request<WorkMeta>(`${base(name)}/layout`, json('PUT', {
+        parts: parts.map((p): { id: string; placed: boolean; place: Place | null; transform: PartTransform } =>
+          ({ id: p.id, placed: p.placed, place: p.place, transform: p.transform })),
+        pad,
+      })),
+    generate: (name: string, collage: Blob, region: Blob, options: { model: string; count: number; extra: string }) =>
+      request<{ meta: WorkMeta; results: ResultInfo[]; errors: string[] }>(`${base(name)}/generate`, {
+        method: 'POST',
+        body: form({ collage, region, options: JSON.stringify(options) }),
+      }),
+    toPack: (name: string, resultId: string) =>
+      request<{ pack: string }>(`${base(name)}/results/${resultId}/to-pack`, { method: 'POST' }),
+    resultParams: (name: string, resultId: string) =>
+      request<{ pad?: Pad; model?: string }>(`${base(name)}/files/results/${resultId}.json`),
+    suggestParts: (name: string, image: string) =>
+      request<{ parts: { name: string; en: string }[]; meta: WorkMeta }>(`${base(name)}/suggest-parts`, json('POST', { image })),
+    addMaterials: (name: string, partId: string, material: string, count: number, reference: File | null) =>
+      request<{ meta: WorkMeta; errors: string[] }>(`${base(name)}/parts/${partId}/materials`, {
+        method: 'POST',
+        body: form({ material, count: String(count), ...(reference ? { reference } : {}) }),
+      }),
+    setMaterial: (name: string, partId: string, variant: string | null) =>
+      request<WorkMeta>(`${base(name)}/parts/${partId}/material`, json('PUT', { variant })),
+    deleteMaterial: (name: string, partId: string, variantId: string) =>
+      request<WorkMeta>(`${base(name)}/parts/${partId}/materials/${variantId}`, { method: 'DELETE' }),
+  };
+}
+
+export type WorkshopApi = ReturnType<typeof workshopApi>;
+
+
 export const api = {
   getStatus: () => request<{ fal: boolean }>('/api/status'),
   falBalance: () => request<{ balance: number; currency: string }>('/api/fal/balance'),
@@ -106,48 +154,10 @@ export const api = {
   deleteRecipe: (name: string) => request<{ ok: boolean }>(`/api/recipes/${enc(name)}`, { method: 'DELETE' }),
   proportion: {
     listWorks: () => request<{ name: string; updated: string; results: number }[]>('/api/proportion/works'),
-    getWork: (name: string) => request<WorkMeta>(work(name)),
+    ...workshopApi(work),
     deleteWork: (name: string) => request<{ ok: boolean }>(work(name), { method: 'DELETE' }),
     createWork: (name: string, source: { file: File } | { pack: string }) =>
       request<WorkMeta>('/api/proportion/works', { method: 'POST', body: form({ name, ...source }) }),
-    addImage: (name: string, source: { file: File } | { pack: string }) =>
-      request<WorkMeta>(`${work(name)}/images`, { method: 'POST', body: form(source) }),
-    fileUrl: (name: string, path: string, version = '') =>
-      `${work(name)}/files/${path}?v=${enc(version || String(Date.now()))}`,
-    segment: (name: string, image: string, names: string[], points: SegPoint[] = [], box: SegBox | null = null) =>
-      request<{ meta: WorkMeta; missing: string[] }>(`${work(name)}/parts`, json('POST', { image, names, points, box })),
-    refine: (name: string, partId: string, points: SegPoint[], box: SegBox | null) =>
-      request<WorkMeta>(`${work(name)}/parts/${partId}/refine`, json('POST', { points, box })),
-    split: (name: string, partId: string) =>
-      request<WorkMeta>(`${work(name)}/parts/${partId}/split`, { method: 'POST' }),
-    deletePart: (name: string, partId: string) =>
-      request<WorkMeta>(`${work(name)}/parts/${partId}`, { method: 'DELETE' }),
-    putLayout: (name: string, parts: Part[], pad: Pad) =>
-      request<WorkMeta>(`${work(name)}/layout`, json('PUT', {
-        parts: parts.map((p): { id: string; placed: boolean; place: Place | null; transform: PartTransform } =>
-          ({ id: p.id, placed: p.placed, place: p.place, transform: p.transform })),
-        pad,
-      })),
-    generate: (name: string, collage: Blob, region: Blob, options: { model: string; count: number; extra: string }) =>
-      request<{ meta: WorkMeta; results: ResultInfo[]; errors: string[] }>(`${work(name)}/generate`, {
-        method: 'POST',
-        body: form({ collage, region, options: JSON.stringify(options) }),
-      }),
-    toPack: (name: string, resultId: string) =>
-      request<{ pack: string }>(`${work(name)}/results/${resultId}/to-pack`, { method: 'POST' }),
-    resultParams: (name: string, resultId: string) =>
-      request<{ pad?: Pad; model?: string }>(`${work(name)}/files/results/${resultId}.json`),
-    suggestParts: (name: string, image: string) =>
-      request<{ parts: { name: string; en: string }[]; meta: WorkMeta }>(`${work(name)}/suggest-parts`, json('POST', { image })),
-    addMaterials: (name: string, partId: string, material: string, count: number, reference: File | null) =>
-      request<{ meta: WorkMeta; errors: string[] }>(`${work(name)}/parts/${partId}/materials`, {
-        method: 'POST',
-        body: form({ material, count: String(count), ...(reference ? { reference } : {}) }),
-      }),
-    setMaterial: (name: string, partId: string, variant: string | null) =>
-      request<WorkMeta>(`${work(name)}/parts/${partId}/material`, json('PUT', { variant })),
-    deleteMaterial: (name: string, partId: string, variantId: string) =>
-      request<WorkMeta>(`${work(name)}/parts/${partId}/materials/${variantId}`, { method: 'DELETE' }),
     listRecipes: () => request<string[]>('/api/proportion/recipes'),
     getRecipe: (name: string) => request<unknown>(`/api/proportion/recipes/${enc(name)}`),
     saveRecipe: (name: string, recipe: ProportionRecipe) =>
@@ -189,6 +199,15 @@ export const api = {
       if (opts.inputRev != null) fields.inputRev = String(opts.inputRev);
       if (opts.params) fields.params = JSON.stringify(opts.params);
       return request<FlowMeta>(`${pflow(name)}/nodes/${nid}/output`, { method: 'POST', body: form(fields) });
+    },
+    /** 改部位節點的作品 */
+    workshop: (name: string, nid: string) => {
+      const base = `${pflow(name)}/nodes/${nid}/workshop`;
+      return {
+        ...workshopApi(() => base),
+        status: () => request<{ exists: boolean; inputRev: number | null }>(`${base}/status`),
+        init: () => request<WorkMeta>(`${base}/init`, { method: 'POST' }),
+      };
     },
     getPixel: (name: string, nid: string) => request<PixelWorkMeta>(`${pflow(name)}/nodes/${nid}/pixel`),
     addCandidates: (name: string, nid: string, settings: PixelSettings) =>

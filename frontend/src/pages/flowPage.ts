@@ -4,6 +4,7 @@ import { createFlowCanvas, NODE_H, type Selection } from '../flow/canvas';
 import { mountCutoutEditor, imgToBlob, loadImageData, readOps } from '../flow/editors/cutoutEditor';
 import { mountInputEditor } from '../flow/editors/inputEditor';
 import { mountPixelEditor } from '../flow/editors/pixelEditor';
+import { mountWorkshopEditor } from '../flow/editors/workshopEditor';
 import type { EditorContext, NodeEditor, OutputSource } from '../flow/editors/types';
 import { applyOps } from '../flow/magicWand';
 import {
@@ -202,8 +203,9 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
       }
       const n = flow.nodes.find((m) => m.id === sel.id);
       if (!n) return;
-      const extra = n.type === 'pixel' ? '(含輸出與所有 AI 候選)' : '(含輸出)';
-      if (n.rev || n.type === 'pixel') {
+      const extra = n.type === 'pixel' ? '(含輸出與所有 AI 候選)'
+        : n.type === 'workshop' ? '(含輸出、部位、材質候選與生成結果)' : '(含輸出)';
+      if (n.rev || n.type === 'pixel' || n.type === 'workshop') {
         if (!confirmDelete(`節點「${NODE_INFO[n.type].label}」${extra}`)) return;
       }
       await saveGraph({
@@ -325,7 +327,7 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
         return m;
       },
     };
-    const mount = { input: mountInputEditor, cutout: mountCutoutEditor, pixel: mountPixelEditor }[node.type];
+    const mount = { input: mountInputEditor, cutout: mountCutoutEditor, workshop: mountWorkshopEditor, pixel: mountPixelEditor }[node.type];
     const ed = mount(body, ctx);
     back.addEventListener('click', () => closeEditor(false));
     dl.addEventListener('click', () => downloadOutput(nid));
