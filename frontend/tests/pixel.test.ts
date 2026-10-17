@@ -35,9 +35,9 @@ describe('像素素材', () => {
 
   it('候選標籤', () => {
     const base = { id: 'c1', created: '', model: 'gpt-image-2' as const, colors: 8, note: '' };
-    expect(candidateLabel({ ...base, mode: 'grid', cols: 8, rows: 12 })).toBe('AI · GPT Image 2 · 8×12 格');
-    expect(candidateLabel({ ...base, mode: 'auto', cols: 0, rows: 0, model: 'kontext' })).toBe('AI · Kontext · 自動尺寸');
-    expect(candidateLabel({ ...base, mode: 'convert', cols: 4, rows: 8, model: '' })).toBe('直接轉換 · 4×8 格');
+    expect(candidateLabel({ ...base, mode: 'grid', cols: 8, rows: 12 })).toBe('AI 重畫 · 64×96');
+    expect(candidateLabel({ ...base, mode: 'auto', cols: 0, rows: 0, model: 'kontext' })).toBe('AI 重畫 · 自動尺寸');
+    expect(candidateLabel({ ...base, mode: 'convert', cols: 4, rows: 8, model: '' })).toBe('直接轉換 · 32×64');
   });
 
   it('候選眼睛相容舊的單一 eye', () => {

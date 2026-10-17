@@ -139,11 +139,10 @@ export function displayScale(w: number, h: number, box: number): number {
   return Math.max(1, Math.floor(box / Math.max(w, h)));
 }
 
+/** 候選卡片標籤: 方式 · 實際像素尺寸 */
 export function candidateLabel(c: PixelCandidate): string {
-  if (c.mode === 'convert') return `直接轉換 · ${c.cols}×${c.rows} 格`;
-  const model = c.model ? MODEL_LABEL[c.model] ?? c.model : 'AI';
-  if (c.mode === 'auto') return `AI · ${model} · 自動尺寸`;
-  return `AI · ${model} · ${c.cols}×${c.rows} 格`;
+  const how = c.mode === 'convert' ? '直接轉換' : 'AI 重畫';
+  return c.mode === 'auto' ? `${how} · 自動尺寸` : `${how} · ${c.cols * CELL}×${c.rows * CELL}`;
 }
 
 /** 候選的眼睛標記(相容舊的單一 eye) */
