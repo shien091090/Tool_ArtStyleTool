@@ -11,6 +11,7 @@ function workBackend(name: string): PixelBackend {
     deleteCandidate: (cid) => api.pixel.deleteCandidate(name, cid),
     pixelate: (cid, colors) => api.pixel.pixelate(name, cid, colors),
     convert: (s) => api.pixel.convert(name, s),
+    suggestSizes: () => api.pixel.suggestSizes(name),
   };
 }
 

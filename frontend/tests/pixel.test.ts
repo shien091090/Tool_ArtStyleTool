@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { cellAt } from '../src/pixel/gridPicker';
-import { candidateLabel, defaultColors, defaultConvertColors, displayScale, estimateCost, toGpl } from '../src/pixel/model';
+import {
+  candidateEyes, candidateLabel, defaultColors, defaultConvertColors, displayScale, estimateCost, isSmall, pickModel, toGpl,
+} from '../src/pixel/model';
 
 describe('像素素材', () => {
   it('預設色數與後端一致', () => {
@@ -11,9 +13,13 @@ describe('像素素材', () => {
     expect(defaultColors('grid', 4, 8)).toBe(16);
   });
 
-  it('花費估算: 指定格數固定 Banana Pro', () => {
-    expect(estimateCost('auto', 'kontext', 2)).toBeCloseTo(0.08);
-    expect(estimateCost('grid', 'kontext', 1)).toBeCloseTo(0.15);
+  it('依尺寸自動選模型與花費(長邊 96px 為界, 同後端)', () => {
+    expect(pickModel(12, 12)).toBe('gpt-image-2');
+    expect(pickModel(4, 13)).toBe('nano-banana-pro');
+    expect(estimateCost(12, 12, 2)).toBeCloseTo(0.12);
+    expect(estimateCost(13, 4, 1)).toBeCloseTo(0.15);
+    expect(isSmall(6, 4)).toBe(true);
+    expect(isSmall(7, 4)).toBe(false);
   });
 
   it('gpl 格式', () => {
@@ -28,10 +34,18 @@ describe('像素素材', () => {
   });
 
   it('候選標籤', () => {
-    const base = { id: 'c1', created: '', model: 'nano-banana-pro' as const, colors: 8, note: '' };
-    expect(candidateLabel({ ...base, mode: 'grid', cols: 1, rows: 2 })).toBe('寬1×高2格(8×16)');
-    expect(candidateLabel({ ...base, mode: 'auto', cols: 0, rows: 0, model: 'kontext' })).toBe('自動 · Kontext');
-    expect(candidateLabel({ ...base, mode: 'convert', cols: 4, rows: 8 })).toBe('直接轉換 · 寬4×高8格');
+    const base = { id: 'c1', created: '', model: 'gpt-image-2' as const, colors: 8, note: '' };
+    expect(candidateLabel({ ...base, mode: 'grid', cols: 8, rows: 12 })).toBe('AI · GPT Image 2 · 8×12 格');
+    expect(candidateLabel({ ...base, mode: 'auto', cols: 0, rows: 0, model: 'kontext' })).toBe('AI · Kontext · 自動尺寸');
+    expect(candidateLabel({ ...base, mode: 'convert', cols: 4, rows: 8, model: '' })).toBe('直接轉換 · 4×8 格');
+  });
+
+  it('候選眼睛相容舊的單一 eye', () => {
+    const base = { id: 'c1', created: '', model: '' as const, colors: 8, note: '', mode: 'convert' as const, cols: 4, rows: 4 };
+    const e = { x: 0.5, y: 0.5, r: 0.1 };
+    expect(candidateEyes({ ...base, eye: e })).toEqual([e]);
+    expect(candidateEyes({ ...base, eyes: [e, e] })).toHaveLength(2);
+    expect(candidateEyes(base)).toEqual([]);
   });
 
   it('拖拉位置換算格數並限制在 1~16', () => {

@@ -10,6 +10,7 @@ import {
   connect, downstreamOf, NODE_INFO, newNodeId, nodeStatus, STATUS_LABEL, upstreamOf, wouldCycle,
   type FlowMeta, type FlowNode, type FlowNodeType,
 } from '../flow/model';
+import { candidateEyes } from '../pixel/model';
 import { download } from '../pixel/pixelPanel';
 import { confirmDelete, el, option, showBanner } from './ui';
 
@@ -133,7 +134,7 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
       if (cand?.mode !== 'convert') return;
       const colors = typeof node.params.colors === 'number' ? node.params.colors : cand.colors;
       const res = await api.flows.convertPixel(fname, nid, {
-        cols: cand.cols, rows: cand.rows, colors, outline: cand.outline ?? true, eye: cand.eye ?? null,
+        cols: cand.cols, rows: cand.rows, colors, outline: cand.outline ?? true, eyes: candidateEyes(cand),
       });
       const out = (await api.flows.pixelate(fname, nid, res.candidate.id, colors)).results.find((r) => r.method === method);
       if (!out?.png) throw new Error(out?.error ?? '直接轉換失敗');
