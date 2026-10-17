@@ -114,3 +114,20 @@ def test_edit_extra_images():
     assert len(sent[0]["image_urls"]) == 2
     with pytest.raises(ValueError):
         c.edit("qwen", img, "fix", 1, [np.zeros((5, 5, 3), np.uint8)])
+
+
+def test_balance():
+    sent = {}
+
+    def handler(req):
+        sent["url"] = str(req.url)
+        sent["auth"] = req.headers.get("authorization")
+        return httpx.Response(200, json={"username": "u", "credits": {"current_balance": 4.73, "currency": "USD"}})
+
+    assert _client(handler).balance() == {"balance": 4.73, "currency": "USD"}
+    assert sent["url"].startswith("https://api.fal.ai/v1/account/billing") and "expand=credits" in sent["url"]
+    assert sent["auth"].startswith("Key ")
+    with pytest.raises(FalError, match="查不到"):
+        _client(lambda r: httpx.Response(403, text="no")).balance()
+    with pytest.raises(FalError, match="格式不符"):
+        _client(lambda r: httpx.Response(200, json={"x": 1})).balance()

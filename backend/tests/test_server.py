@@ -76,6 +76,7 @@ def test_errors(client):
 def test_no_key_returns_503(tmp_path):
     c = TestClient(create_app(tmp_path, lambda: None), headers=HEADERS)
     assert c.get("/api/status").json() == {"fal": False}
+    assert c.get("/api/fal/balance").status_code == 503
     _upload(c)
     r = c.post("/api/packs/騎士/steps/depth")
     assert r.status_code == 503 and "FAL_KEY" in r.json()["detail"]

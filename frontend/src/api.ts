@@ -61,6 +61,8 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     }
     throw new Error(detail);
   }
+  // 寫入請求可能花了 fal 的錢, 讓右上角的餘額更新
+  if (init?.method && init.method !== 'GET') window.dispatchEvent(new Event('api-write'));
   return res.json() as Promise<T>;
 }
 
@@ -82,6 +84,7 @@ const pflow = (name: string) => `/api/flows/${enc(name)}`;
 
 export const api = {
   getStatus: () => request<{ fal: boolean }>('/api/status'),
+  falBalance: () => request<{ balance: number; currency: string }>('/api/fal/balance'),
   listPacks: () => request<PackMeta[]>('/api/packs'),
   getPack: (name: string) => request<PackMeta>(`/api/packs/${enc(name)}`),
   createPack: (name: string, file: File) =>

@@ -62,3 +62,11 @@ describe('直接轉換', () => {
     expect(defaultConvertColors(8, 5)).toBe(24);
   });
 });
+
+describe('fal 餘額', () => {
+  it('格式', async () => {
+    const { formatBalance } = await import('../src/falBalance');
+    expect(formatBalance(4.734, 'USD')).toBe('$4.73');
+    expect(formatBalance(2, 'EUR')).toBe('2.00 EUR');
+  });
+});

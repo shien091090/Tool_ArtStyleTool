@@ -26,6 +26,8 @@ KONTEXT_MODEL = "fal-ai/flux-pro/kontext"
 # 看圖回文字(列部位): 實測約 2.6 秒、每次 < US$0.001
 VISION_ENDPOINT = "openrouter/router/vision"
 VISION_MODEL = "google/gemini-2.5-flash"
+# 帳號餘額(Platform API, 不花錢)
+BALANCE_URL = "https://api.fal.ai/v1/account/billing?expand=credits"
 
 
 class FalError(Exception):
@@ -41,6 +43,8 @@ class FalClient(Protocol):
              extra_images: list[np.ndarray] = ()) -> list[np.ndarray]: ...
 
     def vision(self, img: np.ndarray, prompt: str) -> str: ...
+
+    def balance(self) -> dict: ...
 
 
 class HttpFalClient:
@@ -116,6 +120,19 @@ class HttpFalClient:
                 out.append((np.where(mk > 127, 255, 0).astype(np.uint8), float(score)))
             return out
         return self._call(SAM_MODEL, fn)
+
+    def balance(self):
+        """回傳 {balance, currency}。"""
+        def fn(http):
+            r = http.get(BALANCE_URL, headers={"Authorization": f"Key {self._key}", "Accept": "application/json"})
+            if r.status_code >= 400:
+                raise FalError(f"查不到 fal.ai 餘額(HTTP {r.status_code}): {r.text[:200]}")
+            try:
+                credits = r.json()["credits"]
+                return {"balance": float(credits["current_balance"]), "currency": str(credits.get("currency") or "USD")}
+            except (ValueError, KeyError, TypeError):
+                raise FalError(f"fal.ai 餘額格式不符: {r.text[:200]}")
+        return self._call("billing", fn)
 
     def vision(self, img, prompt):
         body = {"model": VISION_MODEL, "prompt": prompt, "image_urls": [to_data_uri(img)]}

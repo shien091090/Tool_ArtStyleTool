@@ -50,6 +50,13 @@ def create_app(data_dir: Path, client_factory: Callable[[], FalClient | None] = 
     def status():
         return {"fal": client_factory() is not None}
 
+    @app.get("/api/fal/balance")
+    def fal_balance():
+        c = client_factory()
+        if c is None:
+            raise decompose.NoClientError("沒有設定 FAL_KEY 環境變數")
+        return c.balance()
+
     @app.get("/api/packs")
     def list_packs():
         return Pack.list(packs_dir)

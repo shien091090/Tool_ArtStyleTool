@@ -6,6 +6,7 @@ import { mountProportionPage } from './pages/proportionPage';
 import { mountPixelPage } from './pages/pixelPage';
 import { mountFlowPage } from './pages/flowPage';
 import { canonicalPath } from './routes';
+import { mountFalBalance } from './falBalance';
 
 type Mount = (el: HTMLElement, params: URLSearchParams) => () => void;
 
@@ -46,3 +47,4 @@ function route() {
 
 window.addEventListener('hashchange', route);
 route();
+mountFalBalance(document.querySelector<HTMLButtonElement>('#fal-balance')!);
