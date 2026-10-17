@@ -31,6 +31,10 @@ button { cursor: pointer; }
 button:hover:not(:disabled) { border-color: var(--accent); }
 button:disabled { opacity: 0.5; cursor: default; }
 button.primary { background: #2f5ea8; border-color: #2f5ea8; }
+button.paid { background: #7a5212; border-color: #b8801f; color: #fff; }
+button.paid:hover:not(:disabled) { border-color: #f0b54a; }
+button.paid::before { content: '$'; display: inline-block; width: 14px; height: 14px; margin-right: 5px; border-radius: 50%; background: #f0b54a; color: #3a2600; font-size: 10px; font-weight: 700; line-height: 14px; text-align: center; vertical-align: 1px; }
+.cost-note { font-size: 12px; color: #f0b54a; white-space: nowrap; }
 input[type='number'] { width: 70px; }
 input[type='color'] { padding: 0; width: 36px; height: 28px; }
 label { display: inline-flex; align-items: center; gap: 6px; }
@@ -114,6 +118,7 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .seg button:first-child { border-radius: 6px 0 0 6px; }
 .seg button:last-child { border-radius: 0 6px 6px 0; }
 .seg button.active { background: #2f5ea8; border-color: #2f5ea8; }
+.seg button.paid.active { background: #b8801f; border-color: #f0b54a; }
 .part-list { display: flex; flex-direction: column; gap: 2px; max-height: 220px; overflow-y: auto; }
 .part-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
 .part-row:hover { background: var(--line); }

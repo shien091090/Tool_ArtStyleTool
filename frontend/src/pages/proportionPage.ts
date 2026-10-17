@@ -5,7 +5,8 @@ import { Editor, type Tool } from '../proportion/editor';
 import { ANCHORS, EDIT_MODELS, ZERO_PAD, type Anchor, type Pad, type Part, type PartTransform, type SegBox, type SegPoint, type WorkMeta } from '../proportion/model';
 import { applyRecipe, parseProportionRecipe, recipeFromParts } from '../proportion/recipe';
 import { autoPad, hasMaterial, isChanged, placeForeign } from '../proportion/transform';
-import { confirmDelete, el, option, showBanner } from './ui';
+import { costNote, markPaid, confirmDelete, el, option, showBanner } from './ui';
+import { COST, usd } from '../cost';
 
 const QUICK_NAMES = ['頭', '手', '腳', '身體', '翅膀', '尾巴'];
 const ANCHOR_LABEL: Record<Anchor, string> = { top: '上', center: '中', bottom: '下' };
@@ -123,8 +124,9 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     });
     return b;
   }));
-  const segBtn = button('切部位', () => void segmentNames(), 'primary');
-  const suggestBtn = button('AI 列出部位', () => void suggestParts());
+  const segBtn = markPaid(button('切部位', () => void segmentNames(), 'primary'));
+  const segCost = costNote();
+  const suggestBtn = markPaid(button('AI 列出部位', () => void suggestParts()));
   const suggestBox = el('div', { className: 'chips' });
   const toolBtns = new Map<Tool, HTMLButtonElement>();
   const toolRow = el('div', { className: 'seg' }, (['move', 'point', 'box'] as Tool[]).map((t) => {
@@ -133,10 +135,11 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
       redraw();
       syncAll();
     });
-    toolBtns.set(t, b);
+    toolBtns.set(t, t === 'move' ? b : markPaid(b));
     return b;
   }));
   const toolHint = el('div', { className: 'muted small' });
+  const toolCost = costNote(`點一下或框一次${usd(COST.segment)}`);
   const maskChk = el('input');
   maskChk.type = 'checkbox';
   maskChk.checked = true;
@@ -144,9 +147,10 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     showMasks = maskChk.checked;
     redraw();
   });
-  const segSection = section('拆部位', el('div', { className: 'row' }, [partNames, suggestBtn]), suggestBox, chips,
-    el('div', { className: 'row' }, [segBtn, el('label', {}, [maskChk, '顯示遮罩'])]),
-    toolRow, toolHint);
+  const segSection = section('拆部位', el('div', { className: 'row' }, [partNames, suggestBtn, costNote(usd(COST.vision))]),
+    suggestBox, chips,
+    el('div', { className: 'row' }, [segBtn, segCost, el('label', {}, [maskChk, '顯示遮罩'])]),
+    toolRow, toolHint, toolCost);
 
   // 部位清單
   const partList = el('div', { className: 'part-list' });
@@ -218,12 +222,13 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   const matCount = el('select');
   for (const n of [1, 2, 3, 4]) matCount.append(option(String(n), `${n} 張`));
   matCount.value = '1';
-  const matBtn = button('換材質', () => void changeMaterial(), 'primary');
+  const matBtn = markPaid(button('換材質', () => void changeMaterial(), 'primary'));
+  const matCost = costNote();
   const variantList = el('div', { className: 'variant-list' });
   const matBox = el('div', { className: 'mat-box' }, [
     el('h3', { text: '材質' }), swatches, matInput,
     el('label', { className: 'small', title: '選填: AI 參考這張圖的質感' }, ['參考圖', refFile]),
-    el('div', { className: 'row' }, [matCount, matBtn]), variantList,
+    el('div', { className: 'row' }, [matCount, matBtn, matCost]), variantList,
   ]);
   const selSection = section('選中部位', selTitle,
     el('div', { className: 'row' }, [placeBtn, unplaceBtn, hideLabel]),
@@ -253,14 +258,15 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
 
   // 比例配方
   const recipeSel = el('select');
-  const applyRecipeBtn = button('套用', () => void applySelectedRecipe());
+  const applyRecipeBtn = markPaid(button('套用', () => void applySelectedRecipe()));
   const recipeName = el('input');
   recipeName.placeholder = '配方名稱';
   const saveRecipeBtn = button('存成配方', () => void saveRecipe());
   const deleteRecipeBtn = button('刪除', () => void deleteRecipe());
   const recipeSection = section('比例配方', el('div', { className: 'row' }, [recipeSel, applyRecipeBtn, deleteRecipeBtn]),
     el('div', { className: 'row' }, [recipeName, saveRecipeBtn]),
-    el('div', { className: 'muted small', text: '只記主圖上調整過的部位; 套到別張圖時依名稱自動切部位' }));
+    el('div', { className: 'muted small', text: '只記主圖上調整過的部位; 套到別張圖時依名稱自動切部位' }),
+    costNote(`還沒切的部位每個${usd(COST.segment)}(都切過就不花錢)`));
 
   // 生成
   const modelSel = el('select');
@@ -270,9 +276,20 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   const extra = el('textarea');
   extra.placeholder = '補充描述(選填), 例如: 接縫處畫成毛皮';
   extra.rows = 2;
-  const genBtn = button('生成', () => void generate(), 'primary');
+  const genBtn = markPaid(button('生成', () => void generate(), 'primary'));
+  const genCost = costNote();
   const genHint = el('div', { className: 'muted small' });
-  const genSection = section('生成', el('div', { className: 'row' }, [modelSel, countSel]), extra, el('div', { className: 'row' }, [genBtn]), genHint);
+  const genSection = section('生成', el('div', { className: 'row' }, [modelSel, countSel]), extra,
+    el('div', { className: 'row' }, [genBtn, genCost]), genHint);
+  /** 依目前的名稱、張數、模型更新各付費按鈕旁的價錢 */
+  const syncCosts = () => {
+    const names = new Set([...suggested.filter((x) => x.checked).map((x) => x.name), ...splitNames(partNames.value)]);
+    segCost.textContent = names.size > 1 ? `${names.size} 個部位${usd(COST.segment * names.size)}` : usd(COST.segment);
+    matCost.textContent = usd(COST.nanoBanana * Number(matCount.value));
+    genCost.textContent = usd((modelSel.value === 'qwen' ? COST.qwen : COST.nanoBanana) * Number(countSel.value));
+  };
+  for (const c of [matCount, modelSel, countSel]) c.addEventListener('change', syncCosts);
+  partNames.addEventListener('input', syncCosts);
 
   // 結果
   const resultList = el('div', { className: 'result-list' });
@@ -416,6 +433,8 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     for (const c of lockables()) c.disabled = busy;
     for (const [t, b] of toolBtns) b.classList.toggle('active', t === tool);
     toolHint.textContent = TOOL_HINT[tool];
+    toolCost.classList.toggle('hidden', tool === 'move');
+    syncCosts();
     if (!meta) {
       selSection.classList.add('hidden');
       compareBar.classList.add('hidden');
@@ -749,6 +768,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
       chk.disabled = busy;
       chk.addEventListener('change', () => {
         x.checked = chk.checked;
+        syncCosts();
       });
       return el('label', { className: 'chip suggest-chip' }, [chk, x.name]);
     }));

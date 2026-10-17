@@ -16,6 +16,17 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
+/** 會花錢(呼叫 fal.ai)的按鈕: 加錢的圖示、換顏色 */
+export function markPaid<T extends HTMLElement>(b: T): T {
+  b.classList.add('paid');
+  return b;
+}
+
+/** 付費按鈕旁的「約 X 美元」 */
+export function costNote(text = ''): HTMLSpanElement {
+  return el('span', { className: 'cost-note', text });
+}
+
 export function option(value: string, label: string): HTMLOptionElement {
   const o = document.createElement('option');
   o.value = value;

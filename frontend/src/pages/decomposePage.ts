@@ -1,6 +1,7 @@
 import { api, type PackMeta, type RGB } from '../api';
 import { hexToRgb, rgbToHex } from '../colorMath';
-import { confirmDelete, el, option, showBanner } from './ui';
+import { costNote, markPaid, confirmDelete, el, option, showBanner } from './ui';
+import { COST, usd } from '../cost';
 
 const STEP_ORDER = ['depth', 'normal', 'normal_detail', 'line', 'line_sdf', 'delight', 'regions', 'flat', 'shade', 'ao', 'silhouette_sdf'];
 
@@ -33,7 +34,7 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams): 
   fileInput.accept = 'image/*';
   const createBtn = el('button', { text: '建立' });
   const packSel = el('select');
-  const runAllBtn = el('button', { text: '全部拆解', className: 'primary' });
+  const runAllBtn = markPaid(el('button', { text: '全部拆解', className: 'primary' }));
   const deleteBtn = el('button', { text: '刪除' });
   const status = el('span', { className: 'muted' });
   const overlayChk = el('input');
@@ -101,7 +102,7 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams): 
   const cells: Cell[] = [
     makeCell('source', '原圖', []),
     makeCell('line', '線稿', [
-      button('重跑', () => step('重跑線稿', [['line', {}]])),
+      markPaid(button('重跑', () => step('重跑線稿', [['line', {}]]))), costNote(usd(COST.line)),
     ]),
     makeCell('flat', '平塗', [
       el('label', {}, ['切法', methodSel]),
@@ -118,14 +119,15 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams): 
     ]),
     makeCell('normal', '法線', [
       normalView,
-      button('重跑', () => step('重跑法線', [['depth', {}], ['normal', {}], ['normal_detail', {}]])),
+      markPaid(button('重跑', () => step('重跑法線', [['depth', {}], ['normal', {}], ['normal_detail', {}]]))),
+      costNote(`${usd(COST.depth)}(含 AI 深度)`),
       el('span', {
         className: 'muted',
         text: '渲染時兩張都會用: 大形決定整體明暗, 細部疊上去; 各自強度在渲染頁的「大形立體感」「細部立體感」調',
       }),
     ]),
     makeCell('delight', 'AI 去光影', [
-      button('重跑', () => step('重跑去光影', [['delight', {}]])),
+      markPaid(button('重跑', () => step('重跑去光影', [['delight', {}]]))), costNote(usd(COST.kontext)),
       el('span', { className: 'muted', text: '平塗的取色來源' }),
     ]),
   ];
@@ -136,7 +138,8 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams): 
     el('div', { className: 'toolbar' }, [
       el('strong', { text: '新增' }), nameInput, fileInput, createBtn,
       el('span', { className: 'spacer' }),
-      el('label', {}, ['分層包', packSel]), deleteBtn, runAllBtn, status,
+      el('label', {}, ['分層包', packSel]), deleteBtn, runAllBtn,
+      costNote(`最多${usd(COST.depth + COST.line + COST.kontext)}(只跑還沒跑過的步驟)`), status,
     ]),
     el('div', { className: 'toolbar' }, [
       el('label', {}, [overlayChk, '疊上線稿比對']),

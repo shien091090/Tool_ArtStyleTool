@@ -1,5 +1,6 @@
 /** 像素素材的來源、候選、縮小結果與右側設定(直接轉換、AI 重畫); 像素素材頁與流程的像素化節點共用。 */
-import { el, option, showBanner } from '../pages/ui';
+import { costNote, markPaid, el, option, showBanner } from '../pages/ui';
+import { COST, usd } from '../cost';
 import { createGridPicker } from './gridPicker';
 import {
   candidateLabel, CELL, defaultColors, defaultConvertColors, displayScale, estimateCost, isSmall, MAX_CELLS, MAX_EYES,
@@ -156,10 +157,10 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
   const gridRow = el('div', { className: 'col' }, [
     el('div', { className: 'muted small', text: '從左上角拖拉選格數(一格 8px)' }), picker.root, gridSize,
   ]);
-  const suggestBtn = el('button', { text: '請 AI 建議尺寸' });
+  const suggestBtn = markPaid(el('button', { text: '請 AI 建議尺寸' }));
   const suggestList = el('div', { className: 'px-suggests' });
   const autoRow = el('div', { className: 'col' }, [
-    el('div', { className: 'row' }, [suggestBtn, el('span', { className: 'muted small', text: '看圖約 0.01 美元以內' })]),
+    el('div', { className: 'row' }, [suggestBtn, costNote(usd(COST.vision))]),
     suggestList,
   ]);
 
@@ -183,8 +184,8 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
   note.placeholder = '補充描述(選填), 例如「劍要保留」';
   const countSel = el('select');
   for (const n of [1, 2, 3, 4]) countSel.append(option(String(n), `${n} 張`));
-  const genBtn = el('button', { text: 'AI 重畫', className: 'primary' });
-  const costHint = el('span', { className: 'muted small' });
+  const genBtn = markPaid(el('button', { text: 'AI 重畫', className: 'primary' }));
+  const costHint = costNote();
 
   const section = (title: string, ...children: (Node | string)[]) =>
     el('section', { className: 'prop-section' }, [el('h3', { text: title }), ...children]);
@@ -274,7 +275,7 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
       el('div', { className: 'muted small', text: `依尺寸自動選: ${modelReason(cols, rows)}` }));
     smallHint.textContent = isSmall(cols, rows) ? '這個尺寸直接轉換通常比 AI 好' : '';
     smallHint.classList.toggle('hidden', !isSmall(cols, rows));
-    costHint.textContent = `約 ${estimateCost(cols, rows, Number(countSel.value)).toFixed(2)} 美元`;
+    costHint.textContent = usd(estimateCost(cols, rows, Number(countSel.value)));
     genBtn.disabled = busy || !falOk || !backend || blocked !== null;
     genBtn.title = !falOk ? '沒有設定 FAL_KEY' : blocked ?? '';
 
