@@ -102,10 +102,11 @@ class PixelWork:
         self.candidate(cid)
         return read_png(self.dir / "ai" / f"{cid}.png")
 
-    def add_candidate(self, img: np.ndarray, settings: dict) -> dict:
+    def add_candidate(self, img: np.ndarray, settings: dict, keep_alpha: bool = False) -> dict:
+        """AI 候選存 RGB; 直接轉換的來源快照 keep_alpha 保留透明。"""
         self.meta["counters"]["candidate"] += 1
         cid = f"c{self.meta['counters']['candidate']}"
-        write_png(self.dir / "ai" / f"{cid}.png", img[..., :3])
+        write_png(self.dir / "ai" / f"{cid}.png", img if keep_alpha else img[..., :3])
         entry = {"id": cid, "created": _now(), **settings}
         self.meta["candidates"].append(entry)
         self.save_meta()

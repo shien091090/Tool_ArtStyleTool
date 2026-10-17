@@ -140,6 +140,20 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
             work.set_source(src, label)
         return service.generate(work, body, client(), extra={"inputRev": up["rev"]})
 
+    @r.post("/{name}/nodes/{nid}/pixel/convert")
+    def convert(name: str, nid: str, body: dict = Body(...)):
+        flow = open_flow(name)
+        pixel_node(flow, nid)
+        service.check_convert(body)
+        up = flow.upstream(nid)
+        if up is None or not up.get("rev"):
+            raise ValueError("上游還沒有輸出")
+        src = flow.output(up["id"])
+        work = pixel_work(flow, nid)
+        if work is None:
+            work = PixelWork.create_from_image(flow.dir / "nodes", nid, to_ai_source(src), f"上游 {up['id']} 第 {up['rev']} 版")
+        return service.convert(work, body, src, extra={"inputRev": up["rev"]})
+
     def existing_work(flow: Flow, nid: str) -> PixelWork:
         pixel_node(flow, nid)
         work = pixel_work(flow, nid)

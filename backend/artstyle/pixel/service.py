@@ -1,13 +1,17 @@
-"""像素素材共用流程: AI 產生候選、縮小候選。像素素材頁與流程的像素化節點都用這份。"""
+"""像素素材共用流程: AI 產生候選、直接轉換、縮小候選。像素素材頁與流程的像素化節點都用這份。"""
 from concurrent.futures import ThreadPoolExecutor
+
+import numpy as np
 
 from ..fal import KONTEXT_MODEL, FalClient, FalError
 from ..imaging import to_data_uri
+from . import convert as converter
 from . import downscale, prompts
 from .work import PixelWork
 
 MODELS = ("kontext", "nano-banana-pro")
 MAX_NOTE = 200
+CONVERT_METHODS = {"convert": "直接轉換", "convert_lines": "直接轉換 + 內線"}
 
 
 def _int(v, lo: int, hi: int, what: str) -> int:
@@ -37,6 +41,39 @@ def check_settings(body) -> dict:
         raise ValueError(f"補充描述必須是 {MAX_NOTE} 字以內的文字")
     count = _int(body.get("count", 1), 1, 4, "候選張數")
     return {"mode": mode, "model": model, "cols": cols, "rows": rows, "colors": colors, "note": note.strip(), "count": count}
+
+
+def _num(v, lo: float, hi: float, what: str) -> float:
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not lo <= v <= hi:
+        raise ValueError(f"{what}必須是 {lo}~{hi} 的數字")
+    return float(v)
+
+
+def check_convert(body) -> dict:
+    if not isinstance(body, dict):
+        raise ValueError("設定格式錯誤")
+    cols = _int(body.get("cols"), 1, prompts.MAX_CELLS, "寬格數")
+    rows = _int(body.get("rows"), 1, prompts.MAX_CELLS, "高格數")
+    colors = body.get("colors")
+    colors = converter.default_colors(cols * prompts.CELL, rows * prompts.CELL) if colors is None else _int(colors, 2, 64, "色數")
+    outline = body.get("outline", True)
+    if not isinstance(outline, bool):
+        raise ValueError("外框必須是 true 或 false")
+    eye = body.get("eye")
+    if eye is not None:
+        if not isinstance(eye, dict):
+            raise ValueError("眼睛標記格式錯誤")
+        eye = {"x": _num(eye.get("x"), 0, 1, "眼睛位置"), "y": _num(eye.get("y"), 0, 1, "眼睛位置"),
+               "r": _num(eye.get("r"), 0.002, 0.5, "眼睛半徑")}
+    return {"mode": "convert", "model": "", "cols": cols, "rows": rows, "colors": colors, "note": "",
+            "outline": outline, "eye": eye}
+
+
+def convert(work: PixelWork, body, src: np.ndarray, extra: dict | None = None) -> dict:
+    """直接轉換: 存一張候選(圖是來源快照, 保留透明), 縮小時才真的轉。"""
+    s = check_convert(body)
+    entry = work.add_candidate(src, s | (extra or {}), keep_alpha=True)
+    return {"meta": work.meta, "candidate": entry}
 
 
 def generate(work: PixelWork, body, c: FalClient, extra: dict | None = None) -> dict:
@@ -72,12 +109,19 @@ def pixelate(work: PixelWork, cid: str, body) -> dict:
     img = work.candidate_image(cid)
     colors = (body or {}).get("colors")
     colors = cand["colors"] if colors is None else _int(colors, 2, 64, "色數")
-    methods = ["auto"] if cand["mode"] == "auto" else ["dominant", "contrast", "adaptive"]
+    if cand["mode"] == "convert":
+        methods = ["convert", "convert_lines"]
+    else:
+        methods = ["auto"] if cand["mode"] == "auto" else ["dominant", "contrast", "adaptive"]
     results = []
     for m in methods:
-        entry = {"method": m, "label": downscale.METHODS[m]}
+        entry = {"method": m, "label": CONVERT_METHODS.get(m) or downscale.METHODS[m]}
         try:
-            out = downscale.run(m, img, colors, cand["cols"], cand["rows"])
+            if m in CONVERT_METHODS:
+                out = converter.convert(img, cand["cols"] * prompts.CELL, cand["rows"] * prompts.CELL, colors,
+                                        lines=m == "convert_lines", outline=cand.get("outline", True), eye=cand.get("eye"))
+            else:
+                out = downscale.run(m, img, colors, cand["cols"], cand["rows"])
             entry.update(png=to_data_uri(out), w=int(out.shape[1]), h=int(out.shape[0]),
                          palette=downscale.palette(out))
         except Exception as e:  # 單一方法失敗不影響其他方法

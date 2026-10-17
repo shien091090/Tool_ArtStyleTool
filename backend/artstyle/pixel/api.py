@@ -74,6 +74,11 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
     def add_candidates(name: str, body: dict = Body(...)):
         return service.generate(open_work(name), body, client())
 
+    @r.post("/works/{name}/convert")
+    def convert(name: str, body: dict = Body(...)):
+        work = open_work(name)
+        return service.convert(work, body, work.source())
+
     @r.delete("/works/{name}/candidates/{cid}")
     def delete_candidate(name: str, cid: str):
         work = open_work(name)
