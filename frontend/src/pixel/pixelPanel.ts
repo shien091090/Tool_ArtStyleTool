@@ -392,8 +392,9 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
         });
         return b;
       }) : []);
+      const methodName = el('span', { className: 'px-cand-method', text: items[tab]?.label ?? '' });
       const item = el('div', { className: `px-cand${c.id === selected ? ' active' : ''}`, title: c.note }, [
-        img, tabRow, el('span', { text: candidateLabel(c) }),
+        methodName, img, tabRow, el('span', { text: candidateLabel(c) }),
       ]);
       item.addEventListener('click', () => selectCandidate(c.id));
       const del = el('button', { text: '×', className: 'variant-del', title: '刪除這張候選' });

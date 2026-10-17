@@ -170,6 +170,7 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .px-cand.active { border-color: var(--accent); }
 .px-cand img { width: 120px; height: 120px; object-fit: contain; background: #fff; border-radius: 4px; }
 .px-cand img.pixelated { image-rendering: pixelated; }
+.px-cand-method { max-width: 100%; min-height: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted, #aaa); }
 .px-tabs { display: flex; gap: 3px; min-height: 0; }
 .px-tabs button { min-width: 22px; padding: 0 6px; font-size: 11px; line-height: 18px; }
 .px-tabs button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
