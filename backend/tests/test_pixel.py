@@ -3,8 +3,8 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
-from artstyle.fal import KONTEXT_MODEL, FalError
-from artstyle.pixel import downscale, prompts
+from artstyle.fal import FalError
+from artstyle.pixel import downscale, prompts, service, suggest
 from artstyle.server import create_app
 
 HEADERS = {"X-ArtStyle": "1"}
@@ -125,10 +125,18 @@ def test_palette_order():
 # ---- API ----
 
 class FakeFal:
-    def __init__(self, returned=None, fail=False):
+    def __init__(self, returned=None, fail=False, vision_reply='{"sizes": [{"w": 64, "h": 96, "colors": 24, "reason": "中"}, '
+                 '{"w": 32, "h": 48, "colors": 16, "reason": "小"}]}'):
         self.returned = returned
         self.fail = fail
+        self.vision_reply = vision_reply
         self.calls = []
+
+    def vision(self, img, prompt):
+        self.calls.append(("vision", img.shape, prompt))
+        if self.fail:
+            raise FalError("模擬失敗")
+        return self.vision_reply
 
     def run_image(self, model, img, **params):
         self.calls.append(("run", model, img.shape, params.get("prompt")))
@@ -196,7 +204,7 @@ def test_grid_candidates_and_pixelate(client, fal):
     body = r.json()
     assert [c["id"] for c in body["candidates"]] == ["c1", "c2"] and body["errors"] == []
     kind, model, shape, prompt, n = fal.calls[0]
-    assert model == "nano-banana-pro" and n == 2 and shape[:2] == (1024, 512) and "Additional instructions: 劍" in prompt
+    assert model == "gpt-image-2" and n == 2 and shape[:2] == (1024, 512) and "Additional instructions: 劍" in prompt
     assert body["candidates"][0]["colors"] == 8
     r = client.post(f"{P}/works/像素/candidates/c1/pixelate", json={"colors": 6})
     res = r.json()["results"]
@@ -205,22 +213,52 @@ def test_grid_candidates_and_pixelate(client, fal):
     assert r.json()["colors"] == 6
 
 
-def test_auto_kontext_parallel(client, fal):
+def test_model_picked_by_size(client, fal):
     _create(client)
-    r = client.post(f"{P}/works/像素/candidates", json={"mode": "auto", "model": "kontext", "count": 2})
-    assert r.status_code == 200 and len(r.json()["candidates"]) == 2
-    assert all(c[0] == "run" and c[1] == KONTEXT_MODEL for c in fal.calls)
-    res = client.post(f"{P}/works/像素/candidates/c1/pixelate").json()["results"]
-    assert len(res) == 1 and res[0]["method"] == "auto" and "error" not in res[0]
-    assert abs(res[0]["w"] - 20) <= 1
+    assert service.pick_model(12, 12) == "gpt-image-2" and service.pick_model(13, 4) == "nano-banana-pro"
+    r = client.post(f"{P}/works/像素/candidates", json={"cols": 12, "rows": 13, "model": "kontext"})
+    assert r.status_code == 200 and r.json()["candidates"][0]["model"] == "nano-banana-pro"
+    assert fal.calls[-1][1] == "nano-banana-pro"
+    client.post(f"{P}/works/像素/candidates", json={"mode": "grid", "cols": 8, "rows": 12})
+    assert fal.calls[-1][1] == "gpt-image-2"
+    r = client.post(f"{P}/works/像素/candidates", json={"mode": "auto", "model": "kontext"})
+    assert r.status_code == 400 and "指定格數" in r.json()["detail"]
+
+
+def test_suggest_sizes(client, fal):
+    _create(client)
+    r = client.post(f"{P}/works/像素/suggest")
+    assert r.status_code == 200, r.text
+    assert r.json()["sizes"] == [{"cols": 4, "rows": 6, "colors": 16, "reason": "小"},
+                                 {"cols": 8, "rows": 12, "colors": 24, "reason": "中"}]
+    assert fal.calls[-1][0] == "vision" and fal.calls[-1][1][2] == 3
+
+
+def test_suggest_bad_reply(tmp_path):
+    c = TestClient(create_app(tmp_path, lambda: FakeFal(vision_reply="不知道")), headers=HEADERS)
+    _create(c)
+    r = c.post(f"{P}/works/像素/suggest")
+    assert r.status_code == 400 and "沒有給出尺寸建議" in r.json()["detail"]
+
+
+def test_suggest_parse_snaps_and_dedupes():
+    text = ('```json {"sizes": [{"w": 300, "h": 30, "colors": 99, "reason": "大"}, {"w": 33, "h": 47, "colors": 2}, '
+            '{"w": 32, "h": 48}, {"w": "x", "h": 8}, {"w": 16, "h": 16, "colors": true}]} ```')
+    assert suggest.parse(text) == [
+        {"cols": 2, "rows": 2, "colors": 16, "reason": ""},
+        {"cols": 4, "rows": 6, "colors": 4, "reason": ""},
+        {"cols": 16, "rows": 4, "colors": 32, "reason": "大"},
+    ]
+    with pytest.raises(ValueError):
+        suggest.parse('{"sizes": []}')
 
 
 def test_candidate_delete_ids_not_reused(client):
     _create(client)
-    client.post(f"{P}/works/像素/candidates", json={"mode": "auto", "model": "nano-banana-pro"})
+    client.post(f"{P}/works/像素/candidates", json={"cols": 1, "rows": 2})
     assert client.delete(f"{P}/works/像素/candidates/c1").json()["candidates"] == []
     assert client.get(f"{P}/works/像素/files/ai/c1.png").status_code == 404
-    r = client.post(f"{P}/works/像素/candidates", json={"mode": "auto", "model": "nano-banana-pro"})
+    r = client.post(f"{P}/works/像素/candidates", json={"cols": 1, "rows": 2})
     assert r.json()["candidates"][0]["id"] == "c2"
 
 
@@ -229,10 +267,10 @@ def test_candidate_delete_ids_not_reused(client):
     {"mode": "grid", "cols": 0, "rows": 2},
     {"mode": "grid", "cols": 1, "rows": 17},
     {"mode": "grid", "cols": 1.5, "rows": 2},
-    {"mode": "auto", "model": "qwen"},
-    {"mode": "auto", "model": "kontext", "colors": 1},
-    {"mode": "auto", "model": "kontext", "count": 5},
-    {"mode": "auto", "model": "kontext", "note": "x" * 201},
+    {"mode": "auto", "model": "kontext"},
+    {"cols": 1, "rows": 2, "colors": 1},
+    {"cols": 1, "rows": 2, "count": 5},
+    {"cols": 1, "rows": 2, "note": "x" * 201},
 ])
 def test_settings_validation(client, body):
     _create(client)
@@ -242,7 +280,8 @@ def test_settings_validation(client, body):
 def test_fal_failure_and_short_count(tmp_path):
     bad = TestClient(create_app(tmp_path, lambda: FakeFal(fail=True)), headers=HEADERS)
     _create(bad)
-    assert bad.post(f"{P}/works/像素/candidates", json={"mode": "auto", "model": "kontext"}).status_code == 502
+    assert bad.post(f"{P}/works/像素/candidates", json={"cols": 1, "rows": 2}).status_code == 502
+    assert bad.post(f"{P}/works/像素/suggest").status_code == 502
     assert bad.get(f"{P}/works/像素").json()["candidates"] == []
     short = TestClient(create_app(tmp_path, lambda: FakeFal(returned=1)), headers=HEADERS)
     r = short.post(f"{P}/works/像素/candidates", json={"mode": "grid", "cols": 1, "rows": 2, "count": 3})
@@ -252,4 +291,5 @@ def test_fal_failure_and_short_count(tmp_path):
 def test_no_fal_key(tmp_path):
     c = TestClient(create_app(tmp_path, lambda: None), headers=HEADERS)
     _create(c)
-    assert c.post(f"{P}/works/像素/candidates", json={"mode": "auto", "model": "kontext"}).status_code == 503
+    assert c.post(f"{P}/works/像素/candidates", json={"cols": 1, "rows": 2}).status_code == 503
+    assert c.post(f"{P}/works/像素/suggest").status_code == 503

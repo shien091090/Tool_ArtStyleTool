@@ -74,6 +74,10 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
     def add_candidates(name: str, body: dict = Body(...)):
         return service.generate(open_work(name), body, client())
 
+    @r.post("/works/{name}/suggest")
+    def suggest_sizes(name: str):
+        return service.suggest_sizes(open_work(name).source(), client())
+
     @r.post("/works/{name}/convert")
     def convert(name: str, body: dict = Body(...)):
         work = open_work(name)

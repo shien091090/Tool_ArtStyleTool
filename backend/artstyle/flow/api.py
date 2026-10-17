@@ -140,6 +140,15 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
             work.set_source(src, label)
         return service.generate(work, body, client(), extra={"inputRev": up["rev"]})
 
+    @r.post("/{name}/nodes/{nid}/pixel/suggest")
+    def suggest_sizes(name: str, nid: str):
+        flow = open_flow(name)
+        pixel_node(flow, nid)
+        up = flow.upstream(nid)
+        if up is None or not up.get("rev"):
+            raise ValueError("上游還沒有輸出")
+        return service.suggest_sizes(to_ai_source(flow.output(up["id"])), client())
+
     @r.post("/{name}/nodes/{nid}/pixel/convert")
     def convert(name: str, nid: str, body: dict = Body(...)):
         flow = open_flow(name)

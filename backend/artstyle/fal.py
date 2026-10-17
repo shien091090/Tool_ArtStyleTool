@@ -18,7 +18,9 @@ SAM_MODEL = "fal-ai/sam-3/image"
 # 實驗(2026-10-10): Nano Banana 最忠實, Qwen 次之; Kontext 會整張改色, 不提供
 EDIT_MODELS = {"nano-banana": "fal-ai/nano-banana/edit", "qwen": "fal-ai/qwen-image-edit",
                # 像素素材: 指定格數只有 Pro 會照做(2026-10-12 實驗), 約 US$0.15/張
-               "nano-banana-pro": "fal-ai/nano-banana-pro/edit"}
+               "nano-banana-pro": "fal-ai/nano-banana-pro/edit",
+               # 像素素材長邊 ≤ 96px: 最接近要求格數(2026-10-17 實驗), medium 約 US$0.06/張
+               "gpt-image-2": "openai/gpt-image-2/edit"}
 # 像素素材自動尺寸: 遊戲感強、會改色, 約 US$0.04/張
 KONTEXT_MODEL = "fal-ai/flux-pro/kontext"
 # 看圖回文字(列部位): 實測約 2.6 秒、每次 < US$0.001
@@ -132,8 +134,10 @@ class HttpFalClient:
         model = EDIT_MODELS[model_key]
         h, w = img.shape[:2]
         body = {"prompt": prompt, "num_images": int(num_images)}
-        if model_key.startswith("nano-banana"):
+        if model_key.startswith("nano-banana") or model_key == "gpt-image-2":
             body["image_urls"] = [to_data_uri(img)] + [to_data_uri(x) for x in extra_images]
+            if model_key == "gpt-image-2":
+                body["quality"] = "medium"
         elif extra_images:
             raise ValueError(f"{model_key} 不支援多張輸入圖")
         else:

@@ -65,6 +65,9 @@ def test_edit_payload_per_model():
     c.edit("nano-banana-pro", img, "fix", 1)
     url, body = sent[2]
     assert url.endswith("fal-ai/nano-banana-pro/edit") and len(body["image_urls"]) == 1
+    c.edit("gpt-image-2", img, "fix", 1)
+    url, body = sent[3]
+    assert url.endswith("openai/gpt-image-2/edit") and len(body["image_urls"]) == 1 and body["quality"] == "medium"
 
 
 def test_edit_unknown_model_and_http_error():

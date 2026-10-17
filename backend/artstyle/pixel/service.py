@@ -1,16 +1,16 @@
 """像素素材共用流程: AI 產生候選、直接轉換、縮小候選。像素素材頁與流程的像素化節點都用這份。"""
-from concurrent.futures import ThreadPoolExecutor
-
 import numpy as np
 
-from ..fal import KONTEXT_MODEL, FalClient, FalError
+from ..fal import VISION_MODEL, FalClient
 from ..imaging import to_data_uri
 from . import convert as converter
-from . import downscale, prompts
+from . import downscale, prompts, suggest
 from .work import PixelWork
 
-MODELS = ("kontext", "nano-banana-pro")
 MAX_NOTE = 200
+MAX_EYES = 4
+# 依長邊自動選模型(2026-10-17 實驗): 96px 以下 GPT Image 2 最照格數, 再大用 Nano Banana Pro
+GPT_MAX_SIDE = 96
 CONVERT_METHODS = {"convert": "直接轉換", "convert_lines": "直接轉換 + 內線"}
 
 
@@ -20,20 +20,19 @@ def _int(v, lo: int, hi: int, what: str) -> int:
     return v
 
 
+def pick_model(cols: int, rows: int) -> str:
+    return "gpt-image-2" if max(cols, rows) * prompts.CELL <= GPT_MAX_SIDE else "nano-banana-pro"
+
+
 def check_settings(body) -> dict:
     if not isinstance(body, dict):
         raise ValueError("設定格式錯誤")
-    mode = body.get("mode")
-    if mode not in ("auto", "grid"):
-        raise ValueError("尺寸模式必須是 auto 或 grid")
-    if mode == "grid":
-        model = "nano-banana-pro"  # 只有 Pro 會照格數畫
-        cols = _int(body.get("cols"), 1, prompts.MAX_CELLS, "寬格數")
-        rows = _int(body.get("rows"), 1, prompts.MAX_CELLS, "高格數")
-    else:
-        model, cols, rows = body.get("model"), 0, 0
-        if model not in MODELS:
-            raise ValueError(f"不支援的模型: {model!r}")
+    mode = body.get("mode", "grid")
+    if mode != "grid":
+        raise ValueError("AI 重畫只支援指定格數(自動尺寸請先讓 AI 建議尺寸)")
+    cols = _int(body.get("cols"), 1, prompts.MAX_CELLS, "寬格數")
+    rows = _int(body.get("rows"), 1, prompts.MAX_CELLS, "高格數")
+    model = pick_model(cols, rows)
     colors = body.get("colors")
     colors = prompts.default_colors(mode, cols, rows) if colors is None else _int(colors, 2, 64, "色數")
     note = body.get("note") or ""
@@ -59,14 +58,30 @@ def check_convert(body) -> dict:
     outline = body.get("outline", True)
     if not isinstance(outline, bool):
         raise ValueError("外框必須是 true 或 false")
-    eye = body.get("eye")
-    if eye is not None:
+    eyes = body.get("eyes")
+    if eyes is None:
+        eyes = [body["eye"]] if body.get("eye") is not None else []  # 舊格式: 單一眼睛
+    if not isinstance(eyes, list) or len(eyes) > MAX_EYES:
+        raise ValueError(f"眼睛標記最多 {MAX_EYES} 個")
+    out = []
+    for eye in eyes:
         if not isinstance(eye, dict):
             raise ValueError("眼睛標記格式錯誤")
-        eye = {"x": _num(eye.get("x"), 0, 1, "眼睛位置"), "y": _num(eye.get("y"), 0, 1, "眼睛位置"),
-               "r": _num(eye.get("r"), 0.002, 0.5, "眼睛半徑")}
+        out.append({"x": _num(eye.get("x"), 0, 1, "眼睛位置"), "y": _num(eye.get("y"), 0, 1, "眼睛位置"),
+                    "r": _num(eye.get("r"), 0.002, 0.5, "眼睛半徑")})
     return {"mode": "convert", "model": "", "cols": cols, "rows": rows, "colors": colors, "note": "",
-            "outline": outline, "eye": eye}
+            "outline": outline, "eyes": out}
+
+
+def candidate_eyes(cand: dict) -> list[dict]:
+    if cand.get("eyes") is not None:
+        return cand["eyes"]
+    return [cand["eye"]] if cand.get("eye") else []
+
+
+def suggest_sizes(img: np.ndarray, c: FalClient) -> dict:
+    """看圖建議 2~3 個尺寸(img 為 RGB 白底)。"""
+    return {"sizes": suggest.parse(c.vision(img, suggest.PROMPT)), "model": VISION_MODEL}
 
 
 def convert(work: PixelWork, body, src: np.ndarray, extra: dict | None = None) -> dict:
@@ -83,20 +98,7 @@ def generate(work: PixelWork, body, c: FalClient, extra: dict | None = None) -> 
     img = prompts.prepare(src, s["mode"], s["cols"], s["rows"])
     prompt = prompts.build_prompt(src, s["mode"], s["colors"], s["note"], s["cols"], s["rows"])
     errors: list[str] = []
-    if s["model"] == "kontext":
-        # Kontext 一次一張, 平行呼叫
-        with ThreadPoolExecutor(s["count"]) as pool:
-            futures = [pool.submit(c.run_image, KONTEXT_MODEL, img, prompt=prompt) for _ in range(s["count"])]
-        images = []
-        for f in futures:
-            try:
-                images.append(f.result())
-            except FalError as e:
-                errors.append(str(e))
-        if not images:
-            raise FalError(errors[0])
-    else:
-        images = c.edit("nano-banana-pro", img, prompt, s["count"])
+    images = c.edit(s["model"], img, prompt, s["count"])
     settings = {k: s[k] for k in ("mode", "model", "cols", "rows", "colors", "note")} | (extra or {})
     added = [work.add_candidate(im, settings) for im in images[:s["count"]]]
     if len(added) < s["count"] and not errors:
@@ -119,7 +121,8 @@ def pixelate(work: PixelWork, cid: str, body) -> dict:
         try:
             if m in CONVERT_METHODS:
                 out = converter.convert(img, cand["cols"] * prompts.CELL, cand["rows"] * prompts.CELL, colors,
-                                        lines=m == "convert_lines", outline=cand.get("outline", True), eye=cand.get("eye"))
+                                        lines=m == "convert_lines", outline=cand.get("outline", True),
+                                        eyes=candidate_eyes(cand))
             else:
                 out = downscale.run(m, img, colors, cand["cols"], cand["rows"])
             entry.update(png=to_data_uri(out), w=int(out.shape[1]), h=int(out.shape[0]),

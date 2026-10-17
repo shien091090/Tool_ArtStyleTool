@@ -62,7 +62,7 @@ def test_inner_lines_darken():
 def test_eye_marker_draws_pupil():
     img = _monster()
     eye = {"x": (100 - 25) / 200, "y": (120 - 30) / 240, "r": 14 / 240}
-    out = cv.convert(img, 64, 64, 16, eye=eye)
+    out = cv.convert(img, 64, 64, 16, eyes=[eye])
     iris = cv.eye_color(img, 75, 90, 14)
     assert iris[0] > 200 and iris[2] < 100  # 取到黃色
     pupil = cv._mix(iris, INK, 0.8)
@@ -78,10 +78,10 @@ def test_all_background_fails():
 
 def test_work_convert_and_pixelate(client):  # noqa: F811
     _create(client)
-    r = client.post(f"{P}/works/像素/convert", json={"cols": 4, "rows": 4, "eye": None})
+    r = client.post(f"{P}/works/像素/convert", json={"cols": 4, "rows": 4})
     assert r.status_code == 200, r.text
     cand = r.json()["candidate"]
-    assert cand["mode"] == "convert" and cand["colors"] == 16 and cand["outline"] is True
+    assert cand["mode"] == "convert" and cand["colors"] == 16 and cand["outline"] is True and cand["eyes"] == []
     res = client.post(f"{P}/works/像素/candidates/{cand['id']}/pixelate", json={"colors": 6}).json()
     assert [x["method"] for x in res["results"]] == ["convert", "convert_lines"]
     assert all(x["w"] == 32 and x["h"] == 32 for x in res["results"])
@@ -93,6 +93,8 @@ def test_work_convert_and_pixelate(client):  # noqa: F811
     ({"cols": 4, "rows": 4, "outline": "yes"}, "外框"),
     ({"cols": 4, "rows": 4, "eye": {"x": 2, "y": 0.5, "r": 0.1}}, "眼睛位置"),
     ({"cols": 4, "rows": 4, "eye": {"x": 0.5, "y": 0.5, "r": 0}}, "眼睛半徑"),
+    ({"cols": 4, "rows": 4, "eyes": [{"x": 0.5, "y": 0.5, "r": 0.1}] * 5}, "最多 4 個"),
+    ({"cols": 4, "rows": 4, "eyes": ["x"]}, "格式錯誤"),
 ])
 def test_convert_validation(client, body, msg):  # noqa: F811
     _create(client)
@@ -117,3 +119,28 @@ def test_flow_convert_keeps_alpha_and_input_rev(client):  # noqa: F811
     assert snap.shape == (100, 100, 4) and snap[0, 0, 3] == 0
     res = client.post(f"{F}/流程/nodes/n3/pixel/candidates/{cand['id']}/pixelate", json={}).json()
     assert [(x["w"], x["h"]) for x in res["results"]] == [(16, 32), (16, 32)]
+
+
+def test_two_eyes_and_legacy_eye(client):  # noqa: F811
+    _create(client)
+    two = [{"x": 0.4, "y": 0.3, "r": 0.05}, {"x": 0.6, "y": 0.3, "r": 0.05}]
+    cand = client.post(f"{P}/works/像素/convert", json={"cols": 8, "rows": 8, "eyes": two}).json()["candidate"]
+    assert cand["eyes"] == two
+    legacy = client.post(f"{P}/works/像素/convert", json={"cols": 8, "rows": 8, "eye": two[0]}).json()["candidate"]
+    assert legacy["eyes"] == [two[0]]
+    from artstyle.pixel.service import candidate_eyes
+    assert candidate_eyes({"eye": two[0]}) == [two[0]] and candidate_eyes({}) == []
+    res = client.post(f"{P}/works/像素/candidates/{cand['id']}/pixelate", json={}).json()["results"]
+    assert all("error" not in x for x in res)
+
+
+def test_flow_suggest(client, fal):  # noqa: F811
+    _chain(client)
+    assert client.post(f"{F}/流程/nodes/n3/pixel/suggest").status_code == 400
+    _upload(client, "n1", _png(_sprite(20, 30)))
+    rgba = np.zeros((100, 100, 4), np.uint8)
+    rgba[20:80, 30:60] = (200, 40, 40, 255)
+    _upload(client, "n2", _rgba_png(rgba), inputRev=1)
+    r = client.post(f"{F}/流程/nodes/n3/pixel/suggest")
+    assert r.status_code == 200 and len(r.json()["sizes"]) == 2
+    assert fal.calls[-1][1][:2] == (60, 30)  # 裁到不透明範圍再送

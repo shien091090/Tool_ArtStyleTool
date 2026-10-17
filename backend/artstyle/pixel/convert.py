@@ -190,8 +190,8 @@ def add_outline(rgba: np.ndarray) -> None:
 
 
 def convert(img: np.ndarray, w: int, h: int, colors: int, lines: bool = False, outline: bool = True,
-            eye: dict | None = None) -> np.ndarray:
-    """eye = {x, y, r}: 0~1 相對來源圖位置與相對長邊的半徑。"""
+            eyes: list[dict] = ()) -> np.ndarray:
+    """eyes = [{x, y, r}]: 0~1 相對來源圖位置與相對長邊的半徑。"""
     rgb, fg = subject_mask(img)
     pad = 1 if outline else 0
     iw, ih = w - 2 * pad, h - 2 * pad
@@ -222,11 +222,11 @@ def convert(img: np.ndarray, w: int, h: int, colors: int, lines: bool = False, o
             if not c[3] or 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2] < 70:
                 continue
             inner[j, i, :3] = _mix(c, INK, 0.85)
-    if eye:
-        sh, sw = rgb.shape[:2]
+    sh, sw = rgb.shape[:2]
+    x0, y0, x1, _ = box
+    k = iw / (x1 - x0)
+    for eye in eyes:
         ex, ey, er = eye["x"] * sw, eye["y"] * sh, eye["r"] * max(sw, sh)
-        x0, y0, x1, _ = box
-        k = iw / (x1 - x0)
         draw_eye(out, int(pad + (ex - x0) * k), int(pad + (ey - y0) * k), max(2, round(er * k)), eye_color(rgb, ex, ey, er))
     if outline:
         add_outline(out)
