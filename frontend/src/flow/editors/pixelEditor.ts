@@ -13,6 +13,7 @@ export function mountPixelEditor(body: HTMLElement, ctx: EditorContext): NodeEdi
     generate: (s) => api.flows.addCandidates(flow, node.id, s),
     deleteCandidate: (cid) => api.flows.deleteCandidate(flow, node.id, cid),
     pixelate: (cid, colors) => api.flows.pixelate(flow, node.id, cid, colors),
+    convert: (s) => api.flows.convertPixel(flow, node.id, s),
   };
   const panel = createPixelPanel({
     banner: ctx.banner,
@@ -20,10 +21,10 @@ export function mountPixelEditor(body: HTMLElement, ctx: EditorContext): NodeEdi
     confirmDelete,
     resultAction: {
       label: '設為輸出',
-      async run(r, cand) {
+      async run(r, cand, colors) {
         if (!r.png) return;
         const blob = await (await fetch(r.png)).blob();
-        await ctx.save({ file: blob }, { inputRev: cand.inputRev ?? null, params: { candidate: cand.id, method: r.method } });
+        await ctx.save({ file: blob }, { inputRev: cand.inputRev ?? null, params: { candidate: cand.id, method: r.method, colors } });
         showBanner(ctx.banner, 'info', `已把 ${cand.id}「${r.label}」設為這個節點的輸出`);
       },
     },

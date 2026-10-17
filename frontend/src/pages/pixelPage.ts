@@ -10,6 +10,7 @@ function workBackend(name: string): PixelBackend {
     generate: (s) => api.pixel.addCandidates(name, s),
     deleteCandidate: (cid) => api.pixel.deleteCandidate(name, cid),
     pixelate: (cid, colors) => api.pixel.pixelate(name, cid, colors),
+    convert: (s) => api.pixel.convert(name, s),
   };
 }
 

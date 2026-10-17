@@ -106,11 +106,46 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
     return flow!;
   }
 
-  /** 免費節點(去除區塊)以新的上游輸出重跑, 一路往下 */
+  /** 免費節點(去除區塊、輸出來自直接轉換的像素化)以新的上游輸出重跑, 一路往下 */
   async function propagate(nid: string) {
     if (!flow) return;
     for (const child of downstreamOf(flow, nid)) {
       if (child.type === 'cutout') await rerunCutout(child.id);
+      else if (child.type === 'pixel') await rerunPixelConvert(child.id);
+    }
+  }
+
+  /** 像素化節點的輸出來自直接轉換: 用同樣設定重新轉換, 選同一種結果設為輸出 */
+  async function rerunPixelConvert(nid: string) {
+    if (!flow) return;
+    const node = flow.nodes.find((n) => n.id === nid);
+    const up = node && upstreamOf(flow, nid);
+    const method = node?.params.method;
+    if (!node?.rev || !up?.rev || node.inputRev === up.rev) return;
+    if (method !== 'convert' && method !== 'convert_lines') return; // AI 的結果要花錢, 只亮過期
+    if (editor?.node === nid) return;
+    const fname = flow.name;
+    running.add(nid);
+    canvas.render(flow);
+    try {
+      const meta = await api.flows.getPixel(fname, nid);
+      const cand = meta.candidates.find((c) => c.id === node.params.candidate);
+      if (cand?.mode !== 'convert') return;
+      const colors = typeof node.params.colors === 'number' ? node.params.colors : cand.colors;
+      const res = await api.flows.convertPixel(fname, nid, {
+        cols: cand.cols, rows: cand.rows, colors, outline: cand.outline ?? true, eye: cand.eye ?? null,
+      });
+      const out = (await api.flows.pixelate(fname, nid, res.candidate.id, colors)).results.find((r) => r.method === method);
+      if (!out?.png) throw new Error(out?.error ?? '直接轉換失敗');
+      const blob = await (await fetch(out.png)).blob();
+      await setOutput(nid, { file: blob }, {
+        inputRev: res.candidate.inputRev ?? null, params: { candidate: res.candidate.id, method, colors },
+      });
+    } catch (e) {
+      error(e);
+    } finally {
+      running.delete(nid);
+      if (flow) canvas.render(flow);
     }
   }
 
@@ -307,7 +342,9 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
     const nid = editor.node;
     editor = null;
     canvas.root.focus({ preventScroll: true });
-    if (flow?.nodes.find((n) => n.id === nid)?.type === 'cutout') void rerunCutout(nid);
+    const type = flow?.nodes.find((n) => n.id === nid)?.type;
+    if (type === 'cutout') void rerunCutout(nid);
+    else if (type === 'pixel') void rerunPixelConvert(nid);
   }
 
   // ---- 流程 ----

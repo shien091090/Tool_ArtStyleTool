@@ -14,10 +14,18 @@ export const MODEL_LABEL: Record<PixelModel, string> = {
 /** 每張約略花費(美元), 2026-10-12 fal 用量 */
 export const MODEL_COST: Record<PixelModel, number> = { kontext: 0.04, 'nano-banana-pro': 0.15 };
 
+/** 眼睛標記: x、y 是 0~1 相對來源圖位置, r 是相對來源圖長邊的半徑 */
+export interface EyeMark {
+  x: number;
+  y: number;
+  r: number;
+}
+
 export interface PixelCandidate {
   id: string;
   created: string;
-  mode: PixelMode;
+  /** convert = 直接轉換(不叫 AI) */
+  mode: PixelMode | 'convert';
   model: PixelModel;
   cols: number;
   rows: number;
@@ -25,6 +33,22 @@ export interface PixelCandidate {
   note: string;
   /** 流程像素化節點: 產生時的上游版本 */
   inputRev?: number;
+  /** 直接轉換: 加外框、眼睛標記 */
+  outline?: boolean;
+  eye?: EyeMark | null;
+}
+
+export interface ConvertSettings {
+  cols: number;
+  rows: number;
+  colors: number;
+  outline: boolean;
+  eye: EyeMark | null;
+}
+
+/** 與後端 convert.default_colors 相同 */
+export function defaultConvertColors(cols: number, rows: number): number {
+  return Math.max(cols, rows) * CELL <= 32 ? 16 : 24;
 }
 
 export interface PixelSettings {
@@ -81,6 +105,7 @@ export function displayScale(w: number, h: number, box: number): number {
 }
 
 export function candidateLabel(c: PixelCandidate): string {
+  if (c.mode === 'convert') return `直接轉換 · 寬${c.cols}×高${c.rows}格`;
   if (c.mode === 'auto') return `自動 · ${c.model === 'kontext' ? 'Kontext' : 'Banana Pro'}`;
   return `寬${c.cols}×高${c.rows}格(${c.cols * CELL}×${c.rows * CELL})`;
 }

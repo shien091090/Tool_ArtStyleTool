@@ -1,13 +1,17 @@
-/** 像素素材的來源、候選、縮小結果與右側設定; 像素素材頁與流程的像素化節點共用。 */
+/** 像素素材的來源、候選、縮小結果與右側設定(AI 重畫、直接轉換); 像素素材頁與流程的像素化節點共用。 */
 import { el, option, showBanner } from '../pages/ui';
 import { createGridPicker } from './gridPicker';
 import {
-  candidateLabel, CELL, defaultColors, displayScale, estimateCost, MAX_CELLS, MODEL_LABEL, toGpl, ZOOM_EXPORT,
-  type PixelCandidate, type PixelMode, type PixelModel, type PixelResult, type PixelSettings, type PixelWorkMeta,
+  candidateLabel, CELL, defaultColors, defaultConvertColors, displayScale, estimateCost, MAX_CELLS, MODEL_LABEL, toGpl,
+  ZOOM_EXPORT, type ConvertSettings, type EyeMark, type PixelCandidate, type PixelMode, type PixelModel, type PixelResult, type PixelSettings, type PixelWorkMeta,
 } from './model';
 
 const RESULT_BOX = 400;
 const PICKER_CELL = 18;
+/** 只點不拖時的眼睛半徑(相對長邊) */
+const EYE_DEFAULT_R = 0.03;
+const EYE_MIN_R = 0.002;
+const EYE_MAX_R = 0.5;
 
 /** 作品資料從哪裡來: 像素素材作品或流程節點 */
 export interface PixelBackend {
@@ -17,13 +21,14 @@ export interface PixelBackend {
   generate(s: PixelSettings): Promise<{ meta: PixelWorkMeta; candidates: PixelCandidate[]; errors: string[] }>;
   deleteCandidate(cid: string): Promise<PixelWorkMeta>;
   pixelate(cid: string, colors: number): Promise<{ results: PixelResult[]; colors: number }>;
+  convert(s: ConvertSettings): Promise<{ meta: PixelWorkMeta; candidate: PixelCandidate }>;
 }
 
 export interface PixelPanelOptions {
   banner: HTMLElement;
   status: HTMLElement;
   /** 每個縮小結果多一顆按鈕(流程節點的「設為輸出」) */
-  resultAction?: { label: string; run: (r: PixelResult, cand: PixelCandidate) => Promise<void> };
+  resultAction?: { label: string; run: (r: PixelResult, cand: PixelCandidate, colors: number) => Promise<void> };
   onBusyChange?: (busy: boolean) => void;
   confirmDelete: (what: string) => boolean;
 }
@@ -82,6 +87,8 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
   let alive = true;
   let token = 0;
   let mode: PixelMode = 'grid';
+  let eye: EyeMark | null = null;
+  let marking = false;
 
   // ---- 中間: 來源、候選、縮小結果 ----
   const sourceBox = el('div', { className: 'px-source' });
@@ -96,7 +103,7 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
     el('span', { className: 'muted small', text: '在本機縮小, 不花錢; 匯出的原尺寸 PNG 可直接用 Aseprite 修' })]);
   const main = el('div', { className: 'px-main' }, [
     el('h3', { text: '來源' }), sourceBox,
-    el('h3', { text: 'AI 候選' }), candList,
+    el('h3', { text: '候選' }), candList,
     el('h3', { text: '縮小結果' }), resultHead, resultGrid,
   ]);
 
@@ -134,12 +141,28 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
   note.placeholder = '補充描述(選填), 例如「劍要保留」';
   const countSel = el('select');
   for (const n of [1, 2, 3, 4]) countSel.append(option(String(n), `${n} 張`));
+  const convColors = el('input');
+  convColors.type = 'number';
+  convColors.min = '2';
+  convColors.max = '64';
+  const outline = el('input');
+  outline.type = 'checkbox';
+  outline.checked = true;
+  const markBtn = el('button', { text: '標記眼睛' });
+  const clearEyeBtn = el('button', { text: '清除' });
+  const eyeHint = el('div', { className: 'muted small' });
+  const convBtn = el('button', { text: '直接轉換', className: 'primary' });
+  const convHint = el('span', { className: 'muted small' });
   const genBtn = el('button', { text: 'AI 重畫', className: 'primary' });
   const costHint = el('span', { className: 'muted small' });
   const section = (title: string, ...children: (Node | string)[]) =>
     el('section', { className: 'prop-section' }, [el('h3', { text: title }), ...children]);
   const side = el('div', { className: 'panel-wrap prop-panel' }, [
     section('尺寸', modeRow, modelRow, gridRow),
+    section('直接轉換(免費)', el('div', { className: 'muted small', text: '不叫 AI, 在本機幾秒轉好; 適合平塗、線稿清楚的插畫' }),
+      el('label', {}, ['色數', convColors]), el('label', {}, [outline, '加外框']),
+      el('div', { className: 'row' }, [markBtn, clearEyeBtn]), eyeHint,
+      el('div', { className: 'row' }, [convBtn, convHint])),
     section('重畫', el('label', {}, ['色數', genColors]), note, el('label', {}, ['候選張數', countSel]),
       el('div', { className: 'row' }, [genBtn, costHint])),
   ]);
@@ -149,6 +172,7 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
   function resetColors() {
     const { cols, rows } = cells();
     genColors.value = String(defaultColors(mode, cols, rows));
+    convColors.value = String(defaultConvertColors(cols, rows));
   }
 
   function sync() {
@@ -163,6 +187,14 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
     costHint.textContent = `約 ${cost.toFixed(2)} 美元`;
     genBtn.disabled = busy || !falOk || !backend || blocked !== null;
     genBtn.title = !falOk ? '沒有設定 FAL_KEY' : blocked ?? '';
+    convBtn.disabled = busy || !backend || blocked !== null || mode !== 'grid';
+    convBtn.title = mode !== 'grid' ? '先在上方切到「指定格數」' : blocked ?? '';
+    convHint.textContent = mode !== 'grid' ? '尺寸用指定格數' : `轉成 ${cols * CELL}×${rows * CELL} 像素`;
+    markBtn.disabled = busy || !source;
+    markBtn.textContent = marking ? '取消標記' : eye ? '重新標記' : '標記眼睛';
+    clearEyeBtn.disabled = !eye || marking;
+    eyeHint.textContent = marking ? '在來源圖的眼睛上按住拖出圓, 放開完成'
+      : eye ? '已標記眼睛, 轉換時會重畫成圓形虹膜與瞳孔' : '選填: 眼睛轉完常糊掉, 標記後會重畫';
     redoBtn.disabled = busy || !selected;
     colorsInput.disabled = busy || !selected;
   }
@@ -194,8 +226,52 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
     candList.replaceChildren();
     if (source) {
       const src = el('img');
+      src.draggable = false;
       src.src = source.url;
-      sourceBox.append(src, el('div', { className: 'muted small', text: source.label }));
+      const mark = el('div', { className: 'px-eye hidden' });
+      const wrap = el('div', { className: `px-src-wrap${marking ? ' marking' : ''}` }, [src, mark]);
+      const place = () => {
+        if (!eye || !src.clientWidth) {
+          mark.classList.add('hidden');
+          return;
+        }
+        const r = eye.r * Math.max(src.clientWidth, src.clientHeight);
+        Object.assign(mark.style, {
+          left: `${eye.x * src.clientWidth - r}px`, top: `${eye.y * src.clientHeight - r}px`, width: `${2 * r}px`, height: `${2 * r}px`,
+        });
+        mark.classList.remove('hidden');
+      };
+      src.addEventListener('load', place);
+      src.addEventListener('pointerdown', (e) => {
+        if (!marking || e.button !== 0) return;
+        e.preventDefault();
+        src.setPointerCapture(e.pointerId);
+        const rect = src.getBoundingClientRect();
+        const long = Math.max(rect.width, rect.height);
+        const cx = e.clientX;
+        const cy = e.clientY;
+        eye = { x: (cx - rect.left) / rect.width, y: (cy - rect.top) / rect.height, r: EYE_DEFAULT_R };
+        let dragged = false;
+        const move = (ev: PointerEvent) => {
+          const d = Math.hypot(ev.clientX - cx, ev.clientY - cy);
+          if (d < 3 && !dragged) return;
+          dragged = true;
+          eye = { ...eye!, r: Math.min(EYE_MAX_R, Math.max(EYE_MIN_R, d / long)) };
+          place();
+        };
+        const up = () => {
+          src.removeEventListener('pointermove', move);
+          src.removeEventListener('pointerup', up);
+          marking = false;
+          wrap.classList.remove('marking');
+          requestAnimationFrame(place);
+          sync();
+        };
+        place();
+        src.addEventListener('pointermove', move);
+        src.addEventListener('pointerup', up);
+      });
+      sourceBox.append(wrap, el('div', { className: 'muted small', text: source.label }));
     } else {
       sourceBox.append(el('div', { className: 'muted', text: blocked ?? '請選擇或建立作品' }));
     }
@@ -255,7 +331,8 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
       ];
       const action = opts.resultAction;
       if (action) {
-        const b = btn(action.label, () => void run('設定中…', () => action.run(r, cand)));
+        const colors = Number(colorsInput.value);
+        const b = btn(action.label, () => void run('設定中…', () => action.run(r, cand, colors)));
         b.className = 'primary';
         buttons.unshift(b);
       }
@@ -331,7 +408,36 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
     if (first) selectCandidate(first);
   }
 
+  async function convert() {
+    if (!backend) return;
+    const be = backend;
+    const { cols, rows } = cells();
+    const colors = Number(convColors.value);
+    if (!Number.isInteger(colors) || colors < 2 || colors > 64) {
+      showBanner(banner, 'error', '色數請填 2~64 的整數');
+      return;
+    }
+    let first: string | null = null;
+    await run('轉換中…', async () => {
+      const res = await be.convert({ cols, rows, colors, outline: outline.checked, eye });
+      setMeta(res.meta);
+      first = res.candidate.id;
+    });
+    if (first) selectCandidate(first);
+  }
+
   genBtn.addEventListener('click', () => void generate());
+  convBtn.addEventListener('click', () => void convert());
+  markBtn.addEventListener('click', () => {
+    marking = !marking;
+    renderWork();
+    sync();
+  });
+  clearEyeBtn.addEventListener('click', () => {
+    eye = null;
+    renderWork();
+    sync();
+  });
   redoBtn.addEventListener('click', () => void pixelate());
   colorsInput.addEventListener('change', () => void pixelate());
   modelSel.addEventListener('change', sync);
@@ -346,6 +452,10 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
     side,
     setWork(be, m, src = null) {
       backend = be;
+      if (src?.url !== source?.url) {
+        eye = null;
+        marking = false;
+      }
       source = src;
       selected = null;
       token++;

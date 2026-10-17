@@ -139,7 +139,10 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .px-main h3 { margin: 8px 0 0; font-size: 13px; color: var(--muted); font-weight: 600; }
 .px-main .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .px-source { display: flex; align-items: flex-end; gap: 10px; }
-.px-source img { max-height: 180px; max-width: 320px; background: #fff; border-radius: 4px; }
+.px-source img { max-height: 180px; max-width: 320px; background: #fff; border-radius: 4px; display: block; }
+.px-src-wrap { position: relative; flex: none; }
+.px-src-wrap.marking img { max-height: 420px; max-width: 560px; cursor: crosshair; touch-action: none; }
+.px-eye { position: absolute; pointer-events: none; border: 2px solid #ffd54a; border-radius: 50%; box-shadow: 0 0 0 1px #000; }
 .px-cands { display: flex; flex-wrap: wrap; gap: 8px; }
 .px-cand { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px; width: 130px; font-size: 11px; border: 2px solid transparent; border-radius: 6px; cursor: pointer; background: #0003; }
 .px-cand.active { border-color: var(--accent); }

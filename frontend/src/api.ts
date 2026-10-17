@@ -3,7 +3,7 @@ import type { Recipe } from './recipe';
 import type { Pad, Part, Place, PartTransform, ResultInfo, SegBox, SegPoint, WorkMeta } from './proportion/model';
 import type { ProportionRecipe } from './proportion/recipe';
 import type { FlowMeta, FlowNode, FlowLink } from './flow/model';
-import type { PixelCandidate, PixelResult, PixelSettings, PixelWorkMeta } from './pixel/model';
+import type { ConvertSettings, PixelCandidate, PixelResult, PixelSettings, PixelWorkMeta } from './pixel/model';
 
 export type RGB = [number, number, number];
 
@@ -164,6 +164,8 @@ export const api = {
       `${pwork(name)}/candidates`, json('POST', settings)),
     deleteCandidate: (name: string, cid: string) =>
       request<PixelWorkMeta>(`${pwork(name)}/candidates/${cid}`, { method: 'DELETE' }),
+    convert: (name: string, settings: ConvertSettings) =>
+      request<{ meta: PixelWorkMeta; candidate: PixelCandidate }>(`${pwork(name)}/convert`, json('POST', settings)),
     pixelate: (name: string, cid: string, colors: number) =>
       request<{ results: PixelResult[]; colors: number }>(`${pwork(name)}/candidates/${cid}/pixelate`, json('POST', { colors })),
   },
@@ -188,6 +190,8 @@ export const api = {
     addCandidates: (name: string, nid: string, settings: PixelSettings) =>
       request<{ meta: PixelWorkMeta; candidates: PixelCandidate[]; errors: string[] }>(
         `${pflow(name)}/nodes/${nid}/pixel/candidates`, json('POST', settings)),
+    convertPixel: (name: string, nid: string, settings: ConvertSettings) =>
+      request<{ meta: PixelWorkMeta; candidate: PixelCandidate }>(`${pflow(name)}/nodes/${nid}/pixel/convert`, json('POST', settings)),
     deleteCandidate: (name: string, nid: string, cid: string) =>
       request<PixelWorkMeta>(`${pflow(name)}/nodes/${nid}/pixel/candidates/${cid}`, { method: 'DELETE' }),
     pixelate: (name: string, nid: string, cid: string, colors: number) =>
