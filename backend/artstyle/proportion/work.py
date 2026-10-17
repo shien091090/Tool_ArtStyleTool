@@ -195,11 +195,27 @@ class Work:
         self.meta["images"].append({"id": image_id, "name": name, "w": w, "h": h})
 
     def add_image(self, image_bytes: bytes, name: str) -> str:
-        img = limit_size(load_rgb(image_bytes), config.MAX_SIDE)
+        return self.add_image_rgb(load_rgb(image_bytes), name)
+
+    def add_image_rgb(self, img: np.ndarray, name: str, **extra) -> str:
+        """加入素材圖; extra 是額外記在圖片資訊上的欄位(例如流程的來源節點與版本)。"""
+        img = limit_size(img, config.MAX_SIDE)
         image_id = f"s{self._next('image')}"
         self._write_image(image_id, name or image_id, img)
+        self.meta["images"][-1].update(extra)
         self.save_meta()
         return image_id
+
+    def remove_image(self, image_id: str) -> None:
+        """刪素材圖, 連同從它切出的部位與材質候選。"""
+        if image_id == "main":
+            raise ValueError("主圖不能刪")
+        info = self.image_info(image_id)
+        for p in [p for p in self.meta["parts"] if p["image"] == image_id]:
+            self.delete_part(p["id"])
+        self.meta["images"].remove(info)
+        (self.dir / "images" / f"{image_id}.png").unlink(missing_ok=True)
+        self.save_meta()
 
     def image_info(self, image_id: str) -> dict:
         for im in self.meta["images"]:

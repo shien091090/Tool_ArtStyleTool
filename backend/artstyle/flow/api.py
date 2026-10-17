@@ -207,6 +207,47 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
         work.save_meta()
         return work.meta
 
+    def material_source(flow: Flow, src: dict) -> np.ndarray:
+        return to_ai_source(flow.output(src["id"]))
+
+    @r.post("/{name}/nodes/{nid}/workshop/materials/sync")
+    def workshop_sync_materials(name: str, nid: str, body: dict | None = Body(default=None)):
+        """作品的素材圖對齊素材線: 新接的加入、拔掉的刪除、來源換圖且還沒切部位的直接換新圖。"""
+        names = (body or {}).get("names") or {}
+        if not isinstance(names, dict):
+            raise ValueError("素材名稱格式錯誤")
+        flow = open_flow(name)
+        work = open_workshop({"name": name, "nid": nid})
+        srcs = {n["id"]: n for n in flow.materials(nid)}
+        for im in [im for im in work.meta["images"] if im.get("source")]:
+            src = srcs.get(im["source"])
+            used = any(p["image"] == im["id"] for p in work.meta["parts"])
+            if src is None or (src.get("rev") and im.get("inputRev") != src["rev"] and not used):
+                work.remove_image(im["id"])
+        have = {im.get("source") for im in work.meta["images"]}
+        for sid, src in srcs.items():
+            if sid in have or not src.get("rev"):
+                continue
+            label = names.get(sid) if isinstance(names.get(sid), str) else sid
+            work.add_image_rgb(material_source(flow, src), f"素材：{label}", source=sid, inputRev=src["rev"])
+        return work.meta
+
+    @r.post("/{name}/nodes/{nid}/workshop/materials/{src}/refresh")
+    def workshop_refresh_material(name: str, nid: str, src: str):
+        """素材改用來源的新輸出, 從舊素材切出的部位一起清掉。"""
+        flow = open_flow(name)
+        work = open_workshop({"name": name, "nid": nid})
+        node = next((n for n in flow.materials(nid) if n["id"] == src), None)
+        if node is None:
+            raise FileNotFoundError("這個節點沒有接上那張素材")
+        img = material_source(flow, node)
+        old = next((im for im in work.meta["images"] if im.get("source") == src), None)
+        label = old["name"] if old else f"素材：{src}"
+        if old:
+            work.remove_image(old["id"])
+        work.add_image_rgb(img, label, source=src, inputRev=node["rev"])
+        return work.meta
+
     add_work_routes(r, "/{name}/nodes/{nid}/workshop", open_workshop, lambda p: f"{p['name']}-{p['nid']}", client,
                     packs_dir)
 

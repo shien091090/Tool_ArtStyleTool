@@ -75,6 +75,10 @@ def test_create_list_delete(client):
      [{"from": "n1", "to": "n3"}, {"from": "n2", "to": "n3"}], "只能接一條"),
     ([_node("n1", "cutout"), _node("n2", "cutout")], [{"from": "n1", "to": "n2"}, {"from": "n2", "to": "n1"}], "迴圈"),
     ([_node("n1", "input")], [{"from": "n1", "to": "n9"}], "不存在"),
+    ([_node("n1", "input"), _node("n2", "cutout")], [{"from": "n1", "to": "n2", "port": "material"}], "素材接點"),
+    ([_node("n1", "input"), _node("n2", "workshop")],
+     [{"from": "n1", "to": "n2"}, {"from": "n1", "to": "n2", "port": "material"}], "只能有一條"),
+    ([_node("n1", "input"), _node("n2", "workshop")], [{"from": "n1", "to": "n2", "port": "x"}], "未知的接點"),
     ([{"id": "n1", "type": "input", "x": "a", "y": 0, "params": {}}], [], "座標"),
 ])
 def test_graph_validation(client, nodes, links, msg):

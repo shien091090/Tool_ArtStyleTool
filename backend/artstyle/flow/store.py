@@ -64,12 +64,23 @@ def check_graph(body) -> tuple[list[dict], list[dict]]:
             raise ValueError("節點參數格式錯誤")
         nodes.append({"id": nid, "type": n["type"], "x": x, "y": y, "params": params})
     types = {n["id"]: n["type"] for n in nodes}
-    links, targets = [], set()
+    links, targets, pairs = [], set(), set()
     for l in body["links"]:
         if not isinstance(l, dict) or l.get("from") not in types or l.get("to") not in types:
             raise ValueError("連線指到不存在的節點")
         if types[l["to"]] == "input":
             raise ValueError("圖片輸入節點不能接輸入")
+        port = l.get("port")
+        if port not in (None, "main", "material"):
+            raise ValueError(f"未知的接點: {port!r}")
+        if (l["from"], l["to"]) in pairs:
+            raise ValueError("同一對節點之間只能有一條連線")
+        pairs.add((l["from"], l["to"]))
+        if port == "material":
+            if types[l["to"]] != "workshop":
+                raise ValueError("只有改部位節點有素材接點")
+            links.append({"from": l["from"], "to": l["to"], "port": "material"})
+            continue
         if l["to"] in targets:
             raise ValueError(f"節點 {l['to']} 只能接一條輸入")
         targets.add(l["to"])
@@ -146,10 +157,15 @@ class Flow:
         raise FileNotFoundError(f"找不到節點 {nid}")
 
     def upstream(self, nid: str) -> dict | None:
+        """主圖輸入的上游節點。"""
         for l in self.meta["links"]:
-            if l["to"] == nid:
+            if l["to"] == nid and l.get("port") != "material":
                 return self.node(l["from"])
         return None
+
+    def materials(self, nid: str) -> list[dict]:
+        """接到素材接點的上游節點。"""
+        return [self.node(l["from"]) for l in self.meta["links"] if l["to"] == nid and l.get("port") == "material"]
 
     def set_graph(self, body) -> dict:
         nodes, links = check_graph(body)
