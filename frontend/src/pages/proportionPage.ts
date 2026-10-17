@@ -18,6 +18,9 @@ const SAVE_DELAY = 400;
 
 const identity = (z: number): PartTransform => ({ scaleX: 1, scaleY: 1, rotation: 0, anchor: 'bottom', dx: 0, dy: 0, z, hidden: false });
 const baseName = (n: string) => n.replace(/\((左|右)\)$/, '');
+/** 素材名太長(例如雜湊檔名)時截斷顯示 */
+const NAME_MAX = 16;
+export const truncate = (s: string, max: number) => (s.length > max ? `${s.slice(0, max - 1)}…` : s);
 const splitNames = (t: string) => [...new Set(t.split(/[、,，;；\n]/).map((s) => s.trim()).filter(Boolean))];
 
 /** 嵌入流程節點時的設定: 固定一個作品, 不顯示作品列 */
@@ -420,10 +423,14 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     matBtn.disabled = busy || !falOk;
     syncSuggestions();
     // 檢視選單
-    viewSel.replaceChildren(...meta.images.map((im) => option(im.id, im.id === 'main' ? '主圖(拼貼)' : `素材: ${im.name}`)));
+    viewSel.replaceChildren(...meta.images.map((im) => {
+      const o = option(im.id, im.id === 'main' ? '主圖(拼貼)' : `素材: ${truncate(im.name, NAME_MAX)}`);
+      o.title = im.name;
+      return o;
+    }));
     viewSel.value = view;
     // 部位清單
-    const imgName = (id: string) => (id === 'main' ? '主圖' : meta!.images.find((i) => i.id === id)?.name ?? id);
+    const imgName = (id: string) => (id === 'main' ? '主圖' : truncate(meta!.images.find((i) => i.id === id)?.name ?? id, NAME_MAX));
     const maskToggle = (pid: string) => {
       const chk = el('input');
       chk.type = 'checkbox';
