@@ -1,5 +1,6 @@
 """節點流程 API(前綴 /api/flows)。"""
 import json
+import shutil
 from pathlib import Path
 from typing import Callable
 
@@ -10,10 +11,11 @@ from fastapi.responses import Response
 from .. import config
 from ..decompose import NoClientError
 from ..fal import FalClient
-from ..imaging import limit_size, load_rgba
+from ..imaging import encode_png, limit_size, load_rgba
 from ..pack import Pack
 from ..pixel import service
 from ..pixel.work import PixelWork
+from ..proportion.api import add_work_routes
 from ..proportion.work import Work
 from .store import Flow
 
@@ -162,6 +164,51 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
         if work is None:
             work = PixelWork.create_from_image(flow.dir / "nodes", nid, to_ai_source(src), f"上游 {up['id']} 第 {up['rev']} 版")
         return service.convert(work, body, src, extra={"inputRev": up["rev"]})
+
+    # ---- 改部位節點: 節點資料夾就是一個部位工坊作品 ----
+
+    def workshop_node(flow: Flow, nid: str) -> dict:
+        n = flow.node(nid)
+        if n["type"] != "workshop":
+            raise ValueError(f"節點 {nid} 不是改部位節點")
+        return n
+
+    def open_workshop(p: dict) -> Work:
+        flow = open_flow(p["name"])
+        workshop_node(flow, p["nid"])
+        try:
+            return Work.open(flow.dir / "nodes", p["nid"])
+        except FileNotFoundError:
+            raise FileNotFoundError("這個節點還沒有建立作品") from None
+
+    @r.get("/{name}/nodes/{nid}/workshop/status")
+    def workshop_status(name: str, nid: str):
+        flow = open_flow(name)
+        workshop_node(flow, nid)
+        try:
+            work = Work.open(flow.dir / "nodes", nid)
+        except FileNotFoundError:
+            return {"exists": False, "inputRev": None}
+        return {"exists": True, "inputRev": work.meta.get("inputRev")}
+
+    @r.post("/{name}/nodes/{nid}/workshop/init")
+    def workshop_init(name: str, nid: str):
+        """以上游輸出建立作品(已存在就整個重建)。"""
+        flow = open_flow(name)
+        workshop_node(flow, nid)
+        up = flow.upstream(nid)
+        if up is None or not up.get("rev"):
+            raise ValueError("上游還沒有輸出")
+        data = encode_png(to_ai_source(flow.output(up["id"])))
+        root = flow.dir / "nodes"
+        shutil.rmtree(root / nid, ignore_errors=True)
+        work = Work.create(root, nid, data, f"上游 第 {up['rev']} 版")
+        work.meta["inputRev"] = up["rev"]
+        work.save_meta()
+        return work.meta
+
+    add_work_routes(r, "/{name}/nodes/{nid}/workshop", open_workshop, lambda p: f"{p['name']}-{p['nid']}", client,
+                    packs_dir)
 
     def existing_work(flow: Flow, nid: str) -> PixelWork:
         pixel_node(flow, nid)

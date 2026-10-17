@@ -1,10 +1,10 @@
-"""部位比例 API(前綴 /api/proportion)。"""
+"""部位比例 API(前綴 /api/proportion)。單一作品的路由抽成 add_work_routes, 流程的改部位節點也掛同一份。"""
 import json
 from pathlib import Path
 from typing import Callable
 
 import numpy as np
-from fastapi import APIRouter, Body, File, Form, UploadFile
+from fastapi import APIRouter, Body, File, Form, Request, UploadFile
 from fastapi.responses import Response
 
 from .. import recipes as recipe_files
@@ -51,20 +51,26 @@ def _box(raw, w: int, h: int):
     return b
 
 
-def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]) -> APIRouter:
-    works_dir = Path(data_dir) / "proportion"
-    recipes_dir = Path(data_dir) / "proportion_recipes"
-    packs_dir = Path(data_dir) / "packs"
-    r = APIRouter(prefix="/api/proportion")
-
+def client_getter(client_factory: Callable[[], FalClient | None]) -> Callable[[], FalClient]:
     def client() -> FalClient:
         c = client_factory()
         if c is None:
             raise NoClientError("沒有設定 FAL_KEY 環境變數, 無法呼叫 fal.ai(本機調整仍可使用)")
         return c
+    return client
 
-    def open_work(name: str) -> Work:
-        return Work.open(works_dir, name)
+
+async def read_source(packs_dir: Path, file: UploadFile | None, pack: str | None) -> tuple[bytes, str]:
+    if pack:
+        return Pack.open(packs_dir, pack).path("source").read_bytes(), pack
+    if file is None:
+        raise ValueError("請上傳圖片或選擇分層包")
+    return await file.read(), Path(file.filename or "圖片").stem
+
+
+def add_work_routes(r: APIRouter, base: str, resolve: Callable[[dict], Work], pack_base: Callable[[dict], str],
+                    client: Callable[[], FalClient], packs_dir: Path) -> None:
+    """單一作品的路由; resolve 以路徑參數開啟作品, pack_base 是送到拆解檢查時分層包名稱的開頭。"""
 
     def segment(c: FalClient, img: np.ndarray, name: str, points: list, box, aliases: dict) -> np.ndarray:
         boxes = [box] if box else []
@@ -74,47 +80,26 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
             merged = parts.merge_masks(c.segment(img, "", points, boxes), img.shape[:2])
         return merged
 
-    async def read_source(file: UploadFile | None, pack: str | None) -> tuple[bytes, str]:
-        if pack:
-            return Pack.open(packs_dir, pack).path("source").read_bytes(), pack
-        if file is None:
-            raise ValueError("請上傳圖片或選擇分層包")
-        return await file.read(), Path(file.filename or "圖片").stem
+    @r.get(base)
+    def get_work(request: Request):
+        return resolve(request.path_params).meta
 
-    @r.get("/works")
-    def list_works():
-        return Work.list(works_dir)
-
-    @r.post("/works")
-    async def create_work(name: str = Form(...), file: UploadFile | None = File(None), pack: str | None = Form(None)):
-        data, label = await read_source(file, pack)
-        return Work.create(works_dir, name, data, label).meta
-
-    @r.get("/works/{name}")
-    def get_work(name: str):
-        return open_work(name).meta
-
-    @r.delete("/works/{name}")
-    def delete_work(name: str):
-        open_work(name).delete()
-        return {"ok": True}
-
-    @r.get("/works/{name}/files/{folder}/{filename}")
-    def get_file(name: str, folder: str, filename: str):
-        path = open_work(name).file_path(f"{folder}/{filename}")
+    @r.get(base + "/files/{folder}/{filename}")
+    def get_file(request: Request, folder: str, filename: str):
+        path = resolve(request.path_params).file_path(f"{folder}/{filename}")
         media = "application/json" if path.suffix == ".json" else "image/png"
         return Response(path.read_bytes(), media_type=media, headers={"Cache-Control": "no-store"})
 
-    @r.post("/works/{name}/images")
-    async def add_image(name: str, file: UploadFile | None = File(None), pack: str | None = Form(None)):
-        work = open_work(name)
-        data, label = await read_source(file, pack)
+    @r.post(base + "/images")
+    async def add_image(request: Request, file: UploadFile | None = File(None), pack: str | None = Form(None)):
+        work = resolve(request.path_params)
+        data, label = await read_source(packs_dir, file, pack)
         work.add_image(data, label)
         return work.meta
 
-    @r.post("/works/{name}/parts")
-    def add_parts(name: str, body: dict = Body(...)):
-        work = open_work(name)
+    @r.post(base + "/parts")
+    def add_parts(request: Request, body: dict = Body(...)):
+        work = resolve(request.path_params)
         image_id = body.get("image", "main")
         img = work.image(image_id)
         names = []
@@ -139,9 +124,9 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
                 missing.append(n)
         return {"meta": work.meta, "missing": missing}
 
-    @r.post("/works/{name}/parts/{part_id}/refine")
-    def refine_part(name: str, part_id: str, body: dict = Body(...)):
-        work = open_work(name)
+    @r.post(base + "/parts/{part_id}/refine")
+    def refine_part(request: Request, part_id: str, body: dict = Body(...)):
+        work = resolve(request.path_params)
         part = work.part(part_id)
         info = work.image_info(part["image"])
         points = _points(body.get("points"), info["w"], info["h"])
@@ -168,24 +153,24 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
         work.update_part_mask(part_id, mask, points, box)
         return work.meta
 
-    @r.post("/works/{name}/parts/{part_id}/split")
-    def split_part(name: str, part_id: str):
-        work = open_work(name)
+    @r.post(base + "/parts/{part_id}/split")
+    def split_part(request: Request, part_id: str):
+        work = resolve(request.path_params)
         part = work.part(part_id)
         left, right = parts.split_left_right(work.mask(part_id))
-        base = parts.to_display_name(part["name"])
+        name = parts.to_display_name(part["name"])
         old_bbox, old_transform = part["bbox"], dict(part["transform"])
         work.update_part_mask(part_id, left, [], None)  # 內部會重算 dx/dy, 位置不跳
-        part["name"] = f"{base}(左)"
-        new = work.add_part(f"{base}(右)", part["image"], right, [], None)
+        part["name"] = f"{name}(左)"
+        new = work.add_part(f"{name}(右)", part["image"], right, [], None)
         new.update(placed=part["placed"], place=part["place"],
                    transform={**rebase_transform(old_transform, part["place"], old_bbox, new["bbox"]), "z": new["transform"]["z"]})
         work.copy_materials(part_id, new["id"])  # 內部會存檔
         return work.meta
 
-    @r.post("/works/{name}/suggest-parts")
-    def suggest_parts(name: str, body: dict = Body(...)):
-        work = open_work(name)
+    @r.post(base + "/suggest-parts")
+    def suggest_parts(request: Request, body: dict = Body(...)):
+        work = resolve(request.path_params)
         img = work.image(body.get("image", "main"))
         items = suggest.parse(client().vision(img, suggest.PROMPT))
         for it in items:
@@ -193,10 +178,10 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
                 work.set_alias(it["name"], it["en"])
         return {"parts": items, "meta": work.meta}
 
-    @r.post("/works/{name}/parts/{part_id}/materials")
-    async def add_materials(name: str, part_id: str, material: str = Form(...), count: str = Form(...),
+    @r.post(base + "/parts/{part_id}/materials")
+    async def add_materials(request: Request, part_id: str, material: str = Form(...), count: str = Form(...),
                             reference: UploadFile | None = File(None)):
-        work = open_work(name)
+        work = resolve(request.path_params)
         part = work.part(part_id)
         material = material.strip()
         if not 1 <= len(material) <= materials.MAX_MATERIAL:
@@ -220,36 +205,37 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
         errors = [] if len(images) >= int(count) else [f"要求 {count} 張, AI 只回傳 {len(images)} 張"]
         return {"meta": work.meta, "errors": errors}
 
-    @r.put("/works/{name}/parts/{part_id}/material")
-    def set_material(name: str, part_id: str, body: dict = Body(...)):
-        work = open_work(name)
+    @r.put(base + "/parts/{part_id}/material")
+    def set_material(request: Request, part_id: str, body: dict = Body(...)):
+        work = resolve(request.path_params)
         vid = body.get("variant")
         if vid is not None and not isinstance(vid, str):
             raise ValueError("材質候選格式錯誤")
         work.set_material(part_id, vid)
         return work.meta
 
-    @r.delete("/works/{name}/parts/{part_id}/materials/{variant_id}")
-    def delete_material(name: str, part_id: str, variant_id: str):
-        work = open_work(name)
+    @r.delete(base + "/parts/{part_id}/materials/{variant_id}")
+    def delete_material(request: Request, part_id: str, variant_id: str):
+        work = resolve(request.path_params)
         work.delete_material(part_id, variant_id)
         return work.meta
 
-    @r.delete("/works/{name}/parts/{part_id}")
-    def delete_part(name: str, part_id: str):
-        work = open_work(name)
+    @r.delete(base + "/parts/{part_id}")
+    def delete_part(request: Request, part_id: str):
+        work = resolve(request.path_params)
         work.delete_part(part_id)
         return work.meta
 
-    @r.put("/works/{name}/layout")
-    def put_layout(name: str, body: dict = Body(...)):
-        work = open_work(name)
+    @r.put(base + "/layout")
+    def put_layout(request: Request, body: dict = Body(...)):
+        work = resolve(request.path_params)
         work.set_layout(body.get("parts"), body.get("pad"))
         return work.meta
 
-    @r.post("/works/{name}/generate")
-    async def generate(name: str, collage: UploadFile = File(...), region: UploadFile = File(...), options: str = Form(...)):
-        work = open_work(name)
+    @r.post(base + "/generate")
+    async def generate(request: Request, collage: UploadFile = File(...), region: UploadFile = File(...),
+                       options: str = Form(...)):
+        work = resolve(request.path_params)
         try:
             opts = json.loads(options)
         except ValueError:
@@ -291,18 +277,45 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
             errors.append(f"要求 {count} 張, AI 只回傳 {len(results)} 張")
         return {"meta": work.meta, "results": results, "errors": errors}
 
-    @r.post("/works/{name}/results/{result_id}/to-pack")
-    def to_pack(name: str, result_id: str):
-        work = open_work(name)
+    @r.post(base + "/results/{result_id}/to-pack")
+    def to_pack(request: Request, result_id: str):
+        work = resolve(request.path_params)
         data = work.file_path(f"results/{result_id}.png").read_bytes()
-        base = f"{name[:50]}-{result_id}"
-        candidate, n = base, 1
+        name = f"{pack_base(request.path_params)[:50]}-{result_id}"
+        candidate, n = name, 1
         while (packs_dir / candidate).exists():
             n += 1
-            candidate = f"{base}-{n}"
+            candidate = f"{name}-{n}"
         validate_name(candidate)
         Pack.create(packs_dir, candidate, data)
         return {"pack": candidate}
+
+
+def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]) -> APIRouter:
+    works_dir = Path(data_dir) / "proportion"
+    recipes_dir = Path(data_dir) / "proportion_recipes"
+    packs_dir = Path(data_dir) / "packs"
+    r = APIRouter(prefix="/api/proportion")
+    client = client_getter(client_factory)
+
+    def open_work(name: str) -> Work:
+        return Work.open(works_dir, name)
+
+    @r.get("/works")
+    def list_works():
+        return Work.list(works_dir)
+
+    @r.post("/works")
+    async def create_work(name: str = Form(...), file: UploadFile | None = File(None), pack: str | None = Form(None)):
+        data, label = await read_source(packs_dir, file, pack)
+        return Work.create(works_dir, name, data, label).meta
+
+    @r.delete("/works/{name}")
+    def delete_work(name: str):
+        open_work(name).delete()
+        return {"ok": True}
+
+    add_work_routes(r, "/works/{name}", lambda p: open_work(p["name"]), lambda p: p["name"], client, packs_dir)
 
     @r.get("/recipes")
     def list_recipes():
