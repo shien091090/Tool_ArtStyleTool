@@ -110,7 +110,7 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
   let alive = true;
   let token = 0;
   let method: PixelMethod = 'convert';
-  let sizeMode: 'grid' | 'auto' = 'grid';
+  let sizeMode: 'grid' | 'auto' = 'auto';
   let suggestions: SizeSuggestion[] | null = null;
   let eyes: EyeMark[] = [];
   let marking = false;
@@ -138,7 +138,7 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
   });
 
   // ---- 右側: 尺寸 ----
-  const sizeSeg = seg<'grid' | 'auto'>([['grid', '指定格數'], ['auto', '自動尺寸']], (v) => {
+  const sizeSeg = seg<'grid' | 'auto'>([['auto', '自動尺寸'], ['grid', '指定格數']], (v) => {
     sizeMode = v;
     sync();
   });
