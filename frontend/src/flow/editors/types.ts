@@ -6,6 +6,10 @@ export interface EditorContext {
   flowName: string;
   node: FlowNode;
   upstream: FlowNode | null;
+  /** 接到素材接點的上游 */
+  materials: FlowNode[];
+  /** 素材來源節點 → 顯示名稱 */
+  materialNames: Record<string, string>;
   /** 上游輸出圖網址; 上游沒有輸出時為 null */
   upstreamUrl: string | null;
   outputUrl: string | null;

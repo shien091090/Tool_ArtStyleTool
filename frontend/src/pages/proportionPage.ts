@@ -105,9 +105,12 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   imgFile.accept = 'image/*';
   const imgPackSel = el('select');
   const addImgBtn = button('加入素材圖', () => void addImage());
-  const viewSection = section('檢視', el('label', {}, ['畫布顯示', viewSel]),
-    el('div', { className: 'muted small', text: '素材圖: 從別張圖拿部位(例如換頭)' }),
-    el('div', { className: 'row' }, [imgFile]), el('div', { className: 'row' }, [el('label', {}, ['或分層包', imgPackSel]), addImgBtn]));
+  const viewSection = embed
+    ? section('檢視', el('label', {}, ['畫布顯示', viewSel]),
+      el('div', { className: 'muted small', text: '素材圖: 把其他節點接到這個節點的「素材」接點(從別張圖拿部位, 例如換頭)' }))
+    : section('檢視', el('label', {}, ['畫布顯示', viewSel]),
+      el('div', { className: 'muted small', text: '素材圖: 從別張圖拿部位(例如換頭)' }),
+      el('div', { className: 'row' }, [imgFile]), el('div', { className: 'row' }, [el('label', {}, ['或分層包', imgPackSel]), addImgBtn]));
 
   // 切部位
   const partNames = el('input');

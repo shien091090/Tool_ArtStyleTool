@@ -229,7 +229,7 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
             if sid in have or not src.get("rev"):
                 continue
             label = names.get(sid) if isinstance(names.get(sid), str) else sid
-            work.add_image_rgb(material_source(flow, src), f"素材：{label}", source=sid, inputRev=src["rev"])
+            work.add_image_rgb(material_source(flow, src), label, source=sid, inputRev=src["rev"])
         return work.meta
 
     @r.post("/{name}/nodes/{nid}/workshop/materials/{src}/refresh")
@@ -242,7 +242,7 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
             raise FileNotFoundError("這個節點沒有接上那張素材")
         img = material_source(flow, node)
         old = next((im for im in work.meta["images"] if im.get("source") == src), None)
-        label = old["name"] if old else f"素材：{src}"
+        label = old["name"] if old else src
         if old:
             work.remove_image(old["id"])
         work.add_image_rgb(img, label, source=src, inputRev=node["rev"])

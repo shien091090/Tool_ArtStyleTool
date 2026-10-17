@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { connect, newNodeId, nodeStatus, wouldCycle, type FlowMeta, type FlowNode } from '../src/flow/model';
+import {
+  connect, materialNames, materialsOf, newNodeId, nodeStatus, upstreamOf, wouldCycle, type FlowMeta, type FlowNode,
+} from '../src/flow/model';
 import { applyOps, growMask, selectRegion, type EraseOp, type Img, type WandOp } from '../src/flow/magicWand';
 
 const node = (id: string, type: FlowNode['type'], rev = 0, inputRev: number | null = null): FlowNode =>
@@ -27,6 +29,38 @@ describe('流程狀態', () => {
     expect(wouldCycle(links, 'n2', 'n2')).toBe(true);
     expect(wouldCycle(links, 'n1', 'n3')).toBe(false);
     expect(connect(links, 'n1', 'n3')).toEqual([{ from: 'n1', to: 'n2' }, { from: 'n1', to: 'n3' }]);
+  });
+
+  it('素材線: 不算主圖上游、可接多條、同一對節點只留一條', () => {
+    let links = connect([{ from: 'n1', to: 'n3' }], 'n2', 'n3', 'material');
+    links = connect(links, 'n4', 'n3', 'material');
+    expect(links).toEqual([{ from: 'n1', to: 'n3' }, { from: 'n2', to: 'n3', port: 'material' }, { from: 'n4', to: 'n3', port: 'material' }]);
+    // 接主圖只取代主圖線
+    expect(connect(links, 'n5', 'n3')).toEqual([links[1], links[2], { from: 'n5', to: 'n3' }]);
+    // 同一對節點改接另一個接點
+    expect(connect(links, 'n2', 'n3')).toEqual([links[2], { from: 'n2', to: 'n3' }]);
+    const flow: FlowMeta = {
+      name: 'f',
+      nodes: [node('n1', 'input', 1), node('n2', 'input', 2), node('n3', 'workshop', 1, 1), node('n4', 'cutout', 1, 1)],
+      links,
+    };
+    expect(upstreamOf(flow, 'n3')?.id).toBe('n1');
+    expect(materialsOf(flow, 'n3').map((n) => n.id)).toEqual(['n2', 'n4']);
+    expect(materialNames(flow, 'n3')).toEqual({ n2: '圖片輸入', n4: '去除區塊' });
+    expect(materialNames({ ...flow, nodes: flow.nodes.map((n) => (n.id === 'n4' ? node('n4', 'input', 1) : n)) }, 'n3'))
+      .toEqual({ n2: '圖片輸入 1', n4: '圖片輸入 2' });
+  });
+
+  it('素材版本變了 → 過期', () => {
+    const ws = { ...node('n3', 'workshop', 1, 1), params: { materials: { n2: 2 } } };
+    const flow: FlowMeta = {
+      name: 'f',
+      nodes: [node('n1', 'input', 1), node('n2', 'input', 2), ws],
+      links: [{ from: 'n1', to: 'n3' }, { from: 'n2', to: 'n3', port: 'material' }],
+    };
+    expect(nodeStatus(flow, ws)).toBe('done');
+    expect(nodeStatus({ ...flow, nodes: [flow.nodes[0], node('n2', 'input', 3), ws] }, ws)).toBe('stale');
+    expect(nodeStatus(flow, { ...ws, params: {} })).toBe('stale'); // 輸出時還沒接這張素材
   });
 
   it('新節點編號', () => {
@@ -144,8 +178,8 @@ describe('橡皮擦', () => {
 });
 
 describe('節點種類', () => {
-  it('改部位: 有輸入、要花錢(上游換圖只亮過期)', async () => {
+  it('改部位: 有輸入、有素材接點、要花錢(上游換圖只亮過期)', async () => {
     const { NODE_INFO } = await import('../src/flow/model');
-    expect(NODE_INFO.workshop).toEqual({ label: '改部位', hasInput: true, free: false });
+    expect(NODE_INFO.workshop).toEqual({ label: '改部位', hasInput: true, free: false, materials: true });
   });
 });

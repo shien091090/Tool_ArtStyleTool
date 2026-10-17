@@ -125,7 +125,7 @@ def test_material_sync_adds_and_removes(client, fal):
     assert client.post(f"{M}/init").json()["inputRev"] == 1  # 主圖只看主圖線
     meta = _sync(client)
     mats = [im for im in meta["images"] if im["id"] != "main"]
-    assert [(im["name"], im["source"], im["inputRev"]) for im in mats] == [("素材：圖片輸入", "n2", 1)]  # n4 還沒輸出
+    assert [(im["name"], im["source"], im["inputRev"]) for im in mats] == [("圖片輸入", "n2", 1)]  # n4 還沒輸出
     assert mats[0]["w"] == 60
     assert len(_sync(client)["images"]) == 2  # 再同步不會重複加
     sid = mats[0]["id"]
@@ -157,6 +157,6 @@ def test_material_updated_upstream(client, fal):
     assert next(i for i in meta["images"] if i.get("source") == "n2")["inputRev"] == 2
     meta = client.post(f"{M}/materials/n2/refresh").json()
     new = next(i for i in meta["images"] if i.get("source") == "n2")
-    assert new["inputRev"] == 3 and new["name"] == "素材：圖片輸入"
+    assert new["inputRev"] == 3 and new["name"] == "圖片輸入"
     assert [p["image"] for p in meta["parts"]] == ["main"]
     assert client.post(f"{M}/materials/n1/refresh").status_code == 404  # n1 是主圖不是素材

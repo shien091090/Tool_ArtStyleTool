@@ -8,8 +8,8 @@ import { mountWorkshopEditor } from '../flow/editors/workshopEditor';
 import type { EditorContext, NodeEditor, OutputSource } from '../flow/editors/types';
 import { applyOps } from '../flow/magicWand';
 import {
-  connect, downstreamOf, NODE_INFO, newNodeId, nodeStatus, STATUS_LABEL, upstreamOf, wouldCycle,
-  type FlowMeta, type FlowNode, type FlowNodeType,
+  connect, downstreamOf, isMaterial, materialNames, materialsOf, NODE_INFO, newNodeId, nodeStatus, STATUS_LABEL,
+  upstreamOf, wouldCycle, type FlowLink, type FlowMeta, type FlowNode, type FlowNodeType, type PortKind,
 } from '../flow/model';
 import { candidateEyes } from '../pixel/model';
 import { download } from '../pixel/pixelPanel';
@@ -43,7 +43,7 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
 
   const canvas = createFlowCanvas({
     onMove: () => scheduleSave(),
-    onConnect: (from, to) => void link(from, to),
+    onConnect: (from, to, port) => void link(from, to, port),
     onDelete: (sel) => void remove(sel),
     onOpen: (id) => openEditor(id),
     onContextMenu: (x, y, cx, cy) => showAddMenu(x, y, cx, cy),
@@ -179,16 +179,16 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
     }
   }
 
-  async function link(from: string, to: string) {
+  async function link(from: string, to: string, port: PortKind = 'main') {
     if (!flow) return;
     if (wouldCycle(flow.links, from, to)) {
       showBanner(banner, 'warn', '連線不能繞成迴圈');
       return;
     }
     try {
-      await saveGraph({ ...flow, links: connect(flow.links, from, to) });
+      await saveGraph({ ...flow, links: connect(flow.links, from, to, port) });
       showBanner(banner, null);
-      await rerunCutout(to);
+      if (port === 'main') await rerunCutout(to);
     } catch (e) {
       error(e);
     }
@@ -198,6 +198,7 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
     if (!flow) return;
     try {
       if (sel.kind === 'link') {
+        if (!confirmMaterialLoss([sel.link])) return;
         await saveGraph({ ...flow, links: flow.links.filter((l) => !(l.from === sel.link.from && l.to === sel.link.to)) });
         return;
       }
@@ -205,8 +206,10 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
       if (!n) return;
       const extra = n.type === 'pixel' ? '(含輸出與所有 AI 候選)'
         : n.type === 'workshop' ? '(含輸出、部位、材質候選與生成結果)' : '(含輸出)';
-      if (n.rev || n.type === 'pixel' || n.type === 'workshop') {
-        if (!confirmDelete(`節點「${NODE_INFO[n.type].label}」${extra}`)) return;
+      const feeds = flow.links.some((l) => l.from === n.id && isMaterial(l));
+      if (n.rev || n.type === 'pixel' || n.type === 'workshop' || feeds) {
+        const also = feeds ? '; 下游改部位節點從這張素材切出的部位也會在下次打開時移除' : '';
+        if (!confirmDelete(`節點「${NODE_INFO[n.type].label}」${extra}${also}`)) return;
       }
       await saveGraph({
         ...flow,
@@ -218,7 +221,14 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
     }
   }
 
-  /** 複製節點: 同種類同設定、不帶輸出, 放在原節點下方, 接同一個上游 */
+  /** 拔掉素材線前確認: 從那張素材切出的部位會在下次打開改部位節點時移除 */
+  function confirmMaterialLoss(links: FlowLink[]): boolean {
+    const mats = links.filter(isMaterial);
+    if (!mats.length) return true;
+    return confirm(`拔掉素材線後, 改部位節點裡從這${mats.length > 1 ? '些' : '張'}素材切出的部位會在下次打開節點時一起移除。要繼續嗎?`);
+  }
+
+  /** 複製節點: 同種類同設定、不帶輸出, 放在原節點下方, 接同一個上游(含素材線) */
   async function duplicateNode(nid: string) {
     if (!flow) return;
     const src = flow.nodes.find((n) => n.id === nid);
@@ -227,8 +237,10 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
     const params = src.type === 'cutout' ? structuredClone(src.params) : {};
     const n: FlowNode = { id: newNodeId(flow.nodes), type: src.type, x: src.x, y: src.y + NODE_H + 40, params, rev: 0, inputRev: null, error: null };
     const up = upstreamOf(flow, nid);
+    let links = up ? connect(flow.links, up.id, n.id) : flow.links;
+    for (const m of materialsOf(flow, nid)) links = connect(links, m.id, n.id, 'material');
     try {
-      await saveGraph({ ...flow, nodes: [...flow.nodes, n], links: up ? connect(flow.links, up.id, n.id) : flow.links });
+      await saveGraph({ ...flow, nodes: [...flow.nodes, n], links });
       if (up) await rerunCutout(n.id);
     } catch (e) {
       error(e);
@@ -237,6 +249,7 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
 
   async function disconnectNode(nid: string) {
     if (!flow) return;
+    if (!confirmMaterialLoss(flow.links.filter((l) => l.from === nid || l.to === nid))) return;
     try {
       await saveGraph({ ...flow, links: flow.links.filter((l) => l.from !== nid && l.to !== nid) });
     } catch (e) {
@@ -316,6 +329,8 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
       flowName: fname,
       node,
       upstream: up,
+      materials: materialsOf(flow, nid),
+      materialNames: materialNames(flow, nid),
       upstreamUrl: up?.rev ? api.flows.fileUrl(fname, `out/${up.id}.png`, up.rev) : null,
       outputUrl: node.rev ? api.flows.fileUrl(fname, `out/${node.id}.png`, node.rev) : null,
       falOk,

@@ -207,6 +207,10 @@ export const api = {
         ...workshopApi(() => base),
         status: () => request<{ exists: boolean; inputRev: number | null }>(`${base}/status`),
         init: () => request<WorkMeta>(`${base}/init`, { method: 'POST' }),
+        /** 素材圖對齊素材線; names: 來源節點 → 顯示名稱 */
+        syncMaterials: (names: Record<string, string>) =>
+          request<WorkMeta>(`${base}/materials/sync`, json('POST', { names })),
+        refreshMaterial: (src: string) => request<WorkMeta>(`${base}/materials/${src}/refresh`, { method: 'POST' }),
       };
     },
     getPixel: (name: string, nid: string) => request<PixelWorkMeta>(`${pflow(name)}/nodes/${nid}/pixel`),

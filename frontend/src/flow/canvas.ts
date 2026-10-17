@@ -1,10 +1,12 @@
 /** 節點畫布: DOM 節點 + SVG 連線, 平移縮放、拖拉節點、拉線、選取刪除。 */
 import { el } from '../pages/ui';
-import { NODE_INFO, STATUS_LABEL, type FlowLink, type FlowMeta, type FlowNode, type NodeStatus } from './model';
+import { isMaterial, NODE_INFO, STATUS_LABEL, type FlowLink, type FlowMeta, type FlowNode, type NodeStatus, type PortKind } from './model';
 
 export const NODE_W = 180;
 export const NODE_H = 160;
 const PORT_Y = 93;
+/** 素材接點 */
+const MAT_PORT_Y = 133;
 const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 2;
 
@@ -13,7 +15,7 @@ export type Selection = { kind: 'node'; id: string } | { kind: 'link'; link: Flo
 export interface CanvasHandlers {
   /** 拖拉結束 */
   onMove(id: string): void;
-  onConnect(from: string, to: string): void;
+  onConnect(from: string, to: string, port: PortKind): void;
   onDelete(sel: NonNullable<Selection>): void;
   onOpen(id: string): void;
   /** 畫布空白處右鍵: 世界座標與畫面座標 */
@@ -83,13 +85,14 @@ export function createFlowCanvas(h: CanvasHandlers): FlowCanvas {
       const a = node(l.from);
       const b = node(l.to);
       if (!a || !b) continue;
-      const d = curve(a.x + NODE_W, a.y + PORT_Y, b.x, b.y + PORT_Y);
+      const d = curve(a.x + NODE_W, a.y + PORT_Y, b.x, b.y + (isMaterial(l) ? MAT_PORT_Y : PORT_Y));
       const hit = document.createElementNS(SVG, 'path');
       hit.setAttribute('d', d);
       hit.classList.add('fc-hit');
       const line = document.createElementNS(SVG, 'path');
       line.setAttribute('d', d);
       line.classList.add('fc-link');
+      if (isMaterial(l)) line.classList.add('material');
       if (sel?.kind === 'link' && sel.link.from === l.from && sel.link.to === l.to) line.classList.add('selected');
       hit.addEventListener('pointerdown', (e) => {
         e.stopPropagation();
@@ -127,8 +130,14 @@ export function createFlowCanvas(h: CanvasHandlers): FlowCanvas {
     r.dataset.id = n.id;
     if (NODE_INFO[n.type].hasInput) {
       const pin = el('div', { className: 'fc-port in' });
-      pin.dataset.id = n.id;
+      pin.dataset.port = 'main';
       r.append(pin);
+    }
+    if (NODE_INFO[n.type].materials) {
+      const pm = el('div', { className: 'fc-port in material', title: '素材: 可接多條, 每條是一張素材圖(從別張圖拿部位用)' });
+      pm.dataset.port = 'material';
+      r.querySelector('.fc-port.in')!.setAttribute('title', '主圖');
+      r.append(pm, el('span', { className: 'fc-plabel', text: '主圖' }), el('span', { className: 'fc-plabel material', text: '素材' }));
     }
     const pout = el('div', { className: 'fc-port out', title: '拖到另一個節點的輸入接點' });
     r.append(pout);
@@ -190,7 +199,8 @@ export function createFlowCanvas(h: CanvasHandlers): FlowCanvas {
         const hit = document.elementFromPoint(ev.clientX, ev.clientY);
         const target = hit?.closest<HTMLElement>('.fc-node');
         const to = target?.dataset.id;
-        if (to && to !== n.id && target?.querySelector('.fc-port.in')) h.onConnect(n.id, to);
+        const port = (hit?.closest<HTMLElement>('.fc-port.in')?.dataset.port ?? 'main') as PortKind;
+        if (to && to !== n.id && target?.querySelector('.fc-port.in')) h.onConnect(n.id, to, port);
         else if (!target && hit && root.contains(hit)) {
           const p = toWorld(ev.clientX, ev.clientY);
           h.onDropLink(n.id, Math.round(p.x), Math.round(p.y - PORT_Y), ev.clientX, ev.clientY);

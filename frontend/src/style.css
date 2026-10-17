@@ -208,6 +208,11 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .fc-port { position: absolute; top: 85px; width: 14px; height: 14px; border-radius: 50%; background: var(--line); border: 2px solid #8a8f98; box-sizing: border-box; }
 .fc-port.in { left: -8px; }
 .fc-port.out { right: -8px; cursor: crosshair; }
+.fc-port.in.material { top: 125px; border-radius: 3px; }
+.fc-plabel { position: absolute; left: 10px; top: 85px; padding: 0 4px; font-size: 11px; line-height: 14px; border-radius: 3px; background: #000a; color: #ddd; pointer-events: none; }
+.fc-plabel.material { top: 125px; }
+.fc-link.material { stroke-dasharray: 6 4; }
+.fe-notices { display: flex; flex-direction: column; }
 .fc-port:hover { border-color: var(--accent); }
 .fc-menu { position: absolute; z-index: 5; display: flex; flex-direction: column; gap: 2px; padding: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 16px #000a; }
 .fc-menu button { text-align: left; border: none; }

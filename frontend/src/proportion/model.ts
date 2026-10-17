@@ -79,6 +79,9 @@ export interface WorkImage {
   name: string;
   w: number;
   h: number;
+  /** 流程改部位節點的素材: 來源節點與取自第幾版 */
+  source?: string;
+  inputRev?: number;
 }
 
 export interface ResultInfo {
