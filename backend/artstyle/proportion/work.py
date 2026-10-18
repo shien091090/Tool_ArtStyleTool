@@ -298,6 +298,13 @@ class Work:
         src.unlink(missing_ok=True)
         part.update(points=h["points"], box=h["box"], bbox=h["bbox"], transform=h["transform"],
                     rev=part.get("rev", 0) + 1)
+        if h.get("name"):
+            part["name"] = h["name"]
+        if h.get("removes"):  # 拆成左右的復原: 右半邊刪掉
+            try:
+                self.delete_part(h["removes"])
+            except FileNotFoundError:
+                pass
         self.save_meta()
         return part
 

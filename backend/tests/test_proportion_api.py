@@ -449,3 +449,14 @@ def test_undo_mask(client, fal, tmp_path):
     client.post(f"{P}/works/作品/parts/p1/refine", json={"points": [add], "box": None})
     client.delete(f"{P}/works/作品/parts/p1")
     assert list(masks.iterdir()) == []
+
+
+def test_undo_split_merges_back(client, fal):
+    _create(client)
+    client.post(f"{P}/works/作品/parts", json={"names": ["翅膀"]})
+    before = client.get(f"{P}/works/作品").json()["parts"][0]
+    meta = client.post(f"{P}/works/作品/parts/p1/split").json()
+    assert [p["name"] for p in meta["parts"]] == ["翅膀(左)", "翅膀(右)"]
+    meta = client.post(f"{P}/works/作品/parts/p1/undo-mask").json()
+    assert [p["name"] for p in meta["parts"]] == ["翅膀"]
+    assert meta["parts"][0]["bbox"] == before["bbox"]

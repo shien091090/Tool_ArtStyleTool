@@ -1024,6 +1024,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     await run('拆分中…', async () => {
       await flushSave();
       await setMeta(await wapi.split(meta!.name, p.id));
+      undoStack.push({ kind: 'mask', pid: p.id });
       redraw();
     });
   }

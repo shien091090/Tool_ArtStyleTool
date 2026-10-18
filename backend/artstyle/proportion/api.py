@@ -166,11 +166,14 @@ def add_work_routes(r: APIRouter, base: str, resolve: Callable[[dict], Work], pa
         left, right = parts.split_left_right(work.mask(part_id))
         name = parts.to_display_name(part["name"])
         old_bbox, old_transform = part["bbox"], dict(part["transform"])
-        work.update_part_mask(part_id, left, [], None, record=False)  # 內部會重算 dx/dy, 位置不跳; 拆開後不能單獨復原
+        old_name = part["name"]
+        work.update_part_mask(part_id, left, [], None)  # 內部會重算 dx/dy, 位置不跳
         part["name"] = f"{name}(左)"
         new = work.add_part(f"{name}(右)", part["image"], right, [], None)
         new.update(placed=part["placed"], place=part["place"],
                    transform={**rebase_transform(old_transform, part["place"], old_bbox, new["bbox"]), "z": new["transform"]["z"]})
+        # 復原這一步 = 合併回去: 左邊退回原遮罩與名稱, 右邊刪掉
+        part["history"][-1].update(name=old_name, removes=new["id"])
         work.copy_materials(part_id, new["id"])  # 內部會存檔
         return work.meta
 
