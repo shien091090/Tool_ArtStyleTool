@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   connect, materialNames, materialsOf, newNodeId, nodeStatus, upstreamOf, wouldCycle, type FlowMeta, type FlowNode,
 } from '../src/flow/model';
-import { applyOps, growMask, selectRegion, type EraseOp, type Img, type WandOp } from '../src/flow/magicWand';
+import { applyOps, growMask, selectRegion, type EraseOp, type Img, type MatteOp, type WandOp } from '../src/flow/magicWand';
 
 const node = (id: string, type: FlowNode['type'], rev = 0, inputRev: number | null = null): FlowNode =>
   ({ id, type, x: 0, y: 0, params: {}, rev, inputRev, error: null });
@@ -182,5 +182,16 @@ describe('節點種類', () => {
     const { NODE_INFO } = await import('../src/flow/model');
     expect(NODE_INFO.workshop).toEqual({ label: '改部位', hasInput: true, free: false, materials: true });
     expect(NODE_INFO.style).toEqual({ label: '改風格', hasInput: true, free: false });
+  });
+});
+
+describe('AI 去背', () => {
+  it('透明度乘上去背結果; 沒給透明度圖或尺寸不同就略過', () => {
+    const src = img(['WR', 'RW']);
+    const matte = img(['WW', '..']); // 紅色頻道: 上排 255, 下排 0
+    const op: MatteOp = { tool: 'matte', rev: 1 };
+    expect(alphaMap(applyOps(src, [op], matte))).toEqual(['##', '..']);
+    expect(alphaMap(applyOps(src, [op]))).toEqual(['##', '##']);
+    expect(alphaMap(applyOps(src, [op], img(['W'])))).toEqual(['##', '##']);
   });
 });

@@ -27,10 +27,26 @@ export interface EraseOp {
   r: number;
 }
 
+/** AI 去背: 套用節點存的透明度圖(matte.png) */
+export interface MatteOp {
+  tool: 'matte';
+  /** 算透明度圖時的上游版本; 上游換了就要重跑 */
+  rev: number;
+}
+
 /** 舊資料的魔術棒操作沒有 tool 欄位 */
-export type CutoutOp = WandOp | EraseOp;
+export type CutoutOp = WandOp | EraseOp | MatteOp;
 
 export const isErase = (op: CutoutOp): op is EraseOp => (op as EraseOp).tool === 'erase';
+export const isMatte = (op: CutoutOp): op is MatteOp => (op as MatteOp).tool === 'matte';
+
+/** 透明度乘上去背結果(matte 的紅色頻道 = 灰階值); 尺寸不同就不套 */
+export function applyMatte(img: Img, matte: Img): void {
+  if (matte.width !== img.width || matte.height !== img.height) return;
+  for (let i = 0; i < img.width * img.height; i++) {
+    img.data[i * 4 + 3] = Math.round((img.data[i * 4 + 3] * matte.data[i * 4]) / 255);
+  }
+}
 
 export const DEFAULT_TOL = 40;
 export const MAX_TOL = 150;
@@ -143,11 +159,14 @@ export function applyErase(img: Img, op: EraseOp) {
 }
 
 /** 從原圖依序套所有操作, 回傳新圖(不改原圖) */
-export function applyOps(src: Img, ops: CutoutOp[]): Img {
+/** matte: AI 去背的透明度圖; 沒給就略過去背那一步 */
+export function applyOps(src: Img, ops: CutoutOp[], matte: Img | null = null): Img {
   const img = { data: new Uint8ClampedArray(src.data), width: src.width, height: src.height };
   for (const op of ops) {
     if (isErase(op)) applyErase(img, op);
-    else applyOp(img, op);
+    else if (isMatte(op)) {
+      if (matte) applyMatte(img, matte);
+    } else applyOp(img, op);
   }
   return img;
 }

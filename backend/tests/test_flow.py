@@ -167,3 +167,34 @@ def test_to_ai_source_composites_white():
     assert out.shape == (3, 4, 3) and out[0, 0, 0] == 127
     with pytest.raises(ValueError):
         to_ai_source(np.zeros((3, 3, 4), np.uint8))
+
+
+class _MatteFal:
+    """去背: 回傳左半透明、右半不透明的 RGBA(故意給一半尺寸)"""
+
+    def __init__(self):
+        self.calls = []
+
+    def run_image(self, model, img, **params):
+        self.calls.append((model, img.shape))
+        h, w = img.shape[:2]
+        out = np.zeros((h // 2, w // 2, 4), np.uint8)
+        out[:, w // 4:, 3] = 255
+        return out
+
+
+def test_cutout_matte(tmp_path):
+    fal = _MatteFal()
+    client = TestClient(create_app(tmp_path, lambda: fal), headers=HEADERS)
+    _chain(client)
+    r = client.post(f"{F}/流程/nodes/n2/cutout/matte")
+    assert r.status_code == 400 and "上游還沒有輸出" in r.json()["detail"]
+    rgba = np.zeros((40, 60, 4), np.uint8)
+    rgba[..., 3] = 255
+    assert _upload(client, "n1", _rgba_png(rgba)).status_code == 200
+    r = client.post(f"{F}/流程/nodes/n2/cutout/matte")
+    assert r.status_code == 200 and r.json() == {"rev": 1}
+    assert fal.calls[0][0] == "fal-ai/birefnet/v2" and fal.calls[0][1] == (40, 60, 3)
+    m = cv2.imdecode(np.frombuffer(client.get(f"{F}/流程/files/nodes/n2/matte.png").content, np.uint8), cv2.IMREAD_UNCHANGED)
+    assert m.shape == (40, 60) and m[:, :10].max() == 0 and m[:, 40:].min() == 255
+    assert client.post(f"{F}/流程/nodes/n3/cutout/matte").status_code == 400  # 像素化節點不行
