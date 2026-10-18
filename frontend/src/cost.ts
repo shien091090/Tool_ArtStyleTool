@@ -18,5 +18,7 @@ export const COST = {
 
 /** 「約 X 美元」 */
 export function usd(v: number): string {
-  return `約 ${v < 0.01 ? v.toFixed(3) : v.toFixed(2)} 美元`;
+  // 0.015 這種要三位小數才不會四捨五入成 0.01
+  const fine = v < 0.01 || (v < 0.1 && Math.round(v * 1000) % 10 !== 0);
+  return `約 ${fine ? v.toFixed(3) : v.toFixed(2)} 美元`;
 }

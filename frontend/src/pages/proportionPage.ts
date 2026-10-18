@@ -54,7 +54,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   const undoStack: UndoEntry[] = [];
   const redoStack: string[] = [];
   let layoutSnap = '';
-  let showMasks = true;
+  const showMasks = true;
   const maskOff = new Set<string>();
   let lockRatio = true;
   let compare: { id: string; img: HTMLImageElement; split: number; pad: Pad } | null = null;
@@ -64,7 +64,13 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   let savePromise: Promise<void> = Promise.resolve();
   let alive = true;
   /** AI 列出的部位(對目前檢視的圖), 勾選的會跟名稱欄一起切 */
-  let suggested: { name: string; checked: boolean }[] = [];
+  /** 部位名稱標籤: 預設的 + AI 找到的 + 自己加的; picked 是這次要切的 */
+  let extraNames: string[] = [];
+  const picked = new Set<string>();
+  /** 上次切不到的名稱, 讓使用者在圖上框出位置 */
+  let missingNames: string[] = [];
+  /** 框選新增的部位名稱 */
+  let boxName = '';
 
   // ---- 上方工具列 ----
   const banner = embed?.banner ?? el('div');
@@ -123,34 +129,27 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
       el('div', { className: 'muted small', text: '素材圖: 從別張圖拿部位(例如換頭)' }),
       el('div', { className: 'row' }, [imgFile]), el('div', { className: 'row' }, [el('label', {}, ['或分層包', imgPackSel]), addImgBtn]));
 
-  // 切部位
-  const partNames = el('input');
-  partNames.placeholder = '部位名稱, 多個用頓號分隔';
-  const chips = el('div', { className: 'chips' }, QUICK_NAMES.map((n) => {
-    const b = el('button', { text: n, className: 'chip' });
-    b.addEventListener('click', () => {
-      const cur = splitNames(partNames.value);
-      if (!cur.includes(n)) partNames.value = [...cur, n].join('、');
-    });
-    return b;
-  }));
-  const segBtn = markPaid(button('切部位', () => void segmentNames(), 'primary'));
-  const segCost = costNote();
-  const suggestBtn = markPaid(button('AI 列出部位', () => void suggestParts()));
-  const suggestBox = el('div', { className: 'chips' });
-  const boxNewBtn = markPaid(button('框選新增', () => startBoxNew()));
-  const maskChk = el('input');
-  maskChk.type = 'checkbox';
-  maskChk.checked = true;
-  maskChk.addEventListener('change', () => {
-    showMasks = maskChk.checked;
-    redraw();
+  // 切部位: 1 選名稱(可請 AI 幫忙找) → 2 切出來; 切不到的再框出位置
+  const chipBox = el('div', { className: 'chips' });
+  const customName = el('input');
+  customName.placeholder = '其他名稱, 按 Enter 加入';
+  customName.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    for (const n of splitNames(customName.value)) addName(n, true);
+    customName.value = '';
+    syncAll();
   });
-  const segSection = section('拆部位', el('div', { className: 'row' }, [partNames, suggestBtn, costNote(usd(COST.vision))]),
-    suggestBox, chips,
-    el('div', { className: 'row' }, [segBtn, segCost, el('label', {}, [maskChk, '顯示遮罩'])]),
-    el('div', { className: 'row' }, [boxNewBtn, costNote(usd(COST.segment))]),
-    el('div', { className: 'muted small', text: '切不到時: 名稱欄只留一個名稱, 按「框選新增」在圖上拖框指出位置' }));
+  const suggestBtn = markPaid(button('AI 幫我找部位', () => void suggestParts(), 'small'));
+  const helperRow = el('div', { className: 'seg-helper' }, [
+    el('span', { className: 'muted small', text: '不知道要切哪些?' }), suggestBtn, costNote(usd(COST.vision)),
+  ]);
+  const missingBox = el('div', { className: 'missing-box hidden' });
+  const segBtn = markPaid(button('切部位', () => void segmentNames(), 'primary seg-final'));
+  const segCost = costNote();
+  const segSection = section('拆部位',
+    el('div', { className: 'muted small', text: '1. 點選要切的部位(可多選)' }), chipBox, customName, helperRow,
+    el('div', { className: 'seg-final-row' }, [el('div', { className: 'muted small', text: '2. 用 AI 從圖上切出來' }), segBtn, segCost]),
+    missingBox);
 
   // 部位清單
   const partList = el('div', { className: 'part-list' });
@@ -310,13 +309,13 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     el('div', { className: 'row' }, [genBtn, genCost]), genHint);
   /** 依目前的名稱、張數、模型更新各付費按鈕旁的價錢 */
   const syncCosts = () => {
-    const names = new Set([...suggested.filter((x) => x.checked).map((x) => x.name), ...splitNames(partNames.value)]);
-    segCost.textContent = names.size > 1 ? `${names.size} 個部位${usd(COST.segment * names.size)}` : usd(COST.segment);
+    const n = picked.size;
+    segBtn.textContent = n ? `切出 ${n} 個部位` : '切部位';
+    segCost.textContent = n ? usd(COST.segment * n) : '先選要切的部位';
     matCost.textContent = usd(COST.nanoBanana * Number(matCount.value));
     genCost.textContent = usd((modelSel.value === 'qwen' ? COST.qwen : COST.nanoBanana) * Number(countSel.value));
   };
   for (const c of [matCount, modelSel, countSel]) c.addEventListener('change', syncCosts);
-  partNames.addEventListener('input', syncCosts);
 
   // 結果
   const resultList = el('div', { className: 'result-list' });
@@ -356,7 +355,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   /** AI 呼叫進行中鎖住所有會改作品的操作: 後端回傳的 meta 會蓋掉期間的修改。 */
   const lockables = (): (HTMLInputElement | HTMLSelectElement | HTMLButtonElement)[] => [
     workSel, placeBtn, unplaceBtn, hideChk, resetBtn, upBtn, downBtn, autoPadBtn, anchorSel, lockChk,
-    fScaleX, fScaleY, fRot, fDx, fDy, ...padInputs.map(([, i]) => i), pointBtn, boxBtn, boxNewBtn,
+    fScaleX, fScaleY, fRot, fDx, fDy, ...padInputs.map(([, i]) => i), pointBtn, boxBtn, customName,
     matInput, refFile, matCount, viewSel, ...swatches.querySelectorAll('button'),
   ];
 
@@ -384,15 +383,46 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     setMode('move');
   }
 
-  function startBoxNew() {
-    const names = splitNames(partNames.value);
-    if (names.length !== 1) {
-      showBanner(banner, 'warn', '「框選新增」一次新增一個部位: 請在「部位名稱」只輸入一個名稱');
-      return;
-    }
+  /** 在圖上框出切不到的部位 */
+  function startBoxNew(name: string) {
+    boxName = name;
     select(null);
-    view = view || 'main';
     setMode('box', 'new');
+  }
+
+  function addName(name: string, pick: boolean) {
+    if (!QUICK_NAMES.includes(name) && !extraNames.includes(name)) extraNames.push(name);
+    if (pick) picked.add(name);
+  }
+
+  /** 名稱標籤: 已經切過的標 ✓(再選就是再切一個) */
+  function syncChips() {
+    const existing = new Set(meta?.parts.filter((p) => p.image === view).map((p) => baseName(p.name)) ?? []);
+    chipBox.replaceChildren(...[...QUICK_NAMES, ...extraNames].map((n) => {
+      const done = existing.has(n);
+      const b = el('button', {
+        text: done ? `✓ ${n}` : n,
+        className: `chip pick${picked.has(n) ? ' on' : ''}${done ? ' done' : ''}`,
+        title: done ? '已經切過; 再選會再切一個' : '',
+      });
+      b.disabled = busy;
+      b.addEventListener('click', () => {
+        if (picked.has(n)) picked.delete(n);
+        else picked.add(n);
+        syncAll();
+      });
+      return b;
+    }));
+    missingBox.classList.toggle('hidden', !missingNames.length);
+    missingBox.replaceChildren(
+      el('div', { className: 'small', text: '這些 AI 找不到, 請在圖上框出位置:' }),
+      ...missingNames.map((n) => {
+        const b = markPaid(button(`框出「${n}」`, () => startBoxNew(n)));
+        b.disabled = busy || !falOk;
+        return b;
+      }),
+      costNote(`每框一次${usd(COST.segment)}`),
+    );
   }
 
   function select(id: string | null) {
@@ -588,7 +618,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
       modeDone.textContent = '完成';
     } else if (tool === 'box') {
       modeText.textContent = boxIntent === 'new'
-        ? `框選新增「${splitNames(partNames.value)[0] ?? ''}」: 在圖上拖一個框指出位置(${usd(COST.segment)})`
+        ? `框出「${boxName}」: 在圖上拖一個框指出位置(${usd(COST.segment)})`
         : `框選重切「${p?.name ?? ''}」: 在圖上拖一個框, AI 只在框內找(${usd(COST.segment)})`;
       modeDone.textContent = '取消';
     }
@@ -623,11 +653,11 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
       compareBar.classList.add('hidden');
       return;
     }
-    segBtn.disabled = busy || !falOk;
+    segBtn.disabled = busy || !falOk || !picked.size;
     suggestBtn.disabled = busy || !falOk;
     matBtn.disabled = busy || !falOk;
-    for (const b of [pointBtn, boxBtn, boxNewBtn]) b.disabled = busy || !falOk;
-    syncSuggestions();
+    for (const b of [pointBtn, boxBtn]) b.disabled = busy || !falOk;
+    syncChips();
     // 檢視選單
     viewSel.replaceChildren(...meta.images.map((im) => {
       const o = option(im.id, im.id === 'main' ? '主圖(拼貼)' : `素材: ${truncate(im.name, NAME_MAX)}`);
@@ -761,6 +791,9 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     compare = null;
     selected = null;
     tool = 'move';
+    extraNames = [];
+    picked.clear();
+    missingNames = [];
     undoStack.length = 0;
     redoStack.length = 0;
     view = 'main';
@@ -802,7 +835,9 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   workSel.addEventListener('change', () => void openWork(workSel.value));
   viewSel.addEventListener('change', () => {
     view = viewSel.value;
-    suggested = [];
+    extraNames = [];
+    picked.clear();
+    missingNames = [];
     compare = null;
     redraw();
     syncAll();
@@ -840,19 +875,16 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   async function segmentNames() {
     await run('AI 切部位中…', async () => {
       if (!meta) return;
-      const picked = suggested.filter((x) => x.checked).map((x) => x.name);
-      const names = [...new Set([...picked, ...splitNames(partNames.value)])];
-      if (!names.length) throw new Error('請輸入部位名稱, 或按「AI 列出部位」後勾選');
+      const names = [...picked];
+      if (!names.length) throw new Error('請先點選要切的部位');
       await flushSave();
       const before = new Set(meta.parts.map((p) => p.id));
       const res = await wapi.segment(meta.name, view, names);
       await setMeta(res.meta);
-      suggested = [];
+      picked.clear();
+      missingNames = res.missing;
       const added = res.meta.parts.filter((p) => !before.has(p.id));
       if (added.length) selected = added[added.length - 1].id;
-      if (res.missing.length) {
-        showBanner(banner, 'warn', `找不到「${res.missing.join('、')}」。請在「部位名稱」只留這個名稱, 改用框選或點選工具在圖上指出位置。`);
-      }
       redraw();
     });
   }
@@ -865,16 +897,17 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     return p.image === view ? p : undefined;
   }
 
-  async function addByGeometry(points: SegPoint[], box: SegBox | null) {
+  async function addByGeometry(points: SegPoint[], box: SegBox | null, name: string) {
     if (!meta) return;
-    const names = splitNames(partNames.value);
-    if (names.length !== 1) throw new Error('請在「部位名稱」只輸入一個名稱再框選');
     const before = new Set(meta.parts.map((p) => p.id));
-    const res = await wapi.segment(meta.name, view, names, points, box);
+    const res = await wapi.segment(meta.name, view, [name], points, box);
     await setMeta(res.meta);
     const added = res.meta.parts.find((p) => !before.has(p.id));
-    if (added) selected = added.id;
-    if (res.missing.length) throw new Error(`這個位置切不到「${names[0]}」, 請換個位置或改用框選`);
+    if (added) {
+      selected = added.id;
+      missingNames = missingNames.filter((n) => n !== name);
+    }
+    if (res.missing.length) throw new Error(`這個框裡切不到「${name}」, 請把框拉大一點再試`);
   }
 
   async function pointAt(x: number, y: number, label: 0 | 1) {
@@ -898,7 +931,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     await run('AI 框選中…', async () => {
       await flushSave();
       if (intent === 'new') {
-        await addByGeometry([], box);
+        await addByGeometry([], box, boxName);
       } else {
         const p = refineTarget();
         if (!p) throw new Error('畫布顯示的不是這個部位所在的圖, 請先切換「畫布顯示」');
@@ -951,25 +984,12 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
       const res = await wapi.suggestParts(meta.name, view);
       await setMeta(res.meta);
       const existing = new Set(meta.parts.filter((p) => p.image === view).map((p) => baseName(p.name)));
-      suggested = res.parts.map((x) => ({ name: x.name, checked: !existing.has(x.name) }));
+      for (const x of res.parts) addName(x.name, !existing.has(x.name));
+      if (!res.parts.length) showBanner(banner, 'info', 'AI 沒有找到可以切的部位');
       redraw();
     });
   }
 
-  function syncSuggestions() {
-    suggestBox.replaceChildren(...suggested.map((x) => {
-      const chk = el('input');
-      chk.type = 'checkbox';
-      chk.checked = x.checked;
-      chk.disabled = busy;
-      chk.addEventListener('change', () => {
-        x.checked = chk.checked;
-        syncCosts();
-      });
-      return el('label', { className: 'chip suggest-chip' }, [chk, x.name]);
-    }));
-    if (suggested.length) suggestBox.append(el('span', { className: 'muted small', text: '勾選的會跟名稱欄一起切; 已有的部位預設不勾' }));
-  }
 
   // ---- 材質 ----
   /** 候選縮圖: 從整張材質圖(或來源圖)裁出部位外框。 */
@@ -1139,6 +1159,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
       changed();
       await flushSave();
       missing = skipped;
+      missingNames = skipped.filter((n) => baseName(n) === n);
       if (missing.length) showBanner(banner, 'warn', `配方中的「${missing.join('、')}」在這張圖切不到, 已跳過`);
       else showBanner(banner, 'info', `已套用配方「${name}」`);
     });
