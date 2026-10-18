@@ -4,7 +4,6 @@ import { runningJob, trackJob } from '../jobs';
 import { MATERIALS, swatchUrl } from '../proportion/materials';
 import { Editor, type Tool } from '../proportion/editor';
 import { ANCHORS, EDIT_MODELS, ZERO_PAD, type Anchor, type Pad, type Part, type PartTransform, type SegBox, type SegPoint, type WorkMeta } from '../proportion/model';
-import { applyRecipe, parseProportionRecipe, recipeFromParts } from '../proportion/recipe';
 import { autoPad, hasMaterial, isChanged, placeForeign } from '../proportion/transform';
 import { costNote, markPaid, confirmDelete, el, option, showBanner } from './ui';
 import { COST, usd } from '../cost';
@@ -292,40 +291,6 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   ]);
   const modeBar = el('div', { className: 'mode-bar hidden' });
 
-  // 畫布擴大
-  const padInputs = (['top', 'right', 'bottom', 'left'] as const).map((k) => {
-    const i = num('1');
-    i.min = '0';
-    i.addEventListener('change', () => {
-      if (!meta || busy) return;
-      const v =Math.max(0, Math.min(4096, Math.round(Number(i.value) || 0)));
-      meta.pad = { ...meta.pad, [k]: v };
-      changed();
-    });
-    return [k, i] as const;
-  });
-  const padLabel: Record<string, string> = { top: '上', right: '右', bottom: '下', left: '左' };
-  const autoPadBtn = button('自動', () => {
-    if (!meta || busy) return;
-    const main = mainInfo();
-    meta.pad = autoPad(meta.parts, main.w, main.h);
-    changed();
-  });
-  const padSection = section('擴大畫布', el('div', { className: 'muted small', text: '放大後超出畫面時用; 擴出的區域交給 AI 補' }),
-    el('div', { className: 'fields' }, [...padInputs.map(([k, i]) => el('label', {}, [padLabel[k], i])), autoPadBtn]));
-
-  // 比例配方
-  const recipeSel = el('select');
-  const applyRecipeBtn = markPaid(button('套用', () => void applySelectedRecipe()));
-  const recipeName = el('input');
-  recipeName.placeholder = '配方名稱';
-  const saveRecipeBtn = button('存成配方', () => void saveRecipe());
-  const deleteRecipeBtn = button('刪除', () => void deleteRecipe());
-  const recipeSection = section('比例配方', el('div', { className: 'row' }, [recipeSel, applyRecipeBtn, deleteRecipeBtn]),
-    el('div', { className: 'row' }, [recipeName, saveRecipeBtn]),
-    el('div', { className: 'muted small', text: '只記主圖上調整過的部位; 套到別張圖時依名稱自動切部位' }),
-    costNote(`還沒切的部位每個${usd(COST.segment)}(都切過就不花錢)`));
-
   // 生成
   const modelSel = el('select');
   for (const m of EDIT_MODELS) modelSel.append(option(m.id, m.label));
@@ -353,7 +318,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   const resultList = el('div', { className: 'result-list' });
   const resultSection = section('結果', resultList);
 
-  panel.append(viewSection, segSection, listSection, padSection, recipeSection, genSection, resultSection);
+  panel.append(viewSection, segSection, listSection, genSection, resultSection);
   if (embed) root.append(el('div', { className: 'prop-layout' }, [stage, panel]));
   else root.append(toolbar, banner, el('div', { className: 'prop-layout' }, [stage, panel]));
 
@@ -367,7 +332,9 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
       redraw();
       syncFields();
       if (final) {
+        fitPad();
         recordLayout();
+        redraw();
         scheduleSave();
       }
     },
@@ -382,12 +349,11 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   // ---- 共用 ----
   const mainInfo = () => meta!.images.find((i) => i.id === 'main')!;
   const selPart = (): Part | undefined => meta?.parts.find((p) => p.id === selected);
-  const actionButtons = [createBtn, addImgBtn, segBtn, suggestBtn, matBtn, splitBtn, delBtn, genBtn, applyRecipeBtn, saveRecipeBtn,
-    deleteRecipeBtn, deleteWorkBtn, undoMaskBtn];
+  const actionButtons = [createBtn, addImgBtn, segBtn, suggestBtn, matBtn, splitBtn, delBtn, genBtn, deleteWorkBtn, undoMaskBtn];
   /** AI 呼叫進行中鎖住所有會改作品的操作: 後端回傳的 meta 會蓋掉期間的修改。 */
   const lockables = (): (HTMLInputElement | HTMLSelectElement | HTMLButtonElement)[] => [
-    workSel, placeBtn, unplaceBtn, hideChk, resetBtn, upBtn, downBtn, autoPadBtn, anchorSel, lockChk,
-    fScaleX, fScaleY, fRot, fDx, fDy, ...padInputs.map(([, i]) => i), pointBtn, boxBtn, customName,
+    workSel, placeBtn, unplaceBtn, hideChk, resetBtn, upBtn, downBtn, anchorSel, lockChk,
+    fScaleX, fScaleY, fRot, fDx, fDy, pointBtn, boxBtn, customName,
     matInput, refFile, matCount, viewSel, ...swatches.querySelectorAll('button'),
   ];
 
@@ -612,8 +578,16 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   }
 
   /** 本機調整後: 重畫、同步面板、排程存檔。 */
+  /** 畫布依部位自動擴大或縮回: 超出主圖就擴, 部位縮回來多出的空白就收 */
+  function fitPad() {
+    if (!meta) return;
+    const main = mainInfo();
+    meta.pad = autoPad(meta.parts, main.w, main.h);
+  }
+
   function changed() {
     compare = null;
+    fitPad();
     recordLayout();
     redraw();
     syncAll();
@@ -689,7 +663,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
 
   function syncAll() {
     const has = !!meta;
-    for (const s of [viewSection, segSection, listSection, padSection, recipeSection, genSection, resultSection]) {
+    for (const s of [viewSection, segSection, listSection, genSection, resultSection]) {
       s.classList.toggle('hidden', !has);
     }
     // 有部位時: 部位清單取代拆部位, 新增時才換回來
@@ -776,7 +750,6 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
       syncVariants(p);
     }
     syncFields();
-    for (const [k, i] of padInputs) i.value = String(meta.pad[k]);
     // 生成
     const anyChange = hasEdits(meta);
     genBtn.disabled = busy || !falOk || !anyChange;
@@ -823,11 +796,6 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     const opts = () => [option('', '—'), ...packs.map((p) => option(p.name, p.name))];
     packSel.replaceChildren(...opts());
     imgPackSel.replaceChildren(...opts());
-  }
-
-  async function refreshRecipes() {
-    const names = await api.proportion.listRecipes();
-    recipeSel.replaceChildren(option('', names.length ? '— 選擇配方 —' : '— 尚無配方 —'), ...names.map((n) => option(n, n)));
   }
 
   async function openWork(name: string) {
@@ -1203,84 +1171,6 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     changed();
   }
 
-  // ---- 比例配方 ----
-  async function applySelectedRecipe() {
-    const name = recipeSel.value;
-    if (!name || !meta) return;
-    await run('套用配方中…', async () => {
-      await flushSave();
-      const recipe = parseProportionRecipe(await api.proportion.getRecipe(name));
-      let { missing } = applyRecipe(meta!.parts, recipe);
-      let skipped: string[] = [];
-      if (missing.length) {
-        if (!falOk) {
-          skipped = missing;
-        } else {
-          // 「手(左)」「手(右)」: 用原名切一次再拆左右, 不能各自用原名切(會變成兩個都含兩隻手)
-          const sided = missing.filter((n) => baseName(n) !== n);
-          const bases = [...new Set(sided.map(baseName))];
-          const plain = missing.filter((n) => baseName(n) === n);
-          const res = await trackJob('AI 切部位中(套用配方)…', jobKey(), () => wapi.segment(meta!.name, 'main', [...plain, ...bases]));
-          await setMeta(res.meta);
-          skipped = res.missing.filter((n) => plain.includes(n));
-          for (const b of bases) {
-            const whole = res.missing.includes(b) ? undefined : [...meta!.parts].reverse().find((q) => q.image === 'main' && q.name === b);
-            if (!whole) {
-              skipped.push(...sided.filter((n) => baseName(n) === b));
-              continue;
-            }
-            try {
-              await setMeta(await wapi.split(meta!.name, whole.id));
-            } catch {
-              skipped.push(...sided.filter((n) => baseName(n) === b));
-            }
-          }
-        }
-      }
-      const { transforms } = applyRecipe(meta!.parts, recipe);
-      for (const p of meta!.parts) {
-        const t = transforms.get(p.id);
-        if (t) p.transform = t;
-      }
-      const main = mainInfo();
-      const need = autoPad(meta!.parts, main.w, main.h);
-      const pad = meta!.pad;
-      meta!.pad = {
-        top: Math.max(pad.top, need.top), right: Math.max(pad.right, need.right),
-        bottom: Math.max(pad.bottom, need.bottom), left: Math.max(pad.left, need.left),
-      };
-      changed();
-      await flushSave();
-      missing = skipped;
-      missingNames = skipped.filter((n) => baseName(n) === n);
-      if (missing.length) showBanner(banner, 'warn', `配方中的「${missing.join('、')}」在這張圖切不到, 已跳過`);
-      else showBanner(banner, 'info', `已套用配方「${name}」`);
-    });
-  }
-
-  async function saveRecipe() {
-    if (!meta) return;
-    await run('儲存配方中…', async () => {
-      const name = recipeName.value.trim();
-      if (!name) throw new Error('請輸入配方名稱');
-      await api.proportion.saveRecipe(name, recipeFromParts(meta!.parts));
-      await refreshRecipes();
-      recipeSel.value = name;
-      showBanner(banner, 'info', `已存成配方「${name}」`);
-    });
-  }
-
-  async function deleteRecipe() {
-    const name = recipeSel.value;
-    if (!name || busy) return;
-    if (!confirmDelete(`比例配方「${name}」`)) return;
-    await run('刪除中…', async () => {
-      await api.proportion.deleteRecipe(name);
-      await refreshRecipes();
-      showBanner(banner, 'info', `已刪除比例配方「${name}」`);
-    });
-  }
-
   // ---- 生成與結果 ----
   async function generate() {
     if (!meta) return;
@@ -1326,7 +1216,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     try {
       falOk = (await api.getStatus()).fal;
       if (embed) {
-        await Promise.all([refreshPacks(), refreshRecipes()]);
+        await refreshPacks();
         await run('載入中…', async () => {
           const m = await embed.load();
           if (m) await setMeta(m);
@@ -1336,7 +1226,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
         await resumeJob();
         return;
       }
-      await Promise.all([refreshWorks(), refreshPacks(), refreshRecipes()]);
+      await Promise.all([refreshWorks(), refreshPacks()]);
       const want = params.get('work');
       if (want) {
         workSel.value = want;
