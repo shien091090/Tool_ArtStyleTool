@@ -723,15 +723,14 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     };
     partList.replaceChildren(...meta.parts.map((p) => {
       const tags: string[] = [];
-      if (p.image !== 'main') tags.push(p.placed ? `來自 ${imgName(p.image)} · 已放到主圖` : `來自 ${imgName(p.image)}`);
+      if (p.image !== 'main') tags.push(p.placed ? `來自 ${imgName(p.image)}` : `來自 ${imgName(p.image)} · 未放到主圖`);
       if (p.image === 'main' && p.transform.hidden) tags.push('隱藏');
       else if (isChanged(p) && p.image === 'main') tags.push('已調整');
       if (hasMaterial(p)) tags.push('換材質');
-      if (p.transform.z < 0 && (p.image === 'main' ? isChanged(p) : p.placed)) tags.push('在主圖後面');
       const row = el('div', { className: `part-row${p.id === selected ? ' active' : ''}` }, [
         el('span', { className: 'dot' }),
         el('span', { text: p.name }),
-        el('span', { className: 'muted small', text: tags.join(' · ') }),
+        el('span', { className: 'muted small part-tags', text: tags.join(' · '), title: tags.join(' · ') }),
         maskToggle(p.id),
         delPartBtn(p),
       ]);

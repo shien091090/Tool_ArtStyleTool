@@ -293,3 +293,6 @@ button.seg-final { width: 100%; padding: 9px 10px; font-size: 15px; font-weight:
 .adj-actions button { padding: 4px 10px; }
 .adj-actions label { display: inline-flex; align-items: center; gap: 4px; }
 .part-panel-foot button { width: 100%; }
+/* 部位清單一列不換行: 名稱完整顯示, 說明太長就截斷 */
+.part-row > span:nth-child(2) { flex: none; white-space: nowrap; }
+.part-row .part-tags { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
