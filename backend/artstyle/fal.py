@@ -15,8 +15,6 @@ DELIGHT_PROMPT = ("Remove only the lighting from this illustration: no shadows, 
 # 使用者實測 lineart 效果最好, 只保留這一種
 LINE_MODELS = {"lineart": "fal-ai/image-preprocessors/lineart"}
 SAM_MODEL = "fal-ai/sam-3/image"
-# AI 去背: 回傳去背後的 RGBA, 只取透明度
-MATTE_MODEL = "fal-ai/birefnet/v2"
 # 實驗(2026-10-10): Nano Banana 最忠實, Qwen 次之; Kontext 會整張改色, 不提供
 EDIT_MODELS = {"nano-banana": "fal-ai/nano-banana/edit", "qwen": "fal-ai/qwen-image-edit",
                # 像素素材: 指定格數只有 Pro 會照做(2026-10-12 實驗), 約 US$0.15/張

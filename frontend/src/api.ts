@@ -233,9 +233,6 @@ export const api = {
         init: () => request<PackMeta>(`${base}/init`, { method: 'POST' }),
       };
     },
-    /** 去除區塊節點的 AI 去背: 結果存成節點的 matte.png, 回傳算的是上游第幾版 */
-    cutoutMatte: (name: string, nid: string) =>
-      request<{ rev: number }>(`${pflow(name)}/nodes/${nid}/cutout/matte`, { method: 'POST' }),
     getPixel: (name: string, nid: string) => request<PixelWorkMeta>(`${pflow(name)}/nodes/${nid}/pixel`),
     addCandidates: (name: string, nid: string, settings: PixelSettings) =>
       request<{ meta: PixelWorkMeta; candidates: PixelCandidate[]; errors: string[] }>(

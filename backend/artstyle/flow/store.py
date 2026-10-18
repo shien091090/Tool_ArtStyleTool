@@ -13,7 +13,7 @@ from ..names import validate_name
 
 TYPES = ("input", "cutout", "pixel", "workshop", "style")
 _ID = re.compile(r"n[0-9]{1,6}")
-_FILE = re.compile(r"out/n[0-9]{1,6}\.png|nodes/n[0-9]{1,6}/(source\.png|matte\.png|ai/c[0-9]+(_[a-z_]+)?\.png)")
+_FILE = re.compile(r"out/n[0-9]{1,6}\.png|nodes/n[0-9]{1,6}/(source\.png|ai/c[0-9]+(_[a-z_]+)?\.png)")
 
 # 移動節點存檔與輸出存檔可能同時進來, flow.json 的讀改寫一律在這把鎖裡
 _lock = threading.RLock()

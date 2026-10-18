@@ -1,12 +1,6 @@
-/** 去除區塊節點: AI 去背、魔術棒點選移除或保留, 橡皮擦直接擦掉。 */
-import { api } from '../../api';
-import { COST, usd } from '../../cost';
-import { trackJob } from '../../jobs';
-import { costNote, el, markPaid, showBanner } from '../../pages/ui';
-import {
-  applyOps, DEFAULT_TOL, eraseSegment, isMatte, MAX_TOL, type CutoutOp, type EraseOp, type Img, type WandOp,
-} from '../magicWand';
-import { flowJobKey } from '../model';
+/** 去除區塊節點: 魔術棒點選移除或保留, 橡皮擦直接擦掉。 */
+import { el, showBanner } from '../../pages/ui';
+import { applyOps, DEFAULT_TOL, eraseSegment, MAX_TOL, type CutoutOp, type EraseOp, type Img, type WandOp } from '../magicWand';
 import type { EditorContext, NodeEditor } from './types';
 
 export async function loadImageData(url: string): Promise<Img> {
@@ -47,9 +41,6 @@ export function mountCutoutEditor(body: HTMLElement, ctx: EditorContext): NodeEd
   /** 目前畫面上的結果(src 套完所有操作), 擦的時候直接改它 */
   let cur: Img | null = null;
   let ops = readOps(ctx.node.params);
-  /** AI 去背的透明度圖; 沒有或跟上游版本對不上時為 null */
-  let matte: Img | null = null;
-  let matteBusy = false;
   let tool = 'wand' as 'wand' | 'erase';
   let dirty = false;
   let mode: WandOp['mode'] = 'remove';
@@ -108,10 +99,7 @@ export function mountCutoutEditor(body: HTMLElement, ctx: EditorContext): NodeEd
     section('橡皮擦', el('label', {}, ['筆刷大小', size, sizeVal]),
       el('div', { className: 'muted small', text: '在圖上按住拖拉, 擦到的地方變透明' })),
   ];
-  const matteBtn = markPaid(el('button', { text: 'AI 去背' }));
-  const matteHint = el('div', { className: 'muted small' });
   const side = el('div', { className: 'panel-wrap prop-panel' }, [
-    section('AI 去背', el('div', { className: 'row' }, [matteBtn, costNote(usd(COST.matte))]), matteHint),
     section('工具', toolSeg.root),
     ...wandParts,
     ...eraseParts,
@@ -119,16 +107,9 @@ export function mountCutoutEditor(body: HTMLElement, ctx: EditorContext): NodeEd
   ]);
   body.append(el('div', { className: 'prop-layout' }, [stage, side]));
 
-  const matteOp = () => ops.find(isMatte);
-  /** 有 AI 去背這一步, 但透明度圖不是用目前的上游算的 */
-  const matteStale = () => {
-    const m = matteOp();
-    return !!m && (!matte || m.rev !== ctx.upstream?.rev);
-  };
-
   function draw() {
     if (!src) return;
-    cur = applyOps(src, ops, matteStale() ? null : matte);
+    cur = applyOps(src, ops);
     canvas.width = cur.width;
     canvas.height = cur.height;
     paint();
@@ -167,14 +148,7 @@ export function mountCutoutEditor(body: HTMLElement, ctx: EditorContext): NodeEd
     hint.textContent = mode === 'remove' ? '點到的區塊會被去掉' : '點到的區塊留下, 其他全部去掉';
     undoBtn.disabled = !ops.length;
     resetBtn.disabled = !ops.length;
-    matteBtn.disabled = !src || matteBusy || !ctx.falOk;
-    matteBtn.textContent = matteOp() ? '重跑 AI 去背' : 'AI 去背';
-    matteHint.textContent = matteStale() ? '上游已更新, AI 去背要重跑才會套用(重跑前不能套用)'
-      : !ctx.falOk ? '沒有設定 FAL_KEY, 無法使用'
-        : matteOp() ? '已去背; 殘留的地方再用魔術棒或橡皮擦修'
-          : '自動判斷主體, 去掉背景與殘留的光暈、白邊';
-    matteHint.classList.toggle('warn-text', matteStale());
-    applyBtn.disabled = !src || !dirty || matteStale();
+    applyBtn.disabled = !src || !dirty;
     applyBtn.textContent = dirty ? '套用' : '已套用';
   }
 
@@ -185,7 +159,7 @@ export function mountCutoutEditor(body: HTMLElement, ctx: EditorContext): NodeEd
     const y = (e.clientY - r.top) / r.height;
     if (x < 0 || y < 0 || x >= 1 || y >= 1) return;
     const op: WandOp = { mode, how, x, y, tol: Number(tol.value), contiguous: contiguous.checked, grow: grow.checked && mode === 'remove' };
-    const before = applyOps(src, ops, matteStale() ? null : matte);
+    const before = applyOps(src, ops);
     const after = applyOps(before, [op]);
     if (after.data.every((v, i) => v === before.data[i])) {
       showBanner(ctx.banner, 'info', '這裡已經是透明的, 沒有可以選的區塊');
@@ -244,28 +218,6 @@ export function mountCutoutEditor(body: HTMLElement, ctx: EditorContext): NodeEd
     canvas.addEventListener('pointerup', up);
     canvas.addEventListener('pointercancel', up);
   });
-  matteBtn.addEventListener('click', () => void (async () => {
-    if (!src || !ctx.upstream) return;
-    matteBusy = true;
-    sync();
-    ctx.status.textContent = 'AI 去背中…';
-    try {
-      const { rev } = await trackJob('AI 去背中…', flowJobKey(ctx.flowName, ctx.node.id),
-        () => api.flows.cutoutMatte(ctx.flowName, ctx.node.id));
-      matte = await loadImageData(api.flows.fileUrl(ctx.flowName, `nodes/${ctx.node.id}/matte.png`, Date.now()));
-      // 去背放在最前面, 之後的魔術棒、橡皮擦疊在上面
-      ops = [{ tool: 'matte', rev }, ...ops.filter((o) => !isMatte(o))];
-      dirty = true;
-      showBanner(ctx.banner, null);
-      draw();
-    } catch (e) {
-      showBanner(ctx.banner, 'error', (e as Error).message);
-    } finally {
-      matteBusy = false;
-      ctx.status.textContent = '';
-      sync();
-    }
-  })());
   undoBtn.addEventListener('click', () => {
     ops = ops.slice(0, -1);
     dirty = true;
@@ -283,7 +235,7 @@ export function mountCutoutEditor(body: HTMLElement, ctx: EditorContext): NodeEd
     ctx.status.textContent = '套用中…';
     applyBtn.disabled = true;
     try {
-      await ctx.save({ file: await imgToBlob(applyOps(src, ops, matte)) }, { inputRev: ctx.upstream.rev, params: { ops } });
+      await ctx.save({ file: await imgToBlob(applyOps(src, ops)) }, { inputRev: ctx.upstream.rev, params: { ops } });
       dirty = false;
     } catch (e) {
       showBanner(ctx.banner, 'error', (e as Error).message);
@@ -297,12 +249,8 @@ export function mountCutoutEditor(body: HTMLElement, ctx: EditorContext): NodeEd
   if (!ctx.upstreamUrl) {
     stage.replaceChildren(el('div', { className: 'muted', text: '上游還沒有輸出: 先接上圖片輸入節點並選圖' }));
   } else {
-    const m = matteOp();
-    const matteLoad = m ? loadImageData(api.flows.fileUrl(ctx.flowName, `nodes/${ctx.node.id}/matte.png`, m.rev)).catch(() => null)
-      : Promise.resolve(null);
-    void Promise.all([loadImageData(ctx.upstreamUrl), matteLoad]).then(([img, mt]) => {
+    void loadImageData(ctx.upstreamUrl).then((img) => {
       src = img;
-      matte = mt;
       // 第一次打開且還沒有輸出: 直接當作有修改, 讓使用者一按就能套用
       dirty = ctx.node.rev === 0 || ctx.node.inputRev !== ctx.upstream?.rev;
       draw();

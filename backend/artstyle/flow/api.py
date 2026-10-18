@@ -10,8 +10,8 @@ from fastapi.responses import Response
 
 from .. import config
 from ..decompose import NoClientError
-from ..fal import MATTE_MODEL, FalClient
-from ..imaging import encode_png, limit_size, load_rgba, resize_to, write_png
+from ..fal import FalClient
+from ..imaging import encode_png, limit_size, load_rgba
 from ..pack import Pack
 from ..pack_api import add_pack_routes
 from ..pixel import service
@@ -116,37 +116,6 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
             raise ValueError("請上傳圖片、選擇分層包或部位工坊結果")
         img = limit_size(load_rgba(data), config.MAX_SIDE)
         return flow.set_output(nid, img, inputRev if node["type"] != "input" else None, p)
-
-    # ---- 去除區塊節點: AI 去背 ----
-
-    @r.post("/{name}/nodes/{nid}/cutout/matte")
-    def cutout_matte(name: str, nid: str):
-        """上游輸出送 AI 去背, 透明度存成 nodes/<id>/matte.png(與上游同尺寸的灰階圖), 前端當成一步操作套用。"""
-        flow = open_flow(name)
-        if flow.node(nid)["type"] != "cutout":
-            raise ValueError(f"節點 {nid} 不是去除區塊節點")
-        up = flow.upstream(nid)
-        if up is None or not up.get("rev"):
-            raise ValueError("上游還沒有輸出")
-        img = flow.output(up["id"])
-        h, w = img.shape[:2]
-        if img.ndim == 3 and img.shape[2] == 4:  # 透明處鋪白再送, 結果再乘回原本的透明度
-            a = img[..., 3:4].astype(np.float32) / 255
-            rgb = (img[..., :3] * a + 255 * (1 - a)).round().astype(np.uint8)
-        else:
-            rgb = img[..., :3] if img.ndim == 3 else np.repeat(img[..., None], 3, axis=2)
-        out = client().run_image(MATTE_MODEL, rgb, output_format="png")
-        if out.ndim == 3 and out.shape[2] == 4:
-            mask = out[..., 3]
-        elif out.ndim == 3:
-            mask = out.max(axis=2)
-        else:
-            mask = out
-        mask = resize_to(mask, w, h)
-        d = flow.dir / "nodes" / nid
-        d.mkdir(parents=True, exist_ok=True)
-        write_png(d / "matte.png", mask)
-        return {"rev": up["rev"]}
 
     # ---- 像素化節點 ----
 

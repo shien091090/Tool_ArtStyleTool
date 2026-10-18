@@ -250,4 +250,3 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .job-time { color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
 .job-close { border: none; background: none; padding: 0 4px; color: var(--muted); }
 .fe-tabs { width: 220px; }
-.warn-text { color: #f0b54a; }

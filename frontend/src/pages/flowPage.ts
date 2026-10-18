@@ -8,7 +8,7 @@ import { mountPixelEditor } from '../flow/editors/pixelEditor';
 import { mountWorkshopEditor } from '../flow/editors/workshopEditor';
 import { mountStyleEditor } from '../flow/editors/styleEditor';
 import type { EditorContext, NodeEditor, OutputSource } from '../flow/editors/types';
-import { applyOps, isMatte } from '../flow/magicWand';
+import { applyOps } from '../flow/magicWand';
 import {
   connect, downstreamOf, flowJobKey, isMaterial, materialNames, materialsOf, NODE_INFO, newNodeId, nodeStatus, STATUS_LABEL,
   upstreamOf, wouldCycle, type FlowLink, type FlowMeta, type FlowNode, type FlowNodeType, type PortKind,
@@ -163,13 +163,10 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
     const up = node && upstreamOf(flow, nid);
     if (!node || !up?.rev || node.inputRev === up.rev) return;
     if (editor?.node === nid) return; // 正在編輯的節點交給使用者按套用
-    const ops = readOps(node.params);
-    const mop = ops.find(isMatte);
-    if (mop && mop.rev !== up.rev) return; // AI 去背要花錢: 上游換圖只亮過期, 打開節點再重跑
     try {
       const src = await loadImageData(api.flows.fileUrl(flow.name, `out/${up.id}.png`, up.rev));
-      const matte = mop ? await loadImageData(api.flows.fileUrl(flow.name, `nodes/${nid}/matte.png`, mop.rev)) : null;
-      await setOutput(nid, { file: await imgToBlob(applyOps(src, ops, matte)) }, { inputRev: up.rev, params: { ...node.params, ops } });
+      const ops = readOps(node.params);
+      await setOutput(nid, { file: await imgToBlob(applyOps(src, ops)) }, { inputRev: up.rev, params: { ...node.params, ops } });
     } catch (e) {
       error(e);
     }

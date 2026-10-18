@@ -14,8 +14,6 @@ export const COST = {
   depth: 0.01,
   /** 線稿: 依算力, 約幾秒 */
   line: 0.01,
-  /** BiRefNet 去背: 依算力, 約幾秒 */
-  matte: 0.005,
 } as const;
 
 /** 「約 X 美元」 */

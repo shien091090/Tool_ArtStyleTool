@@ -9,9 +9,7 @@ BASE_PROMPT = ("This image is a rough cut-and-paste edit: some parts were moved,
                "Repair it into a clean, seamless illustration. Fix the seams, blend the edges, redraw any broken "
                "or duplicated lines, and fill any gaps or empty areas naturally. Keep the new size, proportion and "
                "position of every part exactly as shown - do not shrink or enlarge anything back. Keep the same "
-               "art style, linework, colors, pose and composition. Keep the background plain flat white: do not "
-               "add any glow, halo, haze, shadow or light spill around the character, and fill gaps between parts "
-               "with the character's own colors or plain white background.")
+               "art style, linework, colors, pose and composition.")
 FOREIGN_PROMPT = (" Some parts were taken from another illustration: keep their design, but unify their art style, "
                   "linework, coloring and shading so they match the rest of the image.")
 
