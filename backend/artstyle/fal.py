@@ -61,6 +61,9 @@ class HttpFalClient:
     def _post(self, http: httpx.Client, model: str, body: dict) -> dict:
         r = http.post(f"https://fal.run/{model}", json=body, headers={"Authorization": f"Key {self._key}"})
         if r.status_code >= 400:
+            if "content_policy_violation" in r.text:
+                raise FalError(f"{model} 的內容審查擋下了這張圖(可能判定為血腥或暴力), 請換其他模型再試; "
+                               "被擋下的請求 fal.ai 通常不收費")
             raise FalError(f"fal.ai 呼叫 {model} 失敗(HTTP {r.status_code}): {r.text[:300]}")
         try:
             return r.json()

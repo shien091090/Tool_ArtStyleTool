@@ -131,3 +131,13 @@ def test_balance():
         _client(lambda r: httpx.Response(403, text="no")).balance()
     with pytest.raises(FalError, match="格式不符"):
         _client(lambda r: httpx.Response(200, json={"x": 1})).balance()
+
+
+def test_content_policy_error_is_readable():
+    def handler(req):
+        return httpx.Response(422, json={"detail": [{"loc": ["body"], "msg": "flagged by a content checker.",
+                                                     "type": "content_policy_violation"}]})
+
+    with pytest.raises(FalError) as e:
+        _client(handler).edit("qwen", np.zeros((8, 8, 3), np.uint8), "p", 1)
+    assert "內容審查" in str(e.value) and "換其他模型" in str(e.value) and "HTTP" not in str(e.value)
