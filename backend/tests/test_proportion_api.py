@@ -202,7 +202,7 @@ def _generate(client, w=80, h=60, region_rect=(10, 10, 30, 30), options=None, al
     if region_rect:
         x0, y0, x1, y1 = region_rect
         reg[y0:y1, x0:x1] = 255
-    opts = options or {"model": "nano-banana", "count": 2, "extra": ""}
+    opts = options or {"model": "nano-banana", "count": 2, "extra": "", "paste": True}
     return client.post(f"{P}/works/作品/generate",
                        files={"collage": ("c.png", _png(col), "image/png"), "region": ("r.png", _png(reg), "image/png")},
                        data={"options": json.dumps(opts)})
@@ -464,7 +464,7 @@ def test_undo_split_merges_back(client, fal):
 
 def test_generate_saves_raw_ai_and_gpt_letterbox(client, fal):
     _create(client)
-    r = _generate(client, options={"model": "gpt-image-2", "count": 1, "extra": ""})
+    r = _generate(client, options={"model": "gpt-image-2", "count": 1, "extra": "", "paste": True})
     assert r.status_code == 200, r.text
     assert fal.edit_calls[-1][1][:2] in ((60, 90), (80, 80), (120, 80))  # 80x60 補成接近的比例才送
     rid = r.json()["results"][0]["id"]
@@ -472,3 +472,13 @@ def test_generate_saves_raw_ai_and_gpt_letterbox(client, fal):
     assert raw.status_code == 200
     assert cv2.imdecode(np.frombuffer(raw.content, np.uint8), cv2.IMREAD_COLOR).shape == (60, 80, 3)
     assert client.get(f"{P}/works/作品").json()["results"][0]["raw"] is True
+
+
+def test_generate_whole_ai_by_default(client, fal):
+    _create(client)
+    r = _generate(client, options={"model": "nano-banana", "count": 1, "extra": ""})
+    assert r.status_code == 200, r.text
+    img = cv2.imdecode(np.frombuffer(client.get(f"{P}/works/作品/files/results/r1.png").content, np.uint8), cv2.IMREAD_COLOR)
+    assert img.shape == (60, 80, 3) and (img == 9).all()  # 整張都是 AI 的, 範圍外也是
+    assert not client.get(f"{P}/works/作品").json()["results"][0].get("raw")
+    assert _generate(client, options={"model": "nano-banana", "count": 1, "extra": "", "paste": "y"}).status_code == 400

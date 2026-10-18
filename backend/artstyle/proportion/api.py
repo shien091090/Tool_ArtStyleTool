@@ -253,6 +253,10 @@ def add_work_routes(r: APIRouter, base: str, resolve: Callable[[dict], Work], pa
         model = opts.get("model")
         count = opts.get("count")
         extra = opts.get("extra") or ""
+        # 預設整張用 AI 重畫的結果; paste = 只把改動範圍換成 AI 的, 其他保留原圖
+        paste = opts.get("paste", False)
+        if not isinstance(paste, bool):
+            raise ValueError("只替換改動範圍必須是 true/false")
         if model not in EDIT_MODELS:
             raise ValueError(f"不支援的修圖模型: {model}")
         if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 4:
@@ -296,13 +300,17 @@ def add_work_routes(r: APIRouter, base: str, resolve: Callable[[dict], Work], pa
             images = [compose.unbox(ai, sent.shape[:2], box) for ai in client().edit(model, sent, prompt, count)]
         else:
             images = client().edit(model, filled, prompt, count)
-        params = {"model": model, "count": count, "extra": extra, "prompt": prompt,
+        params = {"model": model, "count": count, "extra": extra, "prompt": prompt, "paste": paste,
                   "parts": work.meta["parts"], "pad": pad}
         results = []
         for ai in images:
+            whole = resize_to(ai[..., :3], filled.shape[1], filled.shape[0])
+            if not paste:
+                results.append(work.add_result(whole, params))
+                continue
             entry = work.add_result(compose.paste_back(ai, filled, reg, beh, prot), params)
             # AI 回傳的原圖也留著, 結果怪怪的時候可以看是 AI 畫的還是貼回造成的
-            work.save_raw(entry["id"], resize_to(ai[..., :3], filled.shape[1], filled.shape[0]))
+            work.save_raw(entry["id"], whole)
             results.append(entry)
         errors = []
         if len(results) < count:

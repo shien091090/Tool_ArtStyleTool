@@ -127,7 +127,7 @@ function workshopApi(base: (name: string) => string) {
         pad,
       })),
     generate: (name: string, masks: { collage: Blob; region: Blob; behind: Blob; protect: Blob },
-      options: { model: string; count: number; extra: string }) =>
+      options: { model: string; count: number; extra: string; paste: boolean }) =>
       request<{ meta: WorkMeta; results: ResultInfo[]; errors: string[] }>(`${base(name)}/generate`, {
         method: 'POST',
         body: form({ ...masks, options: JSON.stringify(options) }),

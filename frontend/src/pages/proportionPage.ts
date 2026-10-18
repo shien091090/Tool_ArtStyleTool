@@ -309,7 +309,11 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   const genBtn = markPaid(button('生成', () => void generate(), 'primary'));
   const genCost = costNote();
   const genHint = el('div', { className: 'muted small' });
+  const pasteChk = el('input');
+  pasteChk.type = 'checkbox';
   const genSection = section('生成', el('div', { className: 'row' }, [modelSel, countSel]), extra,
+    el('label', { className: 'small', title: 'AI 會整張重畫; 勾選後只把改動的部位換成 AI 的, 其他地方保留原圖(AI 改了部位大小或位置時可能被切掉)' },
+      [pasteChk, '只替換改動範圍(其他保留原圖)']),
     el('div', { className: 'row' }, [genBtn, genCost]), genHint);
   /** 依目前的名稱、張數、模型更新各付費按鈕旁的價錢 */
   const syncCosts = () => {
@@ -361,7 +365,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   /** AI 呼叫進行中鎖住所有會改作品的操作: 後端回傳的 meta 會蓋掉期間的修改。 */
   const lockables = (): (HTMLInputElement | HTMLSelectElement | HTMLButtonElement)[] => [
     workSel, placeBtn, unplaceBtn, hideChk, resetBtn, upBtn, downBtn, anchorSel, lockChk,
-    fScaleX, fScaleY, fRot, fDx, fDy, pointBtn, boxBtn, customName,
+    fScaleX, fScaleY, fRot, fDx, fDy, pointBtn, boxBtn, customName, pasteChk,
     matInput, refFile, matCount, viewSel, ...swatches.querySelectorAll('button'),
   ];
 
@@ -1187,7 +1191,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     await run('AI 生成中(約 15 秒)…', async () => {
       await flushSave();
       const res = await wapi.generate(meta!.name, await exportCollage(meta!, assets), {
-        model: modelSel.value, count: Number(countSel.value), extra: extra.value,
+        model: modelSel.value, count: Number(countSel.value), extra: extra.value, paste: pasteChk.checked,
       });
       meta!.results = res.meta.results;
       if (res.errors.length) showBanner(banner, 'warn', res.errors.join('; '));
