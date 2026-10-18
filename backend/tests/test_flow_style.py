@@ -36,7 +36,8 @@ def test_style_init_and_shared_routes(client, tmp_path):
     assert r.status_code == 400 and "上游還沒有輸出" in r.json()["detail"]
     h, w = _upload_input(client)[:2]
     meta = client.post(f"{S}/init").json()
-    assert meta["inputRev"] == 1 and meta["width"] == w - 5 and meta["height"] == h
+    m = max(16, round(max(h, w - 5) * 0.05))  # 裁掉透明後四周補白邊
+    assert meta["inputRev"] == 1 and meta["width"] == w - 5 + 2 * m and meta["height"] == h + 2 * m
     assert client.get(f"{S}/status").json() == {"exists": True, "inputRev": 1}
     # 不會出現在分層包清單
     assert client.get("/api/packs").json() == []

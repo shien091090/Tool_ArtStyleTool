@@ -4,6 +4,7 @@ import shutil
 from pathlib import Path
 from typing import Callable
 
+import cv2
 import numpy as np
 from fastapi import APIRouter, Body, File, Form, UploadFile
 from fastapi.responses import Response
@@ -34,6 +35,12 @@ def to_ai_source(img: np.ndarray) -> np.ndarray:
     img = img[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
     alpha = img[..., 3:4].astype(np.float32) / 255
     return (img[..., :3] * alpha + 255 * (1 - alpha)).round().astype(np.uint8)
+
+
+def white_margin(img: np.ndarray, ratio: float = 0.05, least: int = 16) -> np.ndarray:
+    """四周補白邊: 主體貼到圖邊時, 線稿、深度這類模型在邊緣抓不到輪廓。"""
+    m = max(least, round(max(img.shape[:2]) * ratio))
+    return cv2.copyMakeBorder(img, m, m, m, m, cv2.BORDER_CONSTANT, value=(255, 255, 255))
 
 
 def crop_opaque(img: np.ndarray) -> np.ndarray:
@@ -296,7 +303,7 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
         up = flow.upstream(nid)
         if up is None or not up.get("rev"):
             raise ValueError("上游還沒有輸出")
-        data = encode_png(to_ai_source(flow.output(up["id"])))
+        data = encode_png(white_margin(to_ai_source(flow.output(up["id"]))))
         root = flow.dir / "nodes"
         shutil.rmtree(root / nid, ignore_errors=True)
         pack = Pack.create(root, nid, data)
