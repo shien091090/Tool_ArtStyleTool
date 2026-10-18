@@ -6,6 +6,8 @@ export const COST = {
   vision: 0.01,
   /** Nano Banana 改圖: 每張 */
   nanoBanana: 0.04,
+  /** GPT Image 2 改圖(medium 畫質): 每張, 依實測 */
+  gptImage: 0.06,
   /** Qwen 改圖: 每百萬像素, 送出的圖約 1 百萬像素 */
   qwen: 0.03,
   /** FLUX Kontext(AI 去光影): 每張 */

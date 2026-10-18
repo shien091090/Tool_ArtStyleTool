@@ -10,7 +10,7 @@ from fastapi.responses import Response
 from .. import recipes as recipe_files
 from ..decompose import NoClientError
 from ..fal import EDIT_MODELS, FalClient
-from ..imaging import decode_any, limit_size, load_rgb, to_gray
+from ..imaging import decode_any, limit_size, load_rgb, resize_to, to_gray
 from ..names import validate_name
 from ..pack import Pack
 from . import compose, material as materials, parts, recipes, suggest
@@ -285,13 +285,25 @@ def add_work_routes(r: APIRouter, base: str, resolve: Callable[[dict], Work], pa
         reg = np.where(reg > 127, 255, 0).astype(np.uint8)
         if not reg.any() and not (beh is not None and (beh > 127).any()):
             raise ValueError("沒有任何改動, 不需要生成")
-        has_foreign = any(p["placed"] and p["image"] != "main" for p in work.meta["parts"])
-        prompt = compose.build_prompt(has_foreign, extra)
+        foreign = [p for p in work.meta["parts"] if p["placed"] and p["image"] != "main"]
+        aliases = work.aliases()
+        en = lambda ps: list(dict.fromkeys(parts.to_prompt(p["name"], aliases) for p in ps))  # noqa: E731
+        prompt = compose.build_prompt(bool(foreign), extra, en(foreign),
+                                      en([p for p in foreign if p["transform"]["z"] < 0]))
         filled = compose.fill_holes(col, compose.background_color(work.image("main")))
-        images = client().edit(model, filled, prompt, count)
+        if model == "gpt-image-2":
+            sent, box = compose.letterbox(filled)
+            images = [compose.unbox(ai, sent.shape[:2], box) for ai in client().edit(model, sent, prompt, count)]
+        else:
+            images = client().edit(model, filled, prompt, count)
         params = {"model": model, "count": count, "extra": extra, "prompt": prompt,
                   "parts": work.meta["parts"], "pad": pad}
-        results = [work.add_result(compose.paste_back(ai, filled, reg, beh, prot), params) for ai in images]
+        results = []
+        for ai in images:
+            entry = work.add_result(compose.paste_back(ai, filled, reg, beh, prot), params)
+            # AI 回傳的原圖也留著, 結果怪怪的時候可以看是 AI 畫的還是貼回造成的
+            work.save_raw(entry["id"], resize_to(ai[..., :3], filled.shape[1], filled.shape[0]))
+            results.append(entry)
         errors = []
         if len(results) < count:
             errors.append(f"要求 {count} 張, AI 只回傳 {len(results)} 張")

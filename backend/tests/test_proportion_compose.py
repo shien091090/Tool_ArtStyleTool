@@ -68,3 +68,19 @@ def test_paste_back_behind_does_not_touch_protected():
     assert (out[:, 20:] == 100).all()          # 主圖保護的地方漸層也不蓋上去
     out = compose.paste_back(ai, base, behind)  # 同樣範圍當一般改動: 漸層會蓋到右邊
     assert (out[:, 21] != 100).all()
+
+
+def test_prompt_keeps_added_parts():
+    p = compose.build_prompt(True, "", ["wings"], ["wings"])
+    assert "added parts: wings" in p and "MUST remain" in p and "behind the body" in p
+    assert "added parts" not in compose.build_prompt(True, "")
+
+
+def test_letterbox_roundtrip():
+    img = np.zeros((100, 300, 3), np.uint8)  # 3:1 → 補成 3:2
+    out, box = compose.letterbox(img)
+    assert out.shape[:2] == (200, 300) and box == (0, 50, 300, 100)
+    assert (out[0, 0] == 255).all() and (out[60, 10] == 0).all()
+    ai = np.full((1024, 1536, 3), 7, np.uint8)
+    back = compose.unbox(ai, out.shape[:2], box)
+    assert back.shape == (100, 300, 3) and (back == 7).all()

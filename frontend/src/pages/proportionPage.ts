@@ -317,7 +317,8 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     segBtn.textContent = n ? `切出 ${n} 個部位` : '切部位';
     segCost.textContent = n ? usd(COST.segment * n) : '先選要切的部位';
     matCost.textContent = usd(COST.nanoBanana * Number(matCount.value));
-    genCost.textContent = usd((modelSel.value === 'qwen' ? COST.qwen : COST.nanoBanana) * Number(countSel.value));
+    const per = { qwen: COST.qwen, 'gpt-image-2': COST.gptImage }[modelSel.value] ?? COST.nanoBanana;
+    genCost.textContent = usd(per * Number(countSel.value));
   };
   for (const c of [matCount, modelSel, countSel]) c.addEventListener('change', syncCosts);
 
@@ -782,6 +783,8 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
         el('span', { className: 'spacer' }),
         ...(embed ? embed.compareActions(id) : [button('送到拆解檢查', () => void toPack(id))]),
         button('開新分頁看原尺寸', () => window.open(wapi.fileUrl(meta!.name, `results/${id}.png`), '_blank')),
+        ...(meta.results.find((r) => r.id === id)?.raw
+          ? [button('看 AI 原圖', () => window.open(wapi.fileUrl(meta!.name, `results/${id}_ai.png`), '_blank'))] : []),
         button('回到編輯', () => {
           compare = null;
           redraw();

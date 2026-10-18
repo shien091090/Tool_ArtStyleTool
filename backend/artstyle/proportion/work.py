@@ -433,6 +433,14 @@ class Work:
         self.save_meta()
         return entry
 
+    def save_raw(self, rid: str, img: np.ndarray) -> None:
+        """存 AI 回傳的原圖(貼回前), 結果標記 raw。"""
+        write_png(self.dir / "results" / f"{rid}_ai.png", img)
+        for r in self.meta["results"]:
+            if r["id"] == rid:
+                r["raw"] = True
+        self.save_meta()
+
     def file_path(self, rel: str) -> Path:
         if not _FILE.fullmatch(rel):
             raise FileNotFoundError("找不到檔案")

@@ -95,6 +95,8 @@ export interface ResultInfo {
   id: string;
   created: string;
   model: string;
+  /** 有存 AI 回傳的原圖(results/<id>_ai.png) */
+  raw?: boolean;
 }
 
 export interface WorkMeta {
@@ -116,5 +118,6 @@ export const ZERO_PAD: Pad = { top: 0, right: 0, bottom: 0, left: 0 };
 
 export const EDIT_MODELS = [
   { id: 'nano-banana', label: 'Nano Banana(最忠實)' },
+  { id: 'gpt-image-2', label: 'GPT Image 2(忠於構圖)' },
   { id: 'qwen', label: 'Qwen' },
 ] as const;

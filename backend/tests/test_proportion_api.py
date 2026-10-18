@@ -460,3 +460,15 @@ def test_undo_split_merges_back(client, fal):
     meta = client.post(f"{P}/works/作品/parts/p1/undo-mask").json()
     assert [p["name"] for p in meta["parts"]] == ["翅膀"]
     assert meta["parts"][0]["bbox"] == before["bbox"]
+
+
+def test_generate_saves_raw_ai_and_gpt_letterbox(client, fal):
+    _create(client)
+    r = _generate(client, options={"model": "gpt-image-2", "count": 1, "extra": ""})
+    assert r.status_code == 200, r.text
+    assert fal.edit_calls[-1][1][:2] in ((60, 90), (80, 80), (120, 80))  # 80x60 補成接近的比例才送
+    rid = r.json()["results"][0]["id"]
+    raw = client.get(f"{P}/works/作品/files/results/{rid}_ai.png")
+    assert raw.status_code == 200
+    assert cv2.imdecode(np.frombuffer(raw.content, np.uint8), cv2.IMREAD_COLOR).shape == (60, 80, 3)
+    assert client.get(f"{P}/works/作品").json()["results"][0]["raw"] is True

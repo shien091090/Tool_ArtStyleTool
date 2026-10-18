@@ -15,10 +15,44 @@ FOREIGN_PROMPT = (" Some parts were taken from another illustration: keep their 
                   "linework, coloring and shading so they match the rest of the image.")
 
 
-def build_prompt(has_foreign: bool, extra: str) -> str:
+def build_prompt(has_foreign: bool, extra: str, keep: list[str] = (), behind: list[str] = ()) -> str:
+    """keep: 拼進來的部位(英文), 明講一定要留著, AI 才不會把畫風不同的部位當成雜物修掉;
+    behind: 其中放在身體後面的。"""
     p = BASE_PROMPT + (FOREIGN_PROMPT if has_foreign else "")
+    if keep:
+        names = ", ".join(keep)
+        p += (f" The character has these added parts: {names}. They MUST remain clearly visible in the final image "
+              "at exactly their current size, shape and position - do not remove, hide, shrink or merge them; only "
+              "redraw them so their art style, linework and shading match the body.")
+    if behind:
+        p += f" The {', '.join(behind)} are attached behind the body, partly covered by it."
     extra = (extra or "").strip()
     return f"{p} {extra}" if extra else p
+
+
+# GPT Image 2 只出 1:1、3:2、2:3 三種比例: 先補白邊到最接近的比例, 結果再裁回來, 避免被拉長壓扁
+GPT_RATIOS = (1.0, 1.5, 2 / 3)
+
+
+def letterbox(img: np.ndarray, ratios=GPT_RATIOS) -> tuple[np.ndarray, tuple[int, int, int, int]]:
+    """置中補白到最接近的比例; 回傳 (補好的圖, 原圖在其中的 x, y, w, h)。"""
+    h, w = img.shape[:2]
+    r = min(ratios, key=lambda q: abs(np.log(q * h / w)))
+    if w / h > r:
+        W, H = w, round(w / r)
+    else:
+        W, H = round(h * r), h
+    x, y = (W - w) // 2, (H - h) // 2
+    out = np.full((H, W, img.shape[2]), 255, np.uint8)
+    out[y:y + h, x:x + w] = img
+    return out, (x, y, w, h)
+
+
+def unbox(ai: np.ndarray, padded_shape: tuple[int, int], box: tuple[int, int, int, int]) -> np.ndarray:
+    """AI 結果縮回補白後的尺寸, 裁出原圖範圍。"""
+    x, y, w, h = box
+    full = resize_to(ai[..., :3], padded_shape[1], padded_shape[0])
+    return full[y:y + h, x:x + w]
 
 
 def background_color(img: np.ndarray) -> tuple[int, int, int]:
