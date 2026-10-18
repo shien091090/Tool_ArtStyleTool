@@ -153,6 +153,12 @@ def add_work_routes(r: APIRouter, base: str, resolve: Callable[[dict], Work], pa
         work.update_part_mask(part_id, mask, points, box)
         return work.meta
 
+    @r.post(base + "/parts/{part_id}/undo-mask")
+    def undo_mask(request: Request, part_id: str):
+        work = resolve(request.path_params)
+        work.undo_mask(part_id)
+        return work.meta
+
     @r.post(base + "/parts/{part_id}/split")
     def split_part(request: Request, part_id: str):
         work = resolve(request.path_params)
@@ -160,7 +166,7 @@ def add_work_routes(r: APIRouter, base: str, resolve: Callable[[dict], Work], pa
         left, right = parts.split_left_right(work.mask(part_id))
         name = parts.to_display_name(part["name"])
         old_bbox, old_transform = part["bbox"], dict(part["transform"])
-        work.update_part_mask(part_id, left, [], None)  # 內部會重算 dx/dy, 位置不跳
+        work.update_part_mask(part_id, left, [], None, record=False)  # 內部會重算 dx/dy, 位置不跳; 拆開後不能單獨復原
         part["name"] = f"{name}(左)"
         new = work.add_part(f"{name}(右)", part["image"], right, [], None)
         new.update(placed=part["placed"], place=part["place"],

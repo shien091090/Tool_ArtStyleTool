@@ -429,3 +429,23 @@ def test_delete_proportion_recipe(client):
     assert client.delete(f"{P}/recipes/Q版").status_code == 200
     assert client.get(f"{P}/recipes").json() == []
     assert client.delete(f"{P}/recipes/Q版").status_code == 404
+
+
+def test_undo_mask(client, fal, tmp_path):
+    _create(client)
+    client.post(f"{P}/works/作品/parts", json={"names": ["頭"]})
+    assert client.post(f"{P}/works/作品/parts/p1/undo-mask").status_code == 400  # 還沒改過
+    first = client.get(f"{P}/works/作品").json()["parts"][0]
+    add = {"x": 45, "y": 45, "label": 1}
+    client.post(f"{P}/works/作品/parts/p1/refine", json={"points": [add], "box": None})
+    client.post(f"{P}/works/作品/parts/p1/refine", json={"points": [add, {"x": 44, "y": 44, "label": 0}], "box": None})
+    meta = client.post(f"{P}/works/作品/parts/p1/undo-mask").json()
+    assert meta["parts"][0]["bbox"] == [20, 5, 49, 49] and len(meta["parts"][0]["points"]) == 1
+    meta = client.post(f"{P}/works/作品/parts/p1/undo-mask").json()
+    p = meta["parts"][0]
+    assert p["bbox"] == first["bbox"] and p["points"] == [] and p["history"] == []
+    masks = tmp_path / "proportion" / "作品" / "masks"
+    assert sorted(f.name for f in masks.iterdir()) == ["p1.png"]  # 歷史檔用完就刪
+    client.post(f"{P}/works/作品/parts/p1/refine", json={"points": [add], "box": None})
+    client.delete(f"{P}/works/作品/parts/p1")
+    assert list(masks.iterdir()) == []

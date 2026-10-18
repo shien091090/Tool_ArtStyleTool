@@ -11,12 +11,11 @@ import { COST, usd } from '../cost';
 
 const QUICK_NAMES = ['頭', '手', '腳', '身體', '翅膀', '尾巴'];
 const ANCHOR_LABEL: Record<Anchor, string> = { top: '上', center: '中', bottom: '下' };
-const TOOL_HINT: Record<Tool, string> = {
-  move: '點部位選取; 拖曳移動, 拉角落縮放, 拉上方圓點旋轉(按 Shift 每 15 度)。點空白處取消選取。',
-  point: '左鍵 = 這裡也要, 右鍵 = 這裡不要。沒選部位時, 左鍵會用上面輸入的名稱新增部位。',
-  box: '拖一個框, AI 只在框內找。沒選部位時用上面輸入的名稱新增部位; 有選部位時重切該部位。',
-};
 const SAVE_DELAY = 400;
+/** 比例、位置、圖層的復原步數 */
+const UNDO_MAX = 50;
+type PartTab = 'adjust' | 'mask' | 'material';
+const PART_TABS: [PartTab, string][] = [['adjust', '調整'], ['mask', '修正範圍'], ['material', '材質']];
 
 const identity = (z: number): PartTransform => ({ scaleX: 1, scaleY: 1, rotation: 0, anchor: 'bottom', dx: 0, dy: 0, z, hidden: false });
 const baseName = (n: string) => n.replace(/\((左|右)\)$/, '');
@@ -46,7 +45,15 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   let assets = new WorkAssets(wapi.fileUrl);
   let view = 'main';
   let tool: Tool = 'move';
+  /** 框選: 新增部位(用名稱欄的名稱)或重切選中的部位; 框一次就回到選取移動 */
+  let boxIntent: 'new' | 'part' = 'part';
+  let partTab: PartTab = 'adjust';
   let selected: string | null = null;
+  /** Ctrl+Z: 比例/位置/圖層用快照, 切法交給後端退回上一版 */
+  type UndoEntry = { kind: 'layout'; snap: string } | { kind: 'mask'; pid: string };
+  const undoStack: UndoEntry[] = [];
+  const redoStack: string[] = [];
+  let layoutSnap = '';
   let showMasks = true;
   const maskOff = new Set<string>();
   let lockRatio = true;
@@ -131,18 +138,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   const segCost = costNote();
   const suggestBtn = markPaid(button('AI 列出部位', () => void suggestParts()));
   const suggestBox = el('div', { className: 'chips' });
-  const toolBtns = new Map<Tool, HTMLButtonElement>();
-  const toolRow = el('div', { className: 'seg' }, (['move', 'point', 'box'] as Tool[]).map((t) => {
-    const b = button({ move: '選取移動', point: '點選修正', box: '框選' }[t], () => {
-      tool = t;
-      redraw();
-      syncAll();
-    });
-    toolBtns.set(t, t === 'move' ? b : markPaid(b));
-    return b;
-  }));
-  const toolHint = el('div', { className: 'muted small' });
-  const toolCost = costNote(`點一下或框一次${usd(COST.segment)}`);
+  const boxNewBtn = markPaid(button('框選新增', () => startBoxNew()));
   const maskChk = el('input');
   maskChk.type = 'checkbox';
   maskChk.checked = true;
@@ -153,7 +149,8 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   const segSection = section('拆部位', el('div', { className: 'row' }, [partNames, suggestBtn, costNote(usd(COST.vision))]),
     suggestBox, chips,
     el('div', { className: 'row' }, [segBtn, segCost, el('label', {}, [maskChk, '顯示遮罩'])]),
-    toolRow, toolHint, toolCost);
+    el('div', { className: 'row' }, [boxNewBtn, costNote(usd(COST.segment))]),
+    el('div', { className: 'muted small', text: '切不到時: 名稱欄只留一個名稱, 按「框選新增」在圖上拖框指出位置' }));
 
   // 部位清單
   const partList = el('div', { className: 'part-list' });
@@ -170,6 +167,9 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   const splitBtn = button('拆成左右', () => void splitSelected());
   const delBtn = button('刪除部位', () => void deleteSelected());
   const resetBtn = button('重設變形', () => editSelected((t) => identity(t.z)));
+  const pointBtn = markPaid(button('點選修正', () => (tool === 'point' ? exitMode() : setMode('point'))));
+  const boxBtn = markPaid(button('框選重切', () => setMode('box', 'part')));
+  const undoMaskBtn = button('復原上一次切法', () => void undoMask());
   const lockChk = el('input');
   lockChk.type = 'checkbox';
   lockChk.checked = true;
@@ -229,13 +229,37 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   const matCost = costNote();
   const variantList = el('div', { className: 'variant-list' });
   const matBox = el('div', { className: 'mat-box' }, [
-    el('h3', { text: '材質' }), swatches, matInput,
+    swatches, matInput,
     el('label', { className: 'small', title: '選填: AI 參考這張圖的質感' }, ['參考圖', refFile]),
     el('div', { className: 'row' }, [matCount, matBtn, matCost]), variantList,
   ]);
-  const selSection = section('選中部位', selTitle,
-    el('div', { className: 'row' }, [placeBtn, unplaceBtn, hideLabel]),
-    el('div', { className: 'row' }, [splitBtn, resetBtn, delBtn]), fieldBox, matBox);
+  const closePanelBtn = el('button', { text: '×', className: 'part-panel-close', title: '取消選取' });
+  closePanelBtn.addEventListener('click', () => select(null));
+  const tabBtns = new Map<PartTab, HTMLButtonElement>();
+  const tabRow = el('div', { className: 'seg' }, PART_TABS.map(([t, label]) => {
+    const b = button(label, () => setTab(t));
+    tabBtns.set(t, b);
+    return b;
+  }));
+  const tabBodies: Record<PartTab, HTMLElement> = {
+    adjust: el('div', {}, [el('div', { className: 'row' }, [placeBtn, unplaceBtn, hideLabel]), fieldBox,
+      el('div', { className: 'row' }, [resetBtn])]),
+    mask: el('div', {}, [
+      el('div', { className: 'row' }, [pointBtn, boxBtn]),
+      costNote(`點一下或框一次${usd(COST.segment)}`),
+      el('div', { className: 'row' }, [undoMaskBtn, splitBtn]),
+      el('div', { className: 'muted small', text: '切壞了按「復原上一次切法」或 Ctrl+Z' }),
+    ]),
+    material: matBox,
+  };
+  const partPanel = el('div', { className: 'part-panel hidden' }, [
+    el('div', { className: 'part-panel-head' }, [selTitle, closePanelBtn]), tabRow,
+    ...Object.values(tabBodies), el('div', { className: 'part-panel-foot' }, [delBtn]),
+  ]);
+  const modeText = el('span');
+  const modeDone = el('button', { className: 'primary' });
+  modeDone.addEventListener('click', () => exitMode());
+  const modeBar = el('div', { className: 'mode-bar hidden' }, [modeText, modeDone]);
 
   // 畫布擴大
   const padInputs = (['top', 'right', 'bottom', 'left'] as const).map((k) => {
@@ -298,22 +322,23 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   const resultList = el('div', { className: 'result-list' });
   const resultSection = section('結果', resultList);
 
-  panel.append(viewSection, segSection, listSection, selSection, padSection, recipeSection, genSection, resultSection);
+  panel.append(viewSection, segSection, listSection, padSection, recipeSection, genSection, resultSection);
   if (embed) root.append(el('div', { className: 'prop-layout' }, [stage, panel]));
   else root.append(toolbar, banner, el('div', { className: 'prop-layout' }, [stage, panel]));
 
+  canvasWrap.append(partPanel, modeBar);
   const editor = new Editor(canvasWrap, {
-    onSelect: (id) => {
-      selected = id;
-      syncAll();
-    },
+    onSelect: (id) => select(id),
     onTransform: (id, t, final) => {
       const p = meta?.parts.find((x) => x.id === id);
       if (!p || busy) return;
       p.transform = t;
       redraw();
       syncFields();
-      if (final) scheduleSave();
+      if (final) {
+        recordLayout();
+        scheduleSave();
+      }
     },
     onPoint: (x, y, label) => void pointAt(x, y, label),
     onBox: (box) => void boxAt(box),
@@ -326,11 +351,12 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   // ---- 共用 ----
   const mainInfo = () => meta!.images.find((i) => i.id === 'main')!;
   const selPart = (): Part | undefined => meta?.parts.find((p) => p.id === selected);
-  const actionButtons = [createBtn, addImgBtn, segBtn, suggestBtn, matBtn, splitBtn, delBtn, genBtn, applyRecipeBtn, saveRecipeBtn, deleteRecipeBtn, deleteWorkBtn];
+  const actionButtons = [createBtn, addImgBtn, segBtn, suggestBtn, matBtn, splitBtn, delBtn, genBtn, applyRecipeBtn, saveRecipeBtn,
+    deleteRecipeBtn, deleteWorkBtn, undoMaskBtn];
   /** AI 呼叫進行中鎖住所有會改作品的操作: 後端回傳的 meta 會蓋掉期間的修改。 */
   const lockables = (): (HTMLInputElement | HTMLSelectElement | HTMLButtonElement)[] => [
     workSel, placeBtn, unplaceBtn, hideChk, resetBtn, upBtn, downBtn, autoPadBtn, anchorSel, lockChk,
-    fScaleX, fScaleY, fRot, fDx, fDy, ...padInputs.map(([, i]) => i), ...toolBtns.values(),
+    fScaleX, fScaleY, fRot, fDx, fDy, ...padInputs.map(([, i]) => i), pointBtn, boxBtn, boxNewBtn,
     matInput, refFile, matCount, viewSel, ...swatches.querySelectorAll('button'),
   ];
 
@@ -343,6 +369,127 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   }
 
   const jobKey = () => embed?.jobKey ?? (meta ? `workshop:${meta.name}` : null);
+
+  // ---- 修正模式: 點選修正持續到按完成; 框選框一次就結束 ----
+  function setMode(next: Tool, intent: 'new' | 'part' = 'part') {
+    tool = next;
+    boxIntent = intent;
+    if (next !== 'move') compare = null;
+    redraw();
+    syncAll();
+  }
+
+  function exitMode() {
+    if (tool === 'move') return;
+    setMode('move');
+  }
+
+  function startBoxNew() {
+    const names = splitNames(partNames.value);
+    if (names.length !== 1) {
+      showBanner(banner, 'warn', '「框選新增」一次新增一個部位: 請在「部位名稱」只輸入一個名稱');
+      return;
+    }
+    select(null);
+    view = view || 'main';
+    setMode('box', 'new');
+  }
+
+  function select(id: string | null) {
+    if (id !== selected) exitMode();
+    selected = id;
+    syncAll();
+    redraw();
+  }
+
+  function setTab(t: PartTab) {
+    if (t !== 'mask') exitMode();
+    partTab = t;
+    syncAll();
+  }
+
+  // ---- 復原 ----
+  const snapLayout = () => JSON.stringify({
+    parts: meta!.parts.map((p) => ({ id: p.id, transform: p.transform, placed: p.placed, place: p.place })),
+    pad: meta!.pad,
+  });
+
+  /** 本機調整完成後呼叫: 把調整前的狀態放進復原堆疊 */
+  function recordLayout() {
+    if (!meta) return;
+    const now = snapLayout();
+    if (now === layoutSnap) return;
+    if (layoutSnap) undoStack.push({ kind: 'layout', snap: layoutSnap });
+    if (undoStack.length > UNDO_MAX) undoStack.shift();
+    redoStack.length = 0;
+    layoutSnap = now;
+  }
+
+  function applySnap(snap: string) {
+    if (!meta) return;
+    const o = JSON.parse(snap) as { parts: Pick<Part, 'id' | 'transform' | 'placed' | 'place'>[]; pad: Pad };
+    for (const e of o.parts) {
+      const p = meta.parts.find((q) => q.id === e.id);
+      if (p) Object.assign(p, { transform: e.transform, placed: e.placed, place: e.place });
+    }
+    meta.pad = o.pad;
+    layoutSnap = snap;
+    compare = null;
+    redraw();
+    syncAll();
+    scheduleSave();
+  }
+
+  async function undo() {
+    if (!meta || busy) return;
+    const e = undoStack.pop();
+    if (!e) {
+      showBanner(banner, 'info', '沒有可以復原的操作');
+      return;
+    }
+    if (e.kind === 'layout') {
+      redoStack.push(snapLayout());
+      applySnap(e.snap);
+      return;
+    }
+    redoStack.length = 0;
+    await undoMask(e.pid);
+  }
+
+  function redo() {
+    const snap = redoStack.pop();
+    if (!snap || !meta || busy) return;
+    undoStack.push({ kind: 'layout', snap: snapLayout() });
+    applySnap(snap);
+  }
+
+  /** 切法退回上一版; 從按鈕叫時順便拿掉堆疊裡這個部位最後一筆 */
+  async function undoMask(pid = selected) {
+    const p = meta?.parts.find((q) => q.id === pid);
+    if (!meta || !p) return;
+    const i = undoStack.map((e) => e.kind === 'mask' && e.pid === p.id).lastIndexOf(true);
+    if (i >= 0) undoStack.splice(i, 1);
+    await run('復原切法中…', async () => {
+      await flushSave();
+      await setMeta(await wapi.undoMask(meta!.name, p.id));
+      redraw();
+    });
+  }
+
+  const onKey = (e: KeyboardEvent) => {
+    if (!meta || !root.isConnected) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+    if (e.key === 'Escape') exitMode();
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      void undo();
+    } else if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
+      e.preventDefault();
+      redo();
+    }
+  };
+  document.addEventListener('keydown', onKey);
 
   /** 標籤以「AI 」開頭的會花錢, 顯示在上方進度列 */
   async function run(label: string, fn: () => Promise<void>) {
@@ -406,6 +553,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   /** 本機調整後: 重畫、同步面板、排程存檔。 */
   function changed() {
     compare = null;
+    recordLayout();
     redraw();
     syncAll();
     scheduleSave();
@@ -420,12 +568,32 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
 
   async function setMeta(next: WorkMeta) {
     meta = next;
+    layoutSnap = snapLayout();
     await assets.sync(next);
-    if (selected && !next.parts.some((p) => p.id === selected)) selected = null;
+    if (selected && !next.parts.some((p) => p.id === selected)) {
+      selected = null;
+      tool = 'move';
+    }
     if (!next.images.some((i) => i.id === view)) view = 'main';
   }
 
   // ---- 同步面板 ----
+  /** 修正模式的提示列與畫布金框 */
+  function syncMode() {
+    const p = selPart();
+    canvasWrap.classList.toggle('editing', tool !== 'move');
+    modeBar.classList.toggle('hidden', tool === 'move');
+    if (tool === 'point') {
+      modeText.textContent = `修正「${p?.name ?? ''}」中: 左鍵 = 這裡也要, 右鍵 = 這裡不要(每點一下${usd(COST.segment)})`;
+      modeDone.textContent = '完成';
+    } else if (tool === 'box') {
+      modeText.textContent = boxIntent === 'new'
+        ? `框選新增「${splitNames(partNames.value)[0] ?? ''}」: 在圖上拖一個框指出位置(${usd(COST.segment)})`
+        : `框選重切「${p?.name ?? ''}」: 在圖上拖一個框, AI 只在框內找(${usd(COST.segment)})`;
+      modeDone.textContent = '取消';
+    }
+  }
+
   function syncFields() {
     const p = selPart();
     const canEdit = !!p && (p.image === 'main' ? !p.transform.hidden : p.placed);
@@ -448,18 +616,17 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     for (const b of actionButtons) b.disabled = busy;
     deleteWorkBtn.disabled = busy || !has;
     for (const c of lockables()) c.disabled = busy;
-    for (const [t, b] of toolBtns) b.classList.toggle('active', t === tool);
-    toolHint.textContent = TOOL_HINT[tool];
-    toolCost.classList.toggle('hidden', tool === 'move');
     syncCosts();
+    syncMode();
     if (!meta) {
-      selSection.classList.add('hidden');
+      partPanel.classList.add('hidden');
       compareBar.classList.add('hidden');
       return;
     }
     segBtn.disabled = busy || !falOk;
     suggestBtn.disabled = busy || !falOk;
     matBtn.disabled = busy || !falOk;
+    for (const b of [pointBtn, boxBtn, boxNewBtn]) b.disabled = busy || !falOk;
     syncSuggestions();
     // 檢視選單
     viewSel.replaceChildren(...meta.images.map((im) => {
@@ -498,20 +665,23 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
       ]);
       (row.firstChild as HTMLElement).style.background = p.color;
       row.addEventListener('click', () => {
-        selected = p.id;
         if (p.image !== 'main' && !p.placed) view = p.image;
         compare = null;
-        redraw();
-        syncAll();
+        select(p.id);
       });
       return row;
     }));
     if (!meta.parts.length) partList.append(el('div', { className: 'muted small', text: '還沒有部位。輸入名稱後按「切部位」。' }));
     // 選中部位
     const p = selPart();
-    selSection.classList.toggle('hidden', !p);
+    partPanel.classList.toggle('hidden', !p);
     if (p) {
       selTitle.textContent = `${p.name}(${imgName(p.image)})`;
+      for (const [t, b] of tabBtns) b.classList.toggle('active', t === partTab);
+      for (const [t, body] of Object.entries(tabBodies)) body.classList.toggle('hidden', t !== partTab);
+      pointBtn.classList.toggle('active', tool === 'point');
+      pointBtn.textContent = tool === 'point' ? '完成修正' : '點選修正';
+      undoMaskBtn.disabled = busy || !p.history?.length;
       placeBtn.classList.toggle('hidden', p.image === 'main' || p.placed);
       unplaceBtn.classList.toggle('hidden', p.image === 'main' || !p.placed);
       hideLabel.classList.toggle('hidden', p.image !== 'main');
@@ -590,6 +760,9 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     }
     compare = null;
     selected = null;
+    tool = 'move';
+    undoStack.length = 0;
+    redoStack.length = 0;
     view = 'main';
     meta = null;
     assets = new WorkAssets(wapi.fileUrl);
@@ -695,7 +868,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   async function addByGeometry(points: SegPoint[], box: SegBox | null) {
     if (!meta) return;
     const names = splitNames(partNames.value);
-    if (names.length !== 1) throw new Error('沒有選中部位時, 請在「部位名稱」輸入一個名稱再點選或框選');
+    if (names.length !== 1) throw new Error('請在「部位名稱」只輸入一個名稱再框選');
     const before = new Set(meta.parts.map((p) => p.id));
     const res = await wapi.segment(meta.name, view, names, points, box);
     await setMeta(res.meta);
@@ -709,25 +882,29 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     await run('AI 重切中…', async () => {
       await flushSave();
       const p = refineTarget();
-      if (!p) {
-        if (label === 0) throw new Error('右鍵(這裡不要)只能用在已選中的部位');
-        await addByGeometry([{ x, y, label: 1 }], null);
-      } else {
-        const img = meta!.images.find((i) => i.id === p.image)!;
-        if (x < 0 || y < 0 || x >= img.w || y >= img.h) throw new Error('點的位置超出這個部位所屬的圖');
-        await setMeta(await wapi.refine(meta!.name, p.id, [...p.points, { x, y, label }], p.box));
-      }
+      if (!p) throw new Error('畫布顯示的不是這個部位所在的圖, 請先切換「畫布顯示」');
+      const img = meta!.images.find((i) => i.id === p.image)!;
+      if (x < 0 || y < 0 || x >= img.w || y >= img.h) throw new Error('點的位置超出這個部位所屬的圖');
+      await setMeta(await wapi.refine(meta!.name, p.id, [...p.points, { x, y, label }], p.box));
+      undoStack.push({ kind: 'mask', pid: p.id });
       redraw();
     });
   }
 
   async function boxAt(box: SegBox) {
     if (!meta || !falOk) return;
+    const intent = boxIntent;
+    setMode('move');
     await run('AI 框選中…', async () => {
       await flushSave();
-      const p = refineTarget();
-      if (!p) await addByGeometry([], box);
-      else await setMeta(await wapi.refine(meta!.name, p.id, [], box));
+      if (intent === 'new') {
+        await addByGeometry([], box);
+      } else {
+        const p = refineTarget();
+        if (!p) throw new Error('畫布顯示的不是這個部位所在的圖, 請先切換「畫布顯示」');
+        await setMeta(await wapi.refine(meta!.name, p.id, [], box));
+        undoStack.push({ kind: 'mask', pid: p.id });
+      }
       redraw();
     });
   }
@@ -1059,6 +1236,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
 
   return () => {
     alive = false;
+    document.removeEventListener('keydown', onKey);
     if (saveTimer !== undefined) void flushSave();
     editor.destroy();
   };

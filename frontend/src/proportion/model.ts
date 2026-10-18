@@ -72,6 +72,13 @@ export interface Part {
   rev?: number;
   /** 舊作品沒有 = 原本材質 */
   material?: PartMaterial;
+  /** 之前的切法, 有才可以「復原上一次切法」 */
+  history?: MaskHistory[];
+}
+
+/** 部位切法的上一版(復原用) */
+export interface MaskHistory {
+  file: string;
 }
 
 export interface WorkImage {

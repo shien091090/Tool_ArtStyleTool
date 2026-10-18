@@ -114,6 +114,8 @@ function workshopApi(base: (name: string) => string) {
       request<{ meta: WorkMeta; missing: string[] }>(`${base(name)}/parts`, json('POST', { image, names, points, box })),
     refine: (name: string, partId: string, points: SegPoint[], box: SegBox | null) =>
       request<WorkMeta>(`${base(name)}/parts/${partId}/refine`, json('POST', { points, box })),
+    undoMask: (name: string, partId: string) =>
+      request<WorkMeta>(`${base(name)}/parts/${partId}/undo-mask`, { method: 'POST' }),
     split: (name: string, partId: string) =>
       request<WorkMeta>(`${base(name)}/parts/${partId}/split`, { method: 'POST' }),
     deletePart: (name: string, partId: string) =>

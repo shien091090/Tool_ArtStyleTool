@@ -18,6 +18,8 @@ COLORS = ["#e5484d", "#30a46c", "#0090ff", "#f76b15", "#8e4ec6", "#12a594",
 ANCHORS = ("top", "center", "bottom")
 MAX_SCALE = 20
 MAX_PAD = 4096
+# 每個部位保留幾版之前的切法(遮罩), 給「復原上一次切法」用
+MASK_HISTORY = 10
 _FILE = re.compile(r"(images|masks|results|materials)/[A-Za-z0-9_]+\.(png|json)")
 
 
@@ -265,9 +267,18 @@ class Work:
         self.save_meta()
         return part
 
-    def update_part_mask(self, part_id: str, mask: np.ndarray, points: list, box) -> dict:
+    def update_part_mask(self, part_id: str, mask: np.ndarray, points: list, box, record: bool = True) -> dict:
+        """換部位遮罩; record 時先把上一版存進歷史, 可以復原。"""
         part = self.part(part_id)
         mask = self._check_mask(part["image"], mask)
+        if record:
+            hid = f"{part_id}_h{self._next('mask')}"
+            shutil.copyfile(self.dir / "masks" / f"{part_id}.png", self.dir / "masks" / f"{hid}.png")
+            hist = part.setdefault("history", [])
+            hist.append({"file": hid, "points": part["points"], "box": part["box"], "bbox": part["bbox"],
+                         "transform": dict(part["transform"])})
+            while len(hist) > MASK_HISTORY:
+                (self.dir / "masks" / f"{hist.pop(0)['file']}.png").unlink(missing_ok=True)
         write_png(self.dir / "masks" / f"{part_id}.png", mask)
         bbox = mask_bbox(mask)
         part.update(points=list(points), box=box, bbox=bbox, rev=part.get("rev", 0) + 1,
@@ -275,8 +286,25 @@ class Work:
         self.save_meta()
         return part
 
+    def undo_mask(self, part_id: str) -> dict:
+        """切法退回上一版(遮罩、點、框、變形一起退)。"""
+        part = self.part(part_id)
+        hist = part.get("history") or []
+        if not hist:
+            raise ValueError("這個部位沒有可以復原的切法")
+        h = hist.pop()
+        src = self.dir / "masks" / f"{h['file']}.png"
+        shutil.copyfile(src, self.dir / "masks" / f"{part_id}.png")
+        src.unlink(missing_ok=True)
+        part.update(points=h["points"], box=h["box"], bbox=h["bbox"], transform=h["transform"],
+                    rev=part.get("rev", 0) + 1)
+        self.save_meta()
+        return part
+
     def delete_part(self, part_id: str) -> None:
         part = self.part(part_id)
+        for h in part.get("history") or []:
+            (self.dir / "masks" / f"{h['file']}.png").unlink(missing_ok=True)
         for v in self.part_material(part_id)["variants"]:
             self._delete_variant_files(v["id"])
         self.meta["parts"].remove(part)
