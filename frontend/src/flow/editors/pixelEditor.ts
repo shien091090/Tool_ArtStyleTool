@@ -1,5 +1,6 @@
 /** 像素化節點: 沿用像素素材的面板, 來源是上游輸出, 多一顆「設為輸出」。 */
 import { api } from '../../api';
+import { flowJobKey } from '../model';
 import { NODE_INFO } from '../model';
 import { confirmDelete, el, showBanner } from '../../pages/ui';
 import { createPixelPanel, type PixelBackend } from '../../pixel/pixelPanel';
@@ -9,6 +10,8 @@ export function mountPixelEditor(body: HTMLElement, ctx: EditorContext): NodeEdi
   const { flowName: flow, node } = ctx;
   const backend: PixelBackend = {
     name: `${flow}_${node.id}`,
+    jobKey: flowJobKey(flow, node.id),
+    load: () => api.flows.getPixel(flow, node.id),
     fileUrl: (path) => api.flows.fileUrl(flow, `nodes/${node.id}/${path}`, ''),
     generate: (s) => api.flows.addCandidates(flow, node.id, s),
     deleteCandidate: (cid) => api.flows.deleteCandidate(flow, node.id, cid),

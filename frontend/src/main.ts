@@ -7,6 +7,7 @@ import { mountPixelPage } from './pages/pixelPage';
 import { mountFlowPage } from './pages/flowPage';
 import { canonicalPath } from './routes';
 import { mountFalBalance } from './falBalance';
+import { mountJobBar } from './jobs';
 
 type Mount = (el: HTMLElement, params: URLSearchParams) => () => void;
 
@@ -48,3 +49,4 @@ function route() {
 window.addEventListener('hashchange', route);
 route();
 mountFalBalance(document.querySelector<HTMLButtonElement>('#fal-balance')!);
+mountJobBar(document.body);

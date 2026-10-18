@@ -240,3 +240,12 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .fe-canvas { flex: none; cursor: crosshair; }
 .fe-canvas.erasing { cursor: none; touch-action: none; }
 .fe-brush { position: absolute; pointer-events: none; border: 1px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px #000; }
+
+/* 進行中的 AI 工作 */
+.job-bar { position: fixed; top: 58px; left: 50%; transform: translateX(-50%); z-index: 50; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; }
+.job-item { pointer-events: auto; display: flex; align-items: center; gap: 10px; padding: 10px 18px; border-radius: 10px; background: #2b2f36; border: 2px solid #f0b54a; box-shadow: 0 6px 24px #000c; font-size: 15px; font-weight: 600; }
+.job-item.ok { border-color: #4caf50; }
+.job-item.fail { border-color: #f44336; max-width: 70vw; }
+.job-spin { width: 16px; height: 16px; border: 3px solid #f0b54a; border-top-color: transparent; border-radius: 50%; animation: fc-spin 0.8s linear infinite; flex: none; }
+.job-time { color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+.job-close { border: none; background: none; padding: 0 4px; color: var(--muted); }

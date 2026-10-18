@@ -1,5 +1,6 @@
 import { api, type PackMeta, type WorkshopApi } from '../api';
 import { exportCollage, hasEdits, loadImage, WorkAssets } from '../proportion/draw';
+import { runningJob, trackJob } from '../jobs';
 import { MATERIALS, swatchUrl } from '../proportion/materials';
 import { Editor, type Tool } from '../proportion/editor';
 import { ANCHORS, EDIT_MODELS, ZERO_PAD, type Anchor, type Pad, type Part, type PartTransform, type SegBox, type SegPoint, type WorkMeta } from '../proportion/model';
@@ -35,6 +36,8 @@ export interface WorkshopEmbed {
   compareActions(resultId: string): HTMLElement[];
   /** 結果縮圖上的標籤(例如「輸出」) */
   resultTag(resultId: string): string | null;
+  /** 進行中 AI 工作的識別(離開再回來時接續) */
+  jobKey: string;
 }
 
 export function mountProportionPage(root: HTMLElement, params: URLSearchParams, embed?: WorkshopEmbed): () => void {
@@ -339,6 +342,9 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     });
   }
 
+  const jobKey = () => embed?.jobKey ?? (meta ? `workshop:${meta.name}` : null);
+
+  /** 標籤以「AI 」開頭的會花錢, 顯示在上方進度列 */
   async function run(label: string, fn: () => Promise<void>) {
     if (busy) return;
     busy = true;
@@ -347,7 +353,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     syncAll();
     redraw();
     try {
-      await fn();
+      await (label.startsWith('AI ') ? trackJob(label, jobKey(), fn) : fn());
     } catch (e) {
       showBanner(banner, 'error', (e as Error).message);
     } finally {
@@ -358,6 +364,17 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
         redraw();
       }
     }
+  }
+
+  /** 離開又回來時, 這個作品還有 AI 工作在跑: 鎖住操作, 跑完重新載入 */
+  async function resumeJob() {
+    const job = runningJob(jobKey());
+    if (!job || !meta) return;
+    const name = meta.name;
+    await run('上一次的 AI 工作還在跑, 完成後自動載入…', async () => {
+      await job.done;
+      if (alive && meta?.name === name) await setMeta(await wapi.getWork(name));
+    });
   }
 
   function scheduleSave() {
@@ -585,6 +602,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
       if (!embed) history.replaceState(null, '', `#/workshop?work=${encodeURIComponent(name)}`);
       redraw();
     });
+    await resumeJob();
   }
 
   async function deleteWork() {
@@ -908,7 +926,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
           const sided = missing.filter((n) => baseName(n) !== n);
           const bases = [...new Set(sided.map(baseName))];
           const plain = missing.filter((n) => baseName(n) === n);
-          const res = await wapi.segment(meta!.name, 'main', [...plain, ...bases]);
+          const res = await trackJob('AI 切部位中(套用配方)…', jobKey(), () => wapi.segment(meta!.name, 'main', [...plain, ...bases]));
           await setMeta(res.meta);
           skipped = res.missing.filter((n) => plain.includes(n));
           for (const b of bases) {
@@ -1021,6 +1039,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
         });
         syncAll();
         redraw();
+        await resumeJob();
         return;
       }
       await Promise.all([refreshWorks(), refreshPacks(), refreshRecipes()]);

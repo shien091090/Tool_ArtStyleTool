@@ -1,5 +1,6 @@
 import { api, type PackMeta, type RGB } from '../api';
 import { hexToRgb, rgbToHex } from '../colorMath';
+import { runningJob, trackJob } from '../jobs';
 import { costNote, markPaid, confirmDelete, el, option, showBanner } from './ui';
 import { COST, usd } from '../cost';
 
@@ -230,11 +231,15 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams): 
     if (on) status.textContent = text;
   }
 
+  /** 會呼叫 fal.ai 的步驟, 顯示在上方進度列 */
+  const AI_LABELS = ['拆解', '重跑線稿', '重跑法線', '重跑去光影'];
+
   async function run(label: string, fn: () => Promise<PackMeta>) {
     setBusy(true, `${label}中…可能需要一兩分鐘`);
     showBanner(banner, null);
     try {
-      meta = await fn();
+      const key = meta ? `pack:${meta.name}` : null;
+      meta = await (AI_LABELS.includes(label) ? trackJob(`AI ${label}中(約一兩分鐘)…`, key, fn) : fn());
       packs = packs.map((p) => (p.name === meta!.name ? meta! : p));
     } catch (e) {
       showBanner(banner, 'error', `${label}失敗: ${(e as Error).message}`);
@@ -264,6 +269,12 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams): 
     meta = packs.find((p) => p.name === name) ?? null;
     pop.classList.add('hidden');
     renderCells();
+    // 上次離開時這個分層包還在拆解: 鎖住操作, 跑完重新載入
+    const job = runningJob(`pack:${name}`);
+    if (job) void run('上一次的拆解還在跑, 等待', async () => {
+      await job.done;
+      return api.getPack(name);
+    });
   }
 
   createBtn.addEventListener('click', async () => {

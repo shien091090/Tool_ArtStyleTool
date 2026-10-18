@@ -1,5 +1,6 @@
 /** 改部位節點: 嵌入部位工坊, 作品的主圖取自上游輸出, 素材圖取自素材線, 生成結果「設為輸出」。 */
 import { api } from '../../api';
+import { flowJobKey } from '../model';
 import { mountProportionPage } from '../../pages/proportionPage';
 import { confirmDelete, el, showBanner } from '../../pages/ui';
 import type { WorkMeta } from '../../proportion/model';
@@ -53,6 +54,7 @@ export function mountWorkshopEditor(body: HTMLElement, ctx: EditorContext): Node
         return [b];
       },
       resultTag: (rid) => (rid === outputResult ? '輸出' : null),
+      jobKey: flowJobKey(ctx.flowName, ctx.node.id),
     });
   }
 

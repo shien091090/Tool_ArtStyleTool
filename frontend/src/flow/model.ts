@@ -113,6 +113,9 @@ export function connect(links: FlowLink[], from: string, to: string, port: PortK
   return [...kept, port === 'material' ? { from, to, port } : { from, to }];
 }
 
+/** 節點上進行中 AI 工作的識別 */
+export const flowJobKey = (flow: string, nid: string) => `flow:${flow}:${nid}`;
+
 export function newNodeId(nodes: FlowNode[]): string {
   const max = nodes.reduce((m, n) => Math.max(m, Number(n.id.slice(1)) || 0), 0);
   return `n${max + 1}`;

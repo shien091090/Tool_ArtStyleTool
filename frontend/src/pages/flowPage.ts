@@ -1,5 +1,6 @@
 /** 節點流程頁: 畫布 + 節點編輯面板, 免費節點自動往下游重跑。 */
 import { api } from '../api';
+import { onJobsChange, runningJob } from '../jobs';
 import { createFlowCanvas, NODE_H, type Selection } from '../flow/canvas';
 import { mountCutoutEditor, imgToBlob, loadImageData, readOps } from '../flow/editors/cutoutEditor';
 import { mountInputEditor } from '../flow/editors/inputEditor';
@@ -8,7 +9,7 @@ import { mountWorkshopEditor } from '../flow/editors/workshopEditor';
 import type { EditorContext, NodeEditor, OutputSource } from '../flow/editors/types';
 import { applyOps } from '../flow/magicWand';
 import {
-  connect, downstreamOf, isMaterial, materialNames, materialsOf, NODE_INFO, newNodeId, nodeStatus, STATUS_LABEL,
+  connect, downstreamOf, flowJobKey, isMaterial, materialNames, materialsOf, NODE_INFO, newNodeId, nodeStatus, STATUS_LABEL,
   upstreamOf, wouldCycle, type FlowLink, type FlowMeta, type FlowNode, type FlowNodeType, type PortKind,
 } from '../flow/model';
 import { candidateEyes } from '../pixel/model';
@@ -51,9 +52,13 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
     onNodeMenu: (id, cx, cy) => showNodeMenu(id, cx, cy),
     onLinkMenu: (l, cx, cy) => showMenu(cx, cy, [{ label: '刪除連線', danger: true, run: () => remove({ kind: 'link', link: l }) }]),
     thumbUrl: (n) => (flow && n.rev ? api.flows.fileUrl(flow.name, `out/${n.id}.png`, n.rev) : null),
-    status: (n) => (running.has(n.id) ? 'running' : flow ? nodeStatus(flow, n) : 'idle'),
+    status: (n) => (running.has(n.id) || (flow && runningJob(flowJobKey(flow.name, n.id))) ? 'running'
+      : flow ? nodeStatus(flow, n) : 'idle'),
   });
   const area = el('div', { className: 'fc-area' }, [canvas.root, menu]);
+  const offJobs = onJobsChange(() => {
+    if (flow) canvas.render(flow);
+  });
   root.append(toolbar, banner, area);
 
   function sync() {
@@ -446,6 +451,7 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
     }
     editor?.ed.dispose();
     document.removeEventListener('pointerdown', onDocDown);
+    offJobs();
     canvas.destroy();
   };
 }

@@ -6,6 +6,8 @@ import { confirmDelete, el, option, showBanner } from './ui';
 function workBackend(name: string): PixelBackend {
   return {
     name,
+    jobKey: `pixel:${name}`,
+    load: () => api.pixel.getWork(name),
     fileUrl: (path) => api.pixel.fileUrl(name, path),
     generate: (s) => api.pixel.addCandidates(name, s),
     deleteCandidate: (cid) => api.pixel.deleteCandidate(name, cid),

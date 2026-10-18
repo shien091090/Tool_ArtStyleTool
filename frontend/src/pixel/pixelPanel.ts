@@ -1,5 +1,6 @@
 /** 像素素材的來源、候選、縮小結果與右側設定(直接轉換、AI 重畫); 像素素材頁與流程的像素化節點共用。 */
 import { costNote, markPaid, el, option, showBanner } from '../pages/ui';
+import { runningJob, trackJob } from '../jobs';
 import { COST, usd } from '../cost';
 import { createGridPicker } from './gridPicker';
 import {
@@ -20,6 +21,9 @@ const EYE_MAX_R = 0.5;
 export interface PixelBackend {
   /** 下載檔名前綴 */
   name: string;
+  /** 進行中 AI 工作的識別(離開再回來時接續) */
+  jobKey: string;
+  load(): Promise<PixelWorkMeta>;
   fileUrl(path: string): string;
   generate(s: PixelSettings): Promise<{ meta: PixelWorkMeta; candidates: PixelCandidate[]; errors: string[] }>;
   deleteCandidate(cid: string): Promise<PixelWorkMeta>;
@@ -283,6 +287,7 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
     colorsInput.disabled = busy || !selected;
   }
 
+  /** 標籤以「AI 」開頭的會花錢, 顯示在上方進度列 */
   async function run(label: string, fn: () => Promise<void>) {
     if (busy) return;
     busy = true;
@@ -291,7 +296,7 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
     sync();
     opts.onBusyChange?.(true);
     try {
-      await fn();
+      await (label.startsWith('AI ') ? trackJob(label, backend?.jobKey ?? null, fn) : fn());
     } catch (e) {
       showBanner(banner, 'error', (e as Error).message);
     } finally {
@@ -553,7 +558,7 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
       first = res.candidates[0]?.id ?? null;
       if (res.errors.length) showBanner(banner, 'warn', res.errors.join('; '));
     });
-    if (first) selectCandidate(first);
+    if (first && alive) selectCandidate(first);
   }
 
   async function convert() {
@@ -615,8 +620,18 @@ export function createPixelPanel(opts: PixelPanelOptions): PixelPanel {
       resultGrid.replaceChildren();
       renderSource();
       setMeta(m);
-      const last = m?.candidates.at(-1);
-      if (last) selectCandidate(last.id);
+      const job = be ? runningJob(be.jobKey) : undefined;
+      void (async () => {
+        if (job && be) {
+          // 上次離開時 AI 還在跑: 鎖住操作, 跑完重新載入
+          await run('上一次的 AI 工作還在跑, 完成後自動載入…', async () => {
+            await job.done;
+            if (alive && backend === be) setMeta(await be.load());
+          });
+        }
+        const last = meta?.candidates.at(-1);
+        if (alive && backend === be && last) selectCandidate(last.id);
+      })();
     },
     setFal(ok) {
       falOk = ok;
