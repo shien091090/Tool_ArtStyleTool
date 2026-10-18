@@ -13,6 +13,7 @@ from ..decompose import NoClientError
 from ..fal import FalClient
 from ..imaging import encode_png, limit_size, load_rgba
 from ..pack import Pack
+from ..pack_api import add_pack_routes
 from ..pixel import service
 from ..pixel.work import PixelWork
 from ..proportion.api import add_work_routes
@@ -250,6 +251,50 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
 
     add_work_routes(r, "/{name}/nodes/{nid}/workshop", open_workshop, lambda p: f"{p['name']}-{p['nid']}", client,
                     packs_dir)
+
+    # ---- 改風格節點: 節點資料夾就是一個分層包 ----
+
+    def style_node(flow: Flow, nid: str) -> dict:
+        n = flow.node(nid)
+        if n["type"] != "style":
+            raise ValueError(f"節點 {nid} 不是改風格節點")
+        return n
+
+    def open_style(p: dict) -> Pack:
+        flow = open_flow(p["name"])
+        style_node(flow, p["nid"])
+        try:
+            return Pack.open(flow.dir / "nodes", p["nid"])
+        except FileNotFoundError:
+            raise FileNotFoundError("這個節點還沒有建立分層包") from None
+
+    @r.get("/{name}/nodes/{nid}/style/status")
+    def style_status(name: str, nid: str):
+        flow = open_flow(name)
+        style_node(flow, nid)
+        try:
+            pack = Pack.open(flow.dir / "nodes", nid)
+        except FileNotFoundError:
+            return {"exists": False, "inputRev": None}
+        return {"exists": True, "inputRev": pack.meta.get("inputRev")}
+
+    @r.post("/{name}/nodes/{nid}/style/init")
+    def style_init(name: str, nid: str):
+        """以上游輸出建立分層包(已存在就整個重建)。"""
+        flow = open_flow(name)
+        style_node(flow, nid)
+        up = flow.upstream(nid)
+        if up is None or not up.get("rev"):
+            raise ValueError("上游還沒有輸出")
+        data = encode_png(to_ai_source(flow.output(up["id"])))
+        root = flow.dir / "nodes"
+        shutil.rmtree(root / nid, ignore_errors=True)
+        pack = Pack.create(root, nid, data)
+        pack.meta["inputRev"] = up["rev"]
+        pack.save_meta()
+        return pack.meta
+
+    add_pack_routes(r, "/{name}/nodes/{nid}/style", open_style, client_factory)
 
     def existing_work(flow: Flow, nid: str) -> PixelWork:
         pixel_node(flow, nid)

@@ -7,7 +7,8 @@ from fastapi.responses import JSONResponse, Response
 
 from . import config, decompose, lospec, recipes
 from .fal import FalClient, FalError, HttpFalClient
-from .pack import LAYERS, Pack
+from .pack import Pack
+from .pack_api import add_pack_routes
 from .flow.api import create_router as create_flow_router
 from .pixel.api import create_router as create_pixel_router
 from .proportion.api import create_router as create_proportion_router
@@ -65,57 +66,12 @@ def create_app(data_dir: Path, client_factory: Callable[[], FalClient | None] = 
     async def create_pack(name: str = Form(...), file: UploadFile = File(...)):
         return Pack.create(packs_dir, name, await file.read()).meta
 
-    @app.get("/api/packs/{name}")
-    def get_pack(name: str):
-        return open_pack(name).meta
-
     @app.delete("/api/packs/{name}")
     def delete_pack(name: str):
         open_pack(name).delete()
         return {"ok": True}
 
-    @app.get("/api/packs/{name}/files/{filename}")
-    def get_file(name: str, filename: str):
-        layer = filename.removesuffix(".png")
-        if not filename.endswith(".png") or layer not in LAYERS:
-            raise HTTPException(404, "找不到檔案")
-        pack = open_pack(name)
-        if not pack.has(layer):
-            raise HTTPException(404, f"分層包還沒有「{layer}」層")
-        return Response(pack.path(layer).read_bytes(), media_type="image/png",
-                        headers={"Cache-Control": "no-store"})
-
-    @app.post("/api/packs/{name}/steps/{step}")
-    def run_step(name: str, step: str, params: dict | None = Body(default=None)):
-        pack = open_pack(name)
-        if step not in decompose.STEPS:
-            raise ValueError(f"未知的步驟: {step}")
-        decompose.run_step(pack, step, client_factory(), **(params or {}))
-        return pack.meta
-
-    @app.post("/api/packs/{name}/decompose")
-    def run_all(name: str):
-        pack = open_pack(name)
-        decompose.run_all(pack, client_factory())
-        return pack.meta
-
-    @app.put("/api/packs/{name}/layers/{layer}")
-    async def replace_layer(name: str, layer: str, file: UploadFile = File(...)):
-        pack = open_pack(name)
-        decompose.replace_layer(pack, layer, await file.read())
-        return pack.meta
-
-    @app.get("/api/packs/{name}/region")
-    def region(name: str, x: int, y: int):
-        pack = open_pack(name)
-        rid = decompose.region_at(pack, y, x)
-        return {"id": rid, "color": pack.meta["regions"]["colors"].get(str(rid))}
-
-    @app.put("/api/packs/{name}/regions/{region_id}")
-    def set_region(name: str, region_id: int, body: dict = Body(...)):
-        pack = open_pack(name)
-        decompose.set_region_color(pack, region_id, body.get("color", []))
-        return pack.meta
+    add_pack_routes(app, "/api/packs/{name}", lambda p: open_pack(p["name"]), client_factory)
 
     @app.get("/api/lospec")
     def get_lospec(url: str):

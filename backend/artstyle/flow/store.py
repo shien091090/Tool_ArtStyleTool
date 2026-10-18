@@ -11,7 +11,7 @@ import numpy as np
 from ..imaging import read_png, write_png
 from ..names import validate_name
 
-TYPES = ("input", "cutout", "pixel", "workshop")
+TYPES = ("input", "cutout", "pixel", "workshop", "style")
 _ID = re.compile(r"n[0-9]{1,6}")
 _FILE = re.compile(r"out/n[0-9]{1,6}\.png|nodes/n[0-9]{1,6}/(source\.png|ai/c[0-9]+(_[a-z_]+)?\.png)")
 
