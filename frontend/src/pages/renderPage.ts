@@ -1,5 +1,5 @@
 import { Pane } from 'tweakpane';
-import { api, isRenderable, type PackMeta } from '../api';
+import { api, isRenderable, type PackApi, type PackMeta } from '../api';
 import { Renderer } from '../gl/renderer';
 import { PRESET_LABELS, PRESET_PALETTES } from '../palettes';
 import { GRADE_LABELS } from '../grade';
@@ -14,7 +14,26 @@ const range = (path: string, step?: number) => {
   return { min, max, step: step ?? (integer ? 1 : (max - min) / 100) };
 };
 
-export function mountRenderPage(root: HTMLElement, params: URLSearchParams): () => void {
+/** 嵌入流程節點時拿到的操作 */
+export interface RenderHandle {
+  recipe(): Recipe;
+  /** 用目前的參數渲染並輸出 PNG */
+  toBlob(): Promise<Blob | null>;
+}
+
+/** 嵌入流程節點時的設定: 固定一個分層包, 不顯示分層包選單 */
+export interface RenderEmbed {
+  api: PackApi;
+  load(): Promise<PackMeta>;
+  banner: HTMLElement;
+  /** 一開始套用的配方(節點上次的設定) */
+  recipe?: unknown;
+  /** 工具列多出的按鈕(例如「設為輸出」) */
+  actions(handle: RenderHandle): HTMLElement[];
+  onRecipeChange?(recipe: Recipe): void;
+}
+
+export function mountRenderPage(root: HTMLElement, params: URLSearchParams, embed?: RenderEmbed): () => void {
   const recipe: Recipe = structuredClone(DEFAULT_RECIPE);
   let currentRecipeName = '';
   let startedFromStarter = false;
@@ -32,19 +51,30 @@ export function mountRenderPage(root: HTMLElement, params: URLSearchParams): () 
   const deleteRecipeBtn = el('button', { text: '刪除配方' });
   const compareBtn = el('button', { text: '按住看原圖' });
   const exportBtn = el('button', { text: '匯出 PNG', className: 'primary' });
-  const banner = el('div');
+  const banner = embed?.banner ?? el('div');
   const canvas = el('canvas');
   const message = el('div', { className: 'muted' });
   const canvasWrap = el('div', { className: 'canvas-wrap' }, [canvas, message]);
   const panelWrap = el('div', { className: 'panel-wrap' });
 
+  const handle: RenderHandle = {
+    recipe: () => structuredClone(recipe),
+    toBlob: () => new Promise((resolve) => {
+      if (!renderer?.loadedPack) {
+        resolve(null);
+        return;
+      }
+      renderer.render(recipe);
+      canvas.toBlob(resolve, 'image/png');
+    }),
+  };
   root.append(
     el('div', { className: 'toolbar' }, [
-      el('label', {}, ['分層包', packSel]),
+      ...(embed ? [] : [el('label', {}, ['分層包', packSel])]),
       el('label', {}, ['配方', recipeSel]), loadBtn, saveBtn, saveAsBtn, deleteRecipeBtn,
-      el('span', { className: 'spacer' }), compareBtn, exportBtn,
+      el('span', { className: 'spacer' }), compareBtn, exportBtn, ...(embed ? embed.actions(handle) : []),
     ]),
-    banner,
+    ...(embed ? [] : [banner]),
     el('div', { className: 'render-layout' }, [canvasWrap, panelWrap]),
   );
 
@@ -220,6 +250,7 @@ export function mountRenderPage(root: HTMLElement, params: URLSearchParams): () 
     recipe.lighting.azimuth = ((Math.atan2(ui.light.y, ui.light.x) * 180) / Math.PI + 360) % 360;
     updateVisibility();
     scheduleRender();
+    embed?.onRecipeChange?.(recipe);
   });
 
   // ---- 渲染 ----
@@ -245,10 +276,11 @@ export function mountRenderPage(root: HTMLElement, params: URLSearchParams): () 
     if (fixed.length) showBanner(banner, 'warn', `配方「${name}」有欄位已補預設值或修正: ${fixed.join(', ')}`);
     else showBanner(banner, null);
     scheduleRender();
+    embed?.onRecipeChange?.(recipe);
   }
 
   async function selectPack(name: string) {
-    const meta = packs.find((p) => p.name === name);
+    const meta = embed ? packs[0] : packs.find((p) => p.name === name);
     canvas.classList.add('hidden');
     if (!meta) { message.textContent = '還沒有分層包, 請先到「拆解檢查」頁建立'; return; }
     if (!isRenderable(meta)) {
@@ -257,7 +289,7 @@ export function mountRenderPage(root: HTMLElement, params: URLSearchParams): () 
     }
     message.textContent = '載入中…';
     try {
-      await renderer?.loadPack(meta);
+      await renderer?.loadPack(meta, (embed?.api ?? api).fileUrl);
       message.textContent = '';
       canvas.classList.remove('hidden');
       scheduleRender();
@@ -331,6 +363,13 @@ export function mountRenderPage(root: HTMLElement, params: URLSearchParams): () 
 
   (async () => {
     try {
+      if (embed) {
+        packs = [await embed.load()];
+        await refreshRecipes();
+        if (embed.recipe) applyRecipe(embed.recipe, '節點上次的設定');
+        await selectPack(packs[0].name);
+        return;
+      }
       packs = await api.listPacks();
       packSel.replaceChildren(...packs.map((p) => option(p.name, p.name + (isRenderable(p) ? '' : '(未完成)'))));
       const wantPack = params.get('pack');

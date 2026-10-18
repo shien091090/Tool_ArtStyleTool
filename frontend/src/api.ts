@@ -31,6 +31,8 @@ export interface PackMeta {
   flat_color_source?: 'source' | 'user_flat';
   /** colors 可在檢查點編輯; sampled 是拆解當下取的顏色, 不會被改(舊分層包沒有)。 */
   regions: { count: number; colors: Record<string, RGB>; sampled?: Record<string, RGB>; areas: Record<string, number> };
+  /** 流程改風格節點: 分層包取自上游第幾版 */
+  inputRev?: number;
 }
 
 export const RENDER_LAYERS = ['regions', 'normal', 'line_sdf', 'source'] as const;
@@ -81,6 +83,24 @@ function form(fields: Record<string, string | Blob>): FormData {
 const work = (name: string) => `/api/proportion/works/${enc(name)}`;
 const pwork = (name: string) => `/api/pixel/works/${enc(name)}`;
 const pflow = (name: string) => `/api/flows/${enc(name)}`;
+
+/** 單一分層包的呼叫; base 由分層包名組出網址(流程節點忽略名稱) */
+function packApi(base: (name: string) => string) {
+  return {
+    getPack: (name: string) => request<PackMeta>(base(name)),
+    runStep: (name: string, step: string, params: Record<string, unknown> = {}) =>
+      request<PackMeta>(`${base(name)}/steps/${step}`, json('POST', params)),
+    decomposeAll: (name: string) => request<PackMeta>(`${base(name)}/decompose`, { method: 'POST' }),
+    regionAt: (name: string, x: number, y: number) =>
+      request<{ id: number; color: RGB | null }>(`${base(name)}/region?x=${x}&y=${y}`),
+    setRegionColor: (name: string, id: number, color: RGB) =>
+      request<PackMeta>(`${base(name)}/regions/${id}`, json('PUT', { color })),
+    fileUrl: (name: string, layer: string, version = '') =>
+      `${base(name)}/files/${layer}.png?v=${enc(version || String(Date.now()))}`,
+  };
+}
+
+export type PackApi = ReturnType<typeof packApi>;
 
 /** 單一部位工坊作品的呼叫; base 由作品名組出網址(流程節點忽略作品名) */
 function workshopApi(base: (name: string) => string) {
@@ -134,19 +154,10 @@ export const api = {
   getStatus: () => request<{ fal: boolean }>('/api/status'),
   falBalance: () => request<{ balance: number; currency: string }>('/api/fal/balance'),
   listPacks: () => request<PackMeta[]>('/api/packs'),
-  getPack: (name: string) => request<PackMeta>(`/api/packs/${enc(name)}`),
   createPack: (name: string, file: File) =>
     request<PackMeta>('/api/packs', { method: 'POST', body: form({ name, file }) }),
   deletePack: (name: string) => request<{ ok: boolean }>(`/api/packs/${enc(name)}`, { method: 'DELETE' }),
-  runStep: (name: string, step: string, params: Record<string, unknown> = {}) =>
-    request<PackMeta>(`/api/packs/${enc(name)}/steps/${step}`, json('POST', params)),
-  decomposeAll: (name: string) => request<PackMeta>(`/api/packs/${enc(name)}/decompose`, { method: 'POST' }),
-  regionAt: (name: string, x: number, y: number) =>
-    request<{ id: number; color: RGB | null }>(`/api/packs/${enc(name)}/region?x=${x}&y=${y}`),
-  setRegionColor: (name: string, id: number, color: RGB) =>
-    request<PackMeta>(`/api/packs/${enc(name)}/regions/${id}`, json('PUT', { color })),
-  fileUrl: (name: string, layer: string, version = '') =>
-    `/api/packs/${enc(name)}/files/${layer}.png?v=${enc(version || String(Date.now()))}`,
+  ...packApi((name) => `/api/packs/${enc(name)}`),
   lospec: (url: string) => request<{ name: string; colors: string[] }>(`/api/lospec?url=${enc(url)}`),
   listRecipes: () => request<string[]>('/api/recipes'),
   getRecipe: (name: string) => request<unknown>(`/api/recipes/${enc(name)}`),
@@ -211,6 +222,15 @@ export const api = {
         syncMaterials: (names: Record<string, string>) =>
           request<WorkMeta>(`${base}/materials/sync`, json('POST', { names })),
         refreshMaterial: (src: string) => request<WorkMeta>(`${base}/materials/${src}/refresh`, { method: 'POST' }),
+      };
+    },
+    /** 改風格節點的分層包 */
+    style: (name: string, nid: string) => {
+      const base = `${pflow(name)}/nodes/${nid}/style`;
+      return {
+        ...packApi(() => base),
+        status: () => request<{ exists: boolean; inputRev: number | null }>(`${base}/status`),
+        init: () => request<PackMeta>(`${base}/init`, { method: 'POST' }),
       };
     },
     getPixel: (name: string, nid: string) => request<PixelWorkMeta>(`${pflow(name)}/nodes/${nid}/pixel`),

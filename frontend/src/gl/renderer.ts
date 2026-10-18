@@ -72,12 +72,12 @@ export class Renderer {
   }
 
   /** 載入分層包的圖層。版本字串帶各層的更新時間, 避開瀏覽器快取。 */
-  async loadPack(meta: PackMeta): Promise<void> {
+  async loadPack(meta: PackMeta, fileUrl: (name: string, layer: string, version: string) => string = api.fileUrl): Promise<void> {
     const version = PACK_TEXTURES.map((l) => meta.layers[l]?.updated ?? '').join('|');
     const optional = Object.keys(OPTIONAL_TEXTURES) as OptionalTexture[];
     const [bitmaps, optBitmaps] = await Promise.all([
-      Promise.all(PACK_TEXTURES.map((l) => loadBitmap(api.fileUrl(meta.name, l, version)))),
-      Promise.all(optional.map((l) => (meta.layers[l] ? loadBitmap(api.fileUrl(meta.name, l, meta.layers[l].updated)) : null))),
+      Promise.all(PACK_TEXTURES.map((l) => loadBitmap(fileUrl(meta.name, l, version)))),
+      Promise.all(optional.map((l) => (meta.layers[l] ? loadBitmap(fileUrl(meta.name, l, meta.layers[l].updated)) : null))),
     ]);
     const gl = this.gl;
     for (const t of [...Object.values(this.packTex), ...Object.values(this.optTex)]) gl.deleteTexture(t);

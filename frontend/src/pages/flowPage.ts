@@ -6,6 +6,7 @@ import { mountCutoutEditor, imgToBlob, loadImageData, readOps } from '../flow/ed
 import { mountInputEditor } from '../flow/editors/inputEditor';
 import { mountPixelEditor } from '../flow/editors/pixelEditor';
 import { mountWorkshopEditor } from '../flow/editors/workshopEditor';
+import { mountStyleEditor } from '../flow/editors/styleEditor';
 import type { EditorContext, NodeEditor, OutputSource } from '../flow/editors/types';
 import { applyOps } from '../flow/magicWand';
 import {
@@ -210,9 +211,10 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
       const n = flow.nodes.find((m) => m.id === sel.id);
       if (!n) return;
       const extra = n.type === 'pixel' ? '(含輸出與所有 AI 候選)'
-        : n.type === 'workshop' ? '(含輸出、部位、材質候選與生成結果)' : '(含輸出)';
+        : n.type === 'workshop' ? '(含輸出、部位、材質候選與生成結果)'
+          : n.type === 'style' ? '(含輸出與拆解好的分層包)' : '(含輸出)';
       const feeds = flow.links.some((l) => l.from === n.id && isMaterial(l));
-      if (n.rev || n.type === 'pixel' || n.type === 'workshop' || feeds) {
+      if (n.rev || n.type === 'pixel' || n.type === 'workshop' || n.type === 'style' || feeds) {
         const also = feeds ? '; 下游改部位節點從這張素材切出的部位也會在下次打開時移除' : '';
         if (!confirmDelete(`節點「${NODE_INFO[n.type].label}」${extra}${also}`)) return;
       }
@@ -347,7 +349,7 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
         return m;
       },
     };
-    const mount = { input: mountInputEditor, cutout: mountCutoutEditor, workshop: mountWorkshopEditor, pixel: mountPixelEditor }[node.type];
+    const mount = { input: mountInputEditor, cutout: mountCutoutEditor, workshop: mountWorkshopEditor, style: mountStyleEditor, pixel: mountPixelEditor }[node.type];
     const ed = mount(body, ctx);
     back.addEventListener('click', () => closeEditor(false));
     dl.addEventListener('click', () => downloadOutput(nid));

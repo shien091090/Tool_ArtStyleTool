@@ -181,5 +181,6 @@ describe('節點種類', () => {
   it('改部位: 有輸入、有素材接點、要花錢(上游換圖只亮過期)', async () => {
     const { NODE_INFO } = await import('../src/flow/model');
     expect(NODE_INFO.workshop).toEqual({ label: '改部位', hasInput: true, free: false, materials: true });
+    expect(NODE_INFO.style).toEqual({ label: '改風格', hasInput: true, free: false });
   });
 });
