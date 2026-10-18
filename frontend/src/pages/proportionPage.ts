@@ -192,7 +192,6 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     el('label', {}, ['旋轉', fRot]), el('label', { title: '縮放與旋轉的基準點' }, ['錨點', anchorSel]),
     el('label', { title: '以部位寬的比例計' }, ['水平位移', fDx]), el('label', { title: '以部位高的比例計' }, ['垂直位移', fDy]),
     el('div', { className: 'row' }, [upBtn, downBtn]),
-    el('div', { className: 'muted small', text: '主圖也算一層: 一直按「下移一層」可以把部位放到主圖後面(例如翅膀根部藏到身體後)' }),
   ]);
   const onNum = (input: HTMLInputElement, apply: (t: PartTransform, v: number) => PartTransform) =>
     input.addEventListener('change', () => {
