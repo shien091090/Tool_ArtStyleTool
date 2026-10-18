@@ -256,7 +256,7 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .part-panel-head { display: flex; align-items: center; gap: 8px; }
 .part-panel-head .sel-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .part-panel-close { border: none; background: none; padding: 0 6px; font-size: 16px; color: var(--muted); }
-.part-panel > div > .row, .part-panel .fields { margin-top: 6px; }
+.part-panel > div > .row { margin-top: 6px; }
 .part-panel-foot { border-top: 1px solid var(--line); padding-top: 8px; }
 .mode-bar { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 4; display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: #2b2f36; border: 2px solid #f0b54a; border-radius: 10px; box-shadow: 0 6px 24px #000c; white-space: nowrap; max-width: calc(100% - 340px); }
 .mode-bar span { overflow: hidden; text-overflow: ellipsis; }
@@ -278,3 +278,18 @@ button.seg-final { width: 100%; padding: 9px 10px; font-size: 15px; font-weight:
 .part-del:hover:not(:disabled) { color: var(--danger); }
 .mode-key { display: inline-flex; align-items: center; gap: 2px; }
 .mouse-icon { width: 14px; height: 19px; color: #ddd; }
+
+/* 部位面板: 調整頁籤 */
+.adj-tab { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }
+.adj-grid { display: grid; grid-template-columns: 40px 1fr; gap: 8px 10px; align-items: center; }
+.adj-label { font-size: 13px; color: var(--muted); }
+.adj-ctrl { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.adj-ctrl input[type='number'] { width: 64px; padding: 4px 6px; }
+.adj-ctrl select { padding: 4px 6px; }
+.adj-ctrl button { padding: 4px 10px; }
+.adj-unit { font-size: 12px; color: var(--muted); }
+.adj-check { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+.adj-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
+.adj-actions button { padding: 4px 10px; }
+.adj-actions label { display: inline-flex; align-items: center; gap: 4px; }
+.part-panel-foot button { width: 100%; }

@@ -219,12 +219,19 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   for (const a of ANCHORS) anchorSel.append(option(a, ANCHOR_LABEL[a]));
   const upBtn = button('上移一層', () => restack(1));
   const downBtn = button('下移一層', () => restack(-1));
-  const fieldBox = el('div', { className: 'fields' }, [
-    el('label', {}, [lockChk, '等比']),
-    el('label', {}, ['寬', fScaleX]), el('label', {}, ['高', fScaleY]),
-    el('label', {}, ['旋轉', fRot]), el('label', { title: '縮放與旋轉的基準點' }, ['錨點', anchorSel]),
-    el('label', { title: '以部位寬的比例計' }, ['水平位移', fDx]), el('label', { title: '以部位高的比例計' }, ['垂直位移', fDy]),
-    el('div', { className: 'row' }, [upBtn, downBtn]),
+  // 調整表單: 左邊項目名, 右邊控制項, 每列對齊
+  const formRow = (label: string, title: string, ...controls: (Node | string)[]) => [
+    el('span', { className: 'adj-label', text: label, title }),
+    el('div', { className: 'adj-ctrl' }, controls),
+  ];
+  const unit = (t: string) => el('span', { className: 'adj-unit', text: t });
+  const fieldBox = el('div', { className: 'adj-grid' }, [
+    ...formRow('尺寸', '寬高倍率, 1 = 原本大小', unit('寬'), fScaleX, unit('高'), fScaleY),
+    ...formRow('', '', el('label', { className: 'adj-check' }, [lockChk, '等比縮放'])),
+    ...formRow('旋轉', '', fRot, unit('度')),
+    ...formRow('錨點', '縮放與旋轉的基準點', anchorSel),
+    ...formRow('位移', '以部位寬高的比例計', unit('X'), fDx, unit('Y'), fDy),
+    ...formRow('圖層', '主圖也算一層', upBtn, downBtn),
   ]);
   const onNum = (input: HTMLInputElement, apply: (t: PartTransform, v: number) => PartTransform) =>
     input.addEventListener('change', () => {
@@ -275,8 +282,8 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     return b;
   }));
   const tabBodies: Record<PartTab, HTMLElement> = {
-    adjust: el('div', {}, [el('div', { className: 'row' }, [placeBtn, unplaceBtn, hideLabel]), fieldBox,
-      el('div', { className: 'row' }, [resetBtn])]),
+    adjust: el('div', { className: 'adj-tab' }, [fieldBox,
+      el('div', { className: 'adj-actions' }, [placeBtn, unplaceBtn, hideLabel, resetBtn])]),
     mask: el('div', {}, [
       el('div', { className: 'row' }, [pointBtn, boxBtn]),
       costNote(`每個點或框一次${usd(COST.segment)}`),
@@ -736,7 +743,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     const p = selPart();
     partPanel.classList.toggle('hidden', !p);
     if (p) {
-      selTitle.textContent = `${p.name}(${imgName(p.image)})`;
+      selTitle.replaceChildren(el('b', { text: p.name }), el('span', { className: 'muted small', text: ` · ${imgName(p.image)}` }));
       for (const [t, b] of tabBtns) b.classList.toggle('active', t === partTab);
       for (const [t, body] of Object.entries(tabBodies)) body.classList.toggle('hidden', t !== partTab);
       pointBtn.classList.toggle('active', tool === 'point');
