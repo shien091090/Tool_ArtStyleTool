@@ -71,6 +71,8 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   let missingNames: string[] = [];
   /** 框選新增的部位名稱 */
   let boxName = '';
+  /** 已經有部位時平常只顯示部位清單, 按「新增部位」才切回拆部位 */
+  let adding = false;
 
   // ---- 上方工具列 ----
   const banner = embed?.banner ?? el('div');
@@ -146,14 +148,26 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   const missingBox = el('div', { className: 'missing-box hidden' });
   const segBtn = markPaid(button('切部位', () => void segmentNames(), 'primary seg-final'));
   const segCost = costNote();
+  const cancelAddBtn = button('取消', () => {
+    adding = false;
+    picked.clear();
+    syncAll();
+  }, 'small');
   const segSection = section('拆部位',
-    el('div', { className: 'muted small', text: '1. 點選要切的部位(可多選)' }), chipBox, customName, helperRow,
+    el('div', { className: 'seg-head' }, [el('span', { className: 'muted small', text: '1. 點選要切的部位(可多選)' }), cancelAddBtn]),
+    chipBox, customName, helperRow,
     el('div', { className: 'seg-final-row' }, [el('div', { className: 'muted small', text: '2. 用 AI 從圖上切出來' }), segBtn, segCost]),
     missingBox);
 
   // 部位清單
   const partList = el('div', { className: 'part-list' });
-  const listSection = section('部位', partList);
+  const addPartBtn = button('+ 新增部位', () => {
+    adding = true;
+    syncAll();
+  }, 'small');
+  const listSection = el('section', { className: 'prop-section' }, [
+    el('div', { className: 'seg-head' }, [el('h3', { text: '部位' }), addPartBtn]), partList,
+  ]);
 
   // 選中部位
   const selTitle = el('div', { className: 'sel-title' });
@@ -395,16 +409,13 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     if (pick) picked.add(name);
   }
 
-  /** 名稱標籤: 已經切過的標 ✓(再選就是再切一個) */
+  /** 名稱標籤: 已經切過的不列(避免重複切浪費錢; 切不好就從部位清單刪掉再新增) */
   function syncChips() {
     const existing = new Set(meta?.parts.filter((p) => p.image === view).map((p) => baseName(p.name)) ?? []);
-    chipBox.replaceChildren(...[...QUICK_NAMES, ...extraNames].map((n) => {
-      const done = existing.has(n);
-      const b = el('button', {
-        text: done ? `✓ ${n}` : n,
-        className: `chip pick${picked.has(n) ? ' on' : ''}${done ? ' done' : ''}`,
-        title: done ? '已經切過; 再選會再切一個' : '',
-      });
+    for (const n of existing) picked.delete(n);
+    const names = [...QUICK_NAMES, ...extraNames].filter((n) => !existing.has(n));
+    chipBox.replaceChildren(...names.map((n) => {
+      const b = el('button', { text: n, className: `chip pick${picked.has(n) ? ' on' : ''}` });
       b.disabled = busy;
       b.addEventListener('click', () => {
         if (picked.has(n)) picked.delete(n);
@@ -643,6 +654,12 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     for (const s of [viewSection, segSection, listSection, padSection, recipeSection, genSection, resultSection]) {
       s.classList.toggle('hidden', !has);
     }
+    // 有部位時: 部位清單取代拆部位, 新增時才換回來
+    const listMode = has && meta!.parts.length > 0 && !adding;
+    segSection.classList.toggle('hidden', !has || listMode);
+    listSection.classList.toggle('hidden', !has || !listMode);
+    cancelAddBtn.classList.toggle('hidden', !meta?.parts.length);
+    addPartBtn.disabled = busy;
     for (const b of actionButtons) b.disabled = busy;
     deleteWorkBtn.disabled = busy || !has;
     for (const c of lockables()) c.disabled = busy;
@@ -692,6 +709,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
         el('span', { text: p.name }),
         el('span', { className: 'muted small', text: tags.join(' · ') }),
         maskToggle(p.id),
+        delPartBtn(p),
       ]);
       (row.firstChild as HTMLElement).style.background = p.color;
       row.addEventListener('click', () => {
@@ -794,6 +812,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     extraNames = [];
     picked.clear();
     missingNames = [];
+    adding = false;
     undoStack.length = 0;
     redoStack.length = 0;
     view = 'main';
@@ -883,6 +902,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
       await setMeta(res.meta);
       picked.clear();
       missingNames = res.missing;
+      adding = missingNames.length > 0; // 還有切不到的就留在拆部位, 讓使用者框出位置
       const added = res.meta.parts.filter((p) => !before.has(p.id));
       if (added.length) selected = added[added.length - 1].id;
       redraw();
@@ -952,9 +972,25 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     });
   }
 
+  /** 部位清單上的刪除鈕 */
+  function delPartBtn(p: Part): HTMLButtonElement {
+    const b = el('button', { text: '×', className: 'part-del', title: '刪除這個部位(切不好時刪掉再新增)' });
+    b.disabled = busy;
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      void deletePart(p);
+    });
+    return b;
+  }
+
   async function deleteSelected() {
     const p = selPart();
-    if (!p || !meta) return;
+    if (p) await deletePart(p);
+  }
+
+  async function deletePart(p: Part) {
+    if (!meta || busy) return;
+    if (!confirmDelete(`部位「${p.name}」(含它的材質候選)`)) return;
     await run('刪除中…', async () => {
       await flushSave();
       await setMeta(await wapi.deletePart(meta!.name, p.id));

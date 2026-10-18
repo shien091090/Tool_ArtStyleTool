@@ -272,3 +272,7 @@ button.small { font-size: 12px; padding: 2px 8px; }
 button.seg-final { width: 100%; padding: 9px 10px; font-size: 15px; font-weight: 600; }
 .missing-box { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; padding: 8px; border: 1px solid #f0b54a; border-radius: 8px; background: #f0b54a14; }
 .missing-box > div { width: 100%; color: #f0b54a; }
+.seg-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.seg-head h3 { margin: 0; }
+.part-del { border: none; background: none; padding: 0 4px; color: var(--muted); }
+.part-del:hover:not(:disabled) { color: var(--danger); }
