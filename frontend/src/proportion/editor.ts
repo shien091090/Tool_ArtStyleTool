@@ -20,6 +20,8 @@ export interface EditorState {
   locked: boolean;
   /** 結果對照: 左邊主圖, 右邊結果 */
   compare: CompareView | null;
+  /** 點選修正還沒送出的點(選中部位所屬圖的座標) */
+  pending?: { x: number; y: number; label: 0 | 1 }[];
 }
 
 /** 結果對照: 結果用當時的畫布擴大量對齊原圖 */
@@ -264,6 +266,26 @@ export class Editor {
       ctx.fill();
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 1.5 * dpr;
+      ctx.stroke();
+    }
+    // 還沒送出的點: 大一點、帶 + / − 記號
+    for (const pt of this.state?.pending ?? []) {
+      const [x, y] = this.toScreen(...applyMat(m, pt.x + 0.5, pt.y + 0.5));
+      const r = 8 * dpr;
+      ctx.fillStyle = pt.label ? '#30a46c' : '#e5484d';
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2 * dpr;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x - r / 2, y);
+      ctx.lineTo(x + r / 2, y);
+      if (pt.label) {
+        ctx.moveTo(x, y - r / 2);
+        ctx.lineTo(x, y + r / 2);
+      }
       ctx.stroke();
     }
     if (!this.canTransform(p)) return;

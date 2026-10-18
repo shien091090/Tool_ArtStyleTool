@@ -22,6 +22,25 @@ const baseName = (n: string) => n.replace(/\((左|右)\)$/, '');
 /** 素材名太長(例如雜湊檔名)時截斷顯示 */
 const NAME_MAX = 16;
 export const truncate = (s: string, max: number) => (s.length > max ? `${s.slice(0, max - 1)}…` : s);
+/** 滑鼠圖示, 亮起左鍵或右鍵 */
+function mouseIcon(side: 'left' | 'right'): SVGSVGElement {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 16 22');
+  svg.setAttribute('class', 'mouse-icon');
+  const body = document.createElementNS(NS, 'rect');
+  for (const [k, v] of Object.entries({ x: '1', y: '1', width: '14', height: '20', rx: '7', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.5' })) body.setAttribute(k, v);
+  const btn = document.createElementNS(NS, 'path');
+  btn.setAttribute('d', side === 'left' ? 'M8 1.8 A6.2 6.2 0 0 0 1.8 8 V9 H8 Z' : 'M8 1.8 A6.2 6.2 0 0 1 14.2 8 V9 H8 Z');
+  btn.setAttribute('fill', side === 'left' ? '#30a46c' : '#e5484d');
+  const line = document.createElementNS(NS, 'path');
+  line.setAttribute('d', 'M1.5 9 H14.5 M8 1.5 V9');
+  line.setAttribute('stroke', 'currentColor');
+  line.setAttribute('stroke-width', '1.2');
+  svg.append(btn, body, line);
+  return svg;
+}
+
 const splitNames = (t: string) => [...new Set(t.split(/[、,，;；\n]/).map((s) => s.trim()).filter(Boolean))];
 
 /** 嵌入流程節點時的設定: 固定一個作品, 不顯示作品列 */
@@ -71,6 +90,8 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   let missingNames: string[] = [];
   /** 框選新增的部位名稱 */
   let boxName = '';
+  /** 點選修正標好、還沒送出的點; 按「確定修正」才呼叫 AI */
+  let pending: SegPoint[] = [];
   /** 已經有部位時平常只顯示部位清單, 按「新增部位」才切回拆部位 */
   let adding = false;
 
@@ -259,7 +280,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
       el('div', { className: 'row' }, [resetBtn])]),
     mask: el('div', {}, [
       el('div', { className: 'row' }, [pointBtn, boxBtn]),
-      costNote(`點一下或框一次${usd(COST.segment)}`),
+      costNote(`每個點或框一次${usd(COST.segment)}`),
       el('div', { className: 'row' }, [undoMaskBtn, splitBtn]),
       el('div', { className: 'muted small', text: '切壞了按「復原上一次切法」或 Ctrl+Z' }),
     ]),
@@ -269,10 +290,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     el('div', { className: 'part-panel-head' }, [selTitle, closePanelBtn]), tabRow,
     ...Object.values(tabBodies), el('div', { className: 'part-panel-foot' }, [delBtn]),
   ]);
-  const modeText = el('span');
-  const modeDone = el('button', { className: 'primary' });
-  modeDone.addEventListener('click', () => exitMode());
-  const modeBar = el('div', { className: 'mode-bar hidden' }, [modeText, modeDone]);
+  const modeBar = el('div', { className: 'mode-bar hidden' });
 
   // 畫布擴大
   const padInputs = (['top', 'right', 'bottom', 'left'] as const).map((k) => {
@@ -353,7 +371,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
         scheduleSave();
       }
     },
-    onPoint: (x, y, label) => void pointAt(x, y, label),
+    onPoint: (x, y, label) => pointAt(x, y, label),
     onBox: (box) => void boxAt(box),
     onSplit: (split) => {
       if (compare) compare.split = split;
@@ -376,7 +394,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   function redraw() {
     if (!meta) return;
     editor.set({
-      meta, assets, view, tool, selected, showMasks, maskOff, lockRatio, locked: busy,
+      meta, assets, view, tool, selected, showMasks, maskOff, lockRatio, locked: busy, pending,
       compare: compare ? { result: compare.img, split: compare.split, pad: compare.pad } : null,
     });
   }
@@ -393,6 +411,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   }
 
   function exitMode() {
+    pending = [];
     if (tool === 'move') return;
     setMode('move');
   }
@@ -524,7 +543,8 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     if (e.key === 'Escape') exitMode();
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
       e.preventDefault();
-      void undo();
+      if (tool === 'point' && pending.length) undoPoint();
+      else void undo();
     } else if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
       e.preventDefault();
       redo();
@@ -624,15 +644,33 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     const p = selPart();
     canvasWrap.classList.toggle('editing', tool !== 'move');
     modeBar.classList.toggle('hidden', tool === 'move');
+    const cancel = button('取消', () => exitMode());
     if (tool === 'point') {
-      modeText.textContent = `修正「${p?.name ?? ''}」中: 左鍵 = 這裡也要, 右鍵 = 這裡不要(每點一下${usd(COST.segment)})`;
-      modeDone.textContent = '完成';
+      const n = pending.length;
+      const ok = markPaid(button(n ? `確定修正(${n} 點)` : '確定修正', () => void confirmPoints(), 'primary'));
+      ok.disabled = busy || !n;
+      const back = button('復原上一點', () => undoPoint());
+      back.disabled = !n;
+      modeBar.replaceChildren(
+        el('b', { text: `修正「${p?.name ?? ''}」` }),
+        el('span', { className: 'mode-key' }, [mouseIcon('left'), '：加入']),
+        el('span', { className: 'mode-key' }, [mouseIcon('right'), '：移除']),
+        costNote(n ? usd(COST.segment * n) : `每點${usd(COST.segment)}`),
+        back, cancel, ok,
+      );
     } else if (tool === 'box') {
-      modeText.textContent = boxIntent === 'new'
-        ? `框出「${boxName}」: 在圖上拖一個框指出位置(${usd(COST.segment)})`
-        : `框選重切「${p?.name ?? ''}」: 在圖上拖一個框, AI 只在框內找(${usd(COST.segment)})`;
-      modeDone.textContent = '取消';
+      modeBar.replaceChildren(el('span', {
+        text: boxIntent === 'new'
+          ? `框出「${boxName}」: 在圖上拖一個框指出位置(${usd(COST.segment)})`
+          : `框選重切「${p?.name ?? ''}」: 在圖上拖一個框, AI 只在框內找(${usd(COST.segment)})`,
+      }), cancel);
     }
+  }
+
+  function undoPoint() {
+    pending = pending.slice(0, -1);
+    redraw();
+    syncMode();
   }
 
   function syncFields() {
@@ -930,17 +968,35 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     if (res.missing.length) throw new Error(`這個框裡切不到「${name}」, 請把框拉大一點再試`);
   }
 
-  async function pointAt(x: number, y: number, label: 0 | 1) {
-    if (!meta || !falOk) return;
+  /** 點選修正: 先標點, 不花錢 */
+  function pointAt(x: number, y: number, label: 0 | 1) {
+    if (!meta || busy) return;
+    const p = refineTarget();
+    if (!p) {
+      showBanner(banner, 'warn', '畫布顯示的不是這個部位所在的圖, 請先切換「畫布顯示」');
+      return;
+    }
+    const img = meta.images.find((i) => i.id === p.image)!;
+    if (x < 0 || y < 0 || x >= img.w || y >= img.h) {
+      showBanner(banner, 'warn', '點的位置超出這個部位所屬的圖');
+      return;
+    }
+    showBanner(banner, null);
+    pending = [...pending.filter((q) => q.x !== x || q.y !== y), { x, y, label }];
+    redraw();
+    syncMode();
+  }
+
+  /** 確定修正: 標好的點一次送給 AI(每點一次) */
+  async function confirmPoints() {
+    const p = refineTarget();
+    if (!meta || !p || !pending.length || !falOk) return;
+    const pts = pending;
     await run('AI 重切中…', async () => {
       await flushSave();
-      const p = refineTarget();
-      if (!p) throw new Error('畫布顯示的不是這個部位所在的圖, 請先切換「畫布顯示」');
-      const img = meta!.images.find((i) => i.id === p.image)!;
-      if (x < 0 || y < 0 || x >= img.w || y >= img.h) throw new Error('點的位置超出這個部位所屬的圖');
-      await setMeta(await wapi.refine(meta!.name, p.id, [...p.points, { x, y, label }], p.box));
+      await setMeta(await wapi.refine(meta!.name, p.id, [...p.points, ...pts], p.box));
       undoStack.push({ kind: 'mask', pid: p.id });
-      redraw();
+      exitMode();
     });
   }
 

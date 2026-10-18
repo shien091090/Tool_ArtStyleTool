@@ -276,3 +276,5 @@ button.seg-final { width: 100%; padding: 9px 10px; font-size: 15px; font-weight:
 .seg-head h3 { margin: 0; }
 .part-del { border: none; background: none; padding: 0 4px; color: var(--muted); }
 .part-del:hover:not(:disabled) { color: var(--danger); }
+.mode-key { display: inline-flex; align-items: center; gap: 2px; }
+.mouse-icon { width: 14px; height: 19px; color: #ddd; }
