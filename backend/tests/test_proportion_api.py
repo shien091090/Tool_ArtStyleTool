@@ -188,6 +188,10 @@ def test_layout_and_validation(client):
     assert client.put(f"{P}/works/作品/layout", json=bad).status_code == 400
 
 
+def _png_rgba(img):
+    return cv2.imencode(".png", cv2.cvtColor(img, cv2.COLOR_RGBA2BGRA))[1].tobytes()
+
+
 def _generate(client, w=80, h=60, region_rect=(10, 10, 30, 30), options=None, alpha_hole=True):
     col = np.zeros((h, w, 4), np.uint8)
     col[..., :3] = 200
@@ -258,12 +262,28 @@ def test_generate_empty_region(client):
     assert r.status_code == 400 and "沒有任何改動" in r.json()["detail"]
 
 
-def test_generate_transparent_areas_go_to_ai(client):
+def test_generate_only_region_goes_to_ai(client):
     _create(client)
-    r = _generate(client, region_rect=None)  # 改動範圍空, 但拼貼有透明洞(40~50)
+    r = _generate(client, region_rect=None)  # 只有透明處(40~50), 沒有改動範圍 → 不需要生成
+    assert r.status_code == 400 and "沒有任何改動" in r.json()["detail"]
+    r = _generate(client)  # 透明處在改動範圍外: 鋪背景色, 不用 AI 的
     assert r.status_code == 200
     img = cv2.imdecode(np.frombuffer(client.get(f"{P}/works/作品/files/results/r1.png").content, np.uint8), cv2.IMREAD_COLOR)
-    assert (img[45, 45] == 9).all() and (img[5, 5] == 200).all()
+    assert (img[20, 20] == 9).all() and not (img[45, 45] == 9).all()
+
+
+def test_main_keeps_alpha_and_ai_gets_white(client, fal):
+    rgba = np.zeros((60, 80, 4), np.uint8)
+    rgba[10:50, 20:60] = (40, 60, 200, 255)
+    r = client.post(f"{P}/works", data={"name": "透明"}, files={"file": ("a.png", _png_rgba(rgba), "image/png")})
+    assert r.status_code == 200, r.text
+    main = cv2.imdecode(np.frombuffer(client.get(f"{P}/works/透明/files/images/main.png").content, np.uint8), cv2.IMREAD_UNCHANGED)
+    assert main.shape == (60, 80, 4) and main[0, 0, 3] == 0 and main[20, 30, 3] == 255
+    client.post(f"{P}/works/透明/parts", json={"names": ["頭"]})
+    assert fal.segment_calls[-1][0] == "head"
+    # 主圖是圖層 0, 新部位疊在上面
+    meta = client.get(f"{P}/works/透明").json()
+    assert all(p["transform"]["z"] >= 1 for p in meta["parts"])
 
 
 def test_no_client(tmp_path):

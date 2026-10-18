@@ -192,6 +192,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     el('label', {}, ['旋轉', fRot]), el('label', { title: '縮放與旋轉的基準點' }, ['錨點', anchorSel]),
     el('label', { title: '以部位寬的比例計' }, ['水平位移', fDx]), el('label', { title: '以部位高的比例計' }, ['垂直位移', fDy]),
     el('div', { className: 'row' }, [upBtn, downBtn]),
+    el('div', { className: 'muted small', text: '主圖也算一層: 一直按「下移一層」可以把部位放到主圖後面(例如翅膀根部藏到身體後)' }),
   ]);
   const onNum = (input: HTMLInputElement, apply: (t: PartTransform, v: number) => PartTransform) =>
     input.addEventListener('change', () => {
@@ -489,6 +490,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
       if (p.image === 'main' && p.transform.hidden) tags.push('隱藏');
       else if (isChanged(p) && p.image === 'main') tags.push('已調整');
       if (hasMaterial(p)) tags.push('換材質');
+      if (p.transform.z < 0 && (p.image === 'main' ? isChanged(p) : p.placed)) tags.push('在主圖後面');
       const row = el('div', { className: `part-row${p.id === selected ? ' active' : ''}` }, [
         el('span', { className: 'dot' }),
         el('span', { text: p.name }),
@@ -896,16 +898,19 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   function restack(dir: 1 | -1) {
     const p = selPart();
     if (!meta || !p || busy) return;
-    // 只跟主圖上看得到的部位交換, 否則會跟看不到的部位換了卻沒變化
+    // 只跟主圖上看得到的部位與主圖本身(圖層 0)交換, 否則會跟看不到的部位換了卻沒變化
     const onMain = (q: Part) => (q.image === 'main' ? !q.transform.hidden : q.placed);
-    const sorted = meta.parts.filter(onMain).sort((a, b) => a.transform.z - b.transform.z);
-    const i = sorted.indexOf(p);
-    const other = sorted[i + dir];
-    if (!other) return;
-    const z = p.transform.z;
-    p.transform = { ...p.transform, z: other.transform.z };
-    other.transform = { ...other.transform, z };
-    if (p.transform.z === other.transform.z) p.transform.z += dir;
+    const zOf = (e: Part | 'main') => (e === 'main' ? 0 : e.transform.z);
+    const list: (Part | 'main')[] = [...meta.parts.filter(onMain), 'main' as const].sort((a, b) => zOf(a) - zOf(b));
+    const i = list.indexOf(p);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= list.length) return;
+    [list[i], list[j]] = [list[j], list[i]];
+    // 重新編號: 主圖 0, 下面的負數、上面的正數
+    const mi = list.indexOf('main');
+    list.forEach((e, k) => {
+      if (e !== 'main') e.transform = { ...e.transform, z: k - mi };
+    });
     changed();
   }
 
@@ -991,8 +996,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     if (!meta) return;
     await run('AI 生成中(約 15 秒)…', async () => {
       await flushSave();
-      const { collage, region } = await exportCollage(meta!, assets);
-      const res = await wapi.generate(meta!.name, collage, region, {
+      const res = await wapi.generate(meta!.name, await exportCollage(meta!, assets), {
         model: modelSel.value, count: Number(countSel.value), extra: extra.value,
       });
       meta!.results = res.meta.results;

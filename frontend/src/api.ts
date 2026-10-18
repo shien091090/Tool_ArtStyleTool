@@ -124,10 +124,11 @@ function workshopApi(base: (name: string) => string) {
           ({ id: p.id, placed: p.placed, place: p.place, transform: p.transform })),
         pad,
       })),
-    generate: (name: string, collage: Blob, region: Blob, options: { model: string; count: number; extra: string }) =>
+    generate: (name: string, masks: { collage: Blob; region: Blob; behind: Blob; protect: Blob },
+      options: { model: string; count: number; extra: string }) =>
       request<{ meta: WorkMeta; results: ResultInfo[]; errors: string[] }>(`${base(name)}/generate`, {
         method: 'POST',
-        body: form({ collage, region, options: JSON.stringify(options) }),
+        body: form({ ...masks, options: JSON.stringify(options) }),
       }),
     toPack: (name: string, resultId: string) =>
       request<{ pack: string }>(`${base(name)}/results/${resultId}/to-pack`, { method: 'POST' }),

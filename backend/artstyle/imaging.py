@@ -50,6 +50,16 @@ def _to_bgr(img: np.ndarray) -> np.ndarray:
     return cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
 
+def flatten_white(img: np.ndarray) -> np.ndarray:
+    """RGBA 透明處鋪白成 RGB; 灰階轉 RGB; RGB 原樣。"""
+    if img.ndim == 2:
+        return cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+    if img.shape[2] == 3:
+        return img
+    a = img[..., 3:4].astype(np.float32) / 255
+    return (img[..., :3] * a + 255 * (1 - a)).round().astype(np.uint8)
+
+
 def encode_png(img: np.ndarray) -> bytes:
     ok, buf = cv2.imencode(".png", _to_bgr(img))
     if not ok:

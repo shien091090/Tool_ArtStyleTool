@@ -224,28 +224,87 @@ function drawAt(ctx: CanvasRenderingContext2D, src: CanvasImageSource, m: Mat) {
 
 const mainParts = (meta: WorkMeta) => meta.parts.filter((p) => p.image === 'main');
 const drawnByZ = (meta: WorkMeta) => meta.parts.filter(isDrawn).sort((a, b) => a.transform.z - b.transform.z);
+/** 主圖的圖層是 0: z < 0 的部位畫在主圖後面(被主圖不透明處蓋住) */
+const behindMain = (p: Part) => p.transform.z < 0;
+
+/** 主圖輪廓往內縮幾像素: 去背殘留的白邊在這一圈, 交給 AI 跟後面的部位接起來 */
+export function fringeRadius(w: number, h: number): number {
+  return Math.max(2, Math.round(Math.max(w, h) * 0.006));
+}
+
+/** 二值遮罩往內縮 r(方形範圍內全是 1 才留) */
+export function erode(src: Uint8Array, w: number, h: number, r: number): Uint8Array {
+  const tmp = new Uint8Array(w * h);
+  const out = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let ok = 1;
+      for (let d = -r; d <= r && ok; d++) {
+        const xx = x + d;
+        if (xx < 0 || xx >= w || !src[y * w + xx]) ok = 0;
+      }
+      tmp[y * w + x] = ok;
+    }
+  }
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let ok = 1;
+      for (let d = -r; d <= r && ok; d++) {
+        const yy = y + d;
+        if (yy < 0 || yy >= h || !tmp[yy * w + x]) ok = 0;
+      }
+      out[y * w + x] = ok;
+    }
+  }
+  return out;
+}
+
+/** 主圖後面部位不能改的地方: 主圖不透明處內縮一圈(主圖座標, 白 = 保護) */
+function protectCanvas(main: HTMLCanvasElement): HTMLCanvasElement {
+  const { width: w, height: h } = main;
+  const data = main.getContext('2d')!.getImageData(0, 0, w, h).data;
+  const solid = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) solid[i] = data[i * 4 + 3] > 127 ? 1 : 0;
+  const kept = erode(solid, w, h, fringeRadius(w, h));
+  for (let i = 0; i < kept.length; i++) kept[i] *= 255;
+  return whiteCanvas(kept, w, h);
+}
+
+/** 主圖挖掉動過/隱藏部位原位置(外擴)後的圖層, 主圖座標 */
+function mainLayer(meta: WorkMeta, assets: WorkAssets): HTMLCanvasElement {
+  const img = assets.images.get('main')!;
+  const c = canvas(img.naturalWidth, img.naturalHeight);
+  const g = c.getContext('2d')!;
+  g.drawImage(img, 0, 0);
+  g.globalCompositeOperation = 'destination-out';
+  for (const p of mainParts(meta)) {
+    const layer = assets.layers.get(p.id);
+    if (layer && isChanged(p)) drawAt(g, layer.cut, cutMatrix(layer, 0, 0));
+  }
+  return c;
+}
 
 /** 拼貼: 主圖 → 挖掉動過/隱藏部位原位置(外擴) → 依 z 畫上動過的部位; 擴大的區域透明。 */
 export function drawCollage(ctx: CanvasRenderingContext2D, meta: WorkMeta, assets: WorkAssets): void {
   const { w, h } = collageSize(meta);
   const { left, top } = meta.pad;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, w, h);
-  ctx.drawImage(assets.images.get('main')!, left, top);
-  ctx.globalCompositeOperation = 'destination-out';
-  for (const p of mainParts(meta)) {
-    const layer = assets.layers.get(p.id);
-    if (layer && isChanged(p)) drawAt(ctx, layer.cut, cutMatrix(layer, left, top));
-  }
   ctx.globalCompositeOperation = 'source-over';
-  for (const p of drawnByZ(meta)) {
+  ctx.clearRect(0, 0, w, h);
+  const parts = drawnByZ(meta);
+  const drawPart = (p: Part) => {
     const layer = assets.layers.get(p.id);
     if (layer) drawAt(ctx, layer.pixels, layerMatrix(p, layer, left, top));
-  }
+  };
+  parts.filter(behindMain).forEach(drawPart);
+  ctx.drawImage(mainLayer(meta, assets), left, top);
+  parts.filter((p) => !behindMain(p)).forEach(drawPart);
 }
 
-/** 改動範圍: 動過/隱藏的主圖部位原位置 ∪ 動過的部位新位置 ∪ 只換材質部位的邊緣環。黑底白範圍。 */
-export function drawRegion(ctx: CanvasRenderingContext2D, meta: WorkMeta, assets: WorkAssets): void {
+/** 改動範圍: 動過/隱藏的主圖部位原位置 ∪ 動過的部位新位置 ∪ 只換材質部位的邊緣環。黑底白範圍。
+ * 主圖後面的部位另外畫在 behind(扣掉 protect), 生成貼回時它的漸層不蓋到主圖。 */
+export function drawRegion(ctx: CanvasRenderingContext2D, meta: WorkMeta, assets: WorkAssets,
+  behindCtx: CanvasRenderingContext2D, protectCtx: CanvasRenderingContext2D): void {
   const { w, h } = collageSize(meta);
   const { left, top } = meta.pad;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -256,12 +315,29 @@ export function drawRegion(ctx: CanvasRenderingContext2D, meta: WorkMeta, assets
     const layer = assets.layers.get(p.id);
     if (layer && isChanged(p)) drawAt(ctx, layer.cut, cutMatrix(layer, left, top));
   }
+  // 主圖後面的部位: 被主圖蓋住的地方(內縮一圈)不用改
+  const behind = canvas(w, h);
+  const bctx = behind.getContext('2d')!;
+  let anyBehind = false;
   for (const p of drawnByZ(meta)) {
     const layer = assets.layers.get(p.id);
     if (!layer) continue;
-    if (isMaterialOnly(p)) drawAt(ctx, layer.ring, ringMatrix(p, layer, left, top));
-    else drawAt(ctx, layer.white, layerMatrix(p, layer, left, top));
+    anyBehind ||= behindMain(p);
+    const g = behindMain(p) ? bctx : ctx;
+    if (isMaterialOnly(p)) drawAt(g, layer.ring, ringMatrix(p, layer, left, top));
+    else drawAt(g, layer.white, layerMatrix(p, layer, left, top));
   }
+  for (const g of [behindCtx, protectCtx]) {
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.fillStyle = '#000';
+    g.fillRect(0, 0, w, h);
+  }
+  if (!anyBehind) return;
+  const protect = protectCanvas(mainLayer(meta, assets));
+  bctx.globalCompositeOperation = 'destination-out';
+  bctx.drawImage(protect, left, top);
+  behindCtx.drawImage(behind, 0, 0);
+  protectCtx.drawImage(protect, left, top);
 }
 
 /** 素材圖檢視: 原圖 + 該圖上換過材質的部位。 */
@@ -284,13 +360,13 @@ function toBlob(c: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => c.toBlob((b) => (b ? resolve(b) : reject(new Error('輸出圖片失敗'))), 'image/png'));
 }
 
-export async function exportCollage(meta: WorkMeta, assets: WorkAssets): Promise<{ collage: Blob; region: Blob }> {
+export async function exportCollage(meta: WorkMeta, assets: WorkAssets): Promise<{ collage: Blob; region: Blob; behind: Blob; protect: Blob }> {
   const { w, h } = collageSize(meta);
   const c1 = canvas(w, h);
   drawCollage(c1.getContext('2d')!, meta, assets);
-  const c2 = canvas(w, h);
-  drawRegion(c2.getContext('2d')!, meta, assets);
-  return { collage: await toBlob(c1), region: await toBlob(c2) };
+  const [c2, c3, c4] = [canvas(w, h), canvas(w, h), canvas(w, h)];
+  drawRegion(c2.getContext('2d')!, meta, assets, c3.getContext('2d')!, c4.getContext('2d')!);
+  return { collage: await toBlob(c1), region: await toBlob(c2), behind: await toBlob(c3), protect: await toBlob(c4) };
 }
 
 /** 主圖座標的點是否落在部位(變形後)上。 */

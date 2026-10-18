@@ -101,7 +101,7 @@ def add_work_routes(r: APIRouter, base: str, resolve: Callable[[dict], Work], pa
     def add_parts(request: Request, body: dict = Body(...)):
         work = resolve(request.path_params)
         image_id = body.get("image", "main")
-        img = work.image(image_id)
+        img = work.image_rgb(image_id)
         names = []
         for n in body.get("names") or []:
             if not isinstance(n, str):
@@ -131,7 +131,7 @@ def add_work_routes(r: APIRouter, base: str, resolve: Callable[[dict], Work], pa
         info = work.image_info(part["image"])
         points = _points(body.get("points"), info["w"], info["h"])
         box = _box(body.get("box"), info["w"], info["h"])
-        img = work.image(part["image"])
+        img = work.image_rgb(part["image"])
         c = client()
         if box != part["box"] or not points:
             # 換框(或清掉點)= 以名稱 + 框重切, 之前的點作廢
@@ -171,7 +171,7 @@ def add_work_routes(r: APIRouter, base: str, resolve: Callable[[dict], Work], pa
     @r.post(base + "/suggest-parts")
     def suggest_parts(request: Request, body: dict = Body(...)):
         work = resolve(request.path_params)
-        img = work.image(body.get("image", "main"))
+        img = work.image_rgb(body.get("image", "main"))
         items = suggest.parse(client().vision(img, suggest.PROMPT))
         for it in items:
             if it["name"] not in parts.NAMES:
@@ -194,7 +194,7 @@ def add_work_routes(r: APIRouter, base: str, resolve: Callable[[dict], Work], pa
                 ref = limit_size(load_rgb(await reference.read()), 1024)  # 參考圖只看質感, 不用大圖
             except ValueError:
                 raise ValueError("參考圖無法讀取, 請換一張圖")
-        src = work.image(part["image"])
+        src = work.image_rgb(part["image"])
         mask = work.mask(part_id)
         box = materials.crop_box(mask)
         x0, y0, x1, y1 = box
@@ -234,7 +234,8 @@ def add_work_routes(r: APIRouter, base: str, resolve: Callable[[dict], Work], pa
 
     @r.post(base + "/generate")
     async def generate(request: Request, collage: UploadFile = File(...), region: UploadFile = File(...),
-                       options: str = Form(...)):
+                       options: str = Form(...), behind: UploadFile | None = File(None),
+                       protect: UploadFile | None = File(None)):
         work = resolve(request.path_params)
         try:
             opts = json.loads(options)
@@ -256,14 +257,24 @@ def add_work_routes(r: APIRouter, base: str, resolve: Callable[[dict], Work], pa
         if col.shape[2] == 3:
             col = np.dstack([col, np.full(col.shape[:2], 255, np.uint8)])
         reg = to_gray(reg) if reg.ndim == 3 else reg
+
+        async def mask(f: UploadFile | None) -> np.ndarray | None:
+            if f is None:
+                return None
+            m = decode_any(await f.read())
+            return to_gray(m) if m.ndim == 3 else m
+
+        beh = await mask(behind)
+        prot = await mask(protect)
         main = work.image_info("main")
         pad = work.meta["pad"]
         expect = (main["h"] + pad["top"] + pad["bottom"], main["w"] + pad["left"] + pad["right"])
-        if col.shape[:2] != expect or reg.shape[:2] != expect:
+        if col.shape[:2] != expect or any(m is not None and m.shape[:2] != expect for m in (reg, beh, prot)):
             raise ValueError(f"拼貼尺寸與作品不符(應為 {expect[1]}x{expect[0]})")
-        # 拼貼的透明處(挖掉的洞、擴大的畫布)一定要交給 AI 補, 不能留補洞演算法的糊色
-        reg = np.where((reg > 127) | (col[..., 3] < 128), 255, 0).astype(np.uint8)
-        if not reg.any():
+        # 只有改動範圍交給 AI; 透明處(主圖背景、擴大的畫布)鋪背景色就好,
+        # 整圈交給 AI 會讓主體邊緣混到 AI 重畫的版本而糊掉
+        reg = np.where(reg > 127, 255, 0).astype(np.uint8)
+        if not reg.any() and not (beh is not None and (beh > 127).any()):
             raise ValueError("沒有任何改動, 不需要生成")
         has_foreign = any(p["placed"] and p["image"] != "main" for p in work.meta["parts"])
         prompt = compose.build_prompt(has_foreign, extra)
@@ -271,7 +282,7 @@ def add_work_routes(r: APIRouter, base: str, resolve: Callable[[dict], Work], pa
         images = client().edit(model, filled, prompt, count)
         params = {"model": model, "count": count, "extra": extra, "prompt": prompt,
                   "parts": work.meta["parts"], "pad": pad}
-        results = [work.add_result(compose.paste_back(ai, filled, reg), params) for ai in images]
+        results = [work.add_result(compose.paste_back(ai, filled, reg, beh, prot), params) for ai in images]
         errors = []
         if len(results) < count:
             errors.append(f"要求 {count} 張, AI 只回傳 {len(results)} 張")

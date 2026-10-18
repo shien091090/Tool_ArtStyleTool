@@ -36,6 +36,16 @@ def to_ai_source(img: np.ndarray) -> np.ndarray:
     return (img[..., :3] * alpha + 255 * (1 - alpha)).round().astype(np.uint8)
 
 
+def crop_opaque(img: np.ndarray) -> np.ndarray:
+    """節點輸出 → 改部位主圖: 裁到不透明範圍, 保留透明(部位才能放到主圖後面)。"""
+    if img.ndim == 2 or img.shape[2] == 3:
+        return img
+    ys, xs = np.nonzero(img[..., 3] > 0)
+    if not len(xs):
+        raise ValueError("上游輸出整張都是透明的")
+    return img[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+
+
 def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]) -> APIRouter:
     flows_dir = Path(data_dir) / "flows"
     packs_dir = Path(data_dir) / "packs"
@@ -200,7 +210,7 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
         up = flow.upstream(nid)
         if up is None or not up.get("rev"):
             raise ValueError("上游還沒有輸出")
-        data = encode_png(to_ai_source(flow.output(up["id"])))
+        data = encode_png(crop_opaque(flow.output(up["id"])))
         root = flow.dir / "nodes"
         shutil.rmtree(root / nid, ignore_errors=True)
         work = Work.create(root, nid, data, f"上游 第 {up['rev']} 版")

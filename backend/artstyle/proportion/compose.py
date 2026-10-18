@@ -9,7 +9,8 @@ BASE_PROMPT = ("This image is a rough cut-and-paste edit: some parts were moved,
                "Repair it into a clean, seamless illustration. Fix the seams, blend the edges, redraw any broken "
                "or duplicated lines, and fill any gaps or empty areas naturally. Keep the new size, proportion and "
                "position of every part exactly as shown - do not shrink or enlarge anything back. Keep the same "
-               "art style, linework, colors, pose and composition.")
+               "art style, linework, colors, pose and composition. Keep the background plain flat white: do not "
+               "add any glow, halo, haze or light spill around the character.")
 FOREIGN_PROMPT = (" Some parts were taken from another illustration: keep their design, but unify their art style, "
                   "linework, coloring and shading so they match the rest of the image.")
 
@@ -44,15 +45,28 @@ def feather_pad(w: int, h: int) -> int:
     return max(8, round(max(w, h) * 0.03))
 
 
-def paste_back(ai: np.ndarray, base: np.ndarray, region: np.ndarray) -> np.ndarray:
-    """改動範圍膨脹後漸層過渡; 範圍內完全用 AI, 膨脹+漸層以外與 base 逐像素相同。"""
-    h, w = base.shape[:2]
-    ai = resize_to(ai[..., :3], w, h)
-    pad = feather_pad(w, h)
+def _feather(region: np.ndarray, pad: int) -> np.ndarray:
+    """範圍內 1, 往外膨脹後漸層到 0。"""
     core = (region > 127).astype(np.float32)
     grown = cv2.dilate(core, np.ones((pad, pad), np.uint8))
     sigma = pad / 2
     k = 2 * round(3 * sigma) + 1
-    alpha = np.maximum(cv2.GaussianBlur(grown, (k, k), sigma), core)[..., None]
+    return np.maximum(cv2.GaussianBlur(grown, (k, k), sigma), core)
+
+
+def paste_back(ai: np.ndarray, base: np.ndarray, region: np.ndarray, behind: np.ndarray | None = None,
+               protect: np.ndarray | None = None) -> np.ndarray:
+    """改動範圍膨脹後漸層過渡; 範圍內完全用 AI, 膨脹+漸層以外與 base 逐像素相同。
+    behind: 主圖後面部位的範圍, 它的漸層不蓋到 protect(主圖不透明處), 主體輪廓才不會混到 AI 版本而糊掉。"""
+    h, w = base.shape[:2]
+    ai = resize_to(ai[..., :3], w, h)
+    pad = feather_pad(w, h)
+    alpha = _feather(region, pad)
+    if behind is not None and (behind > 127).any():
+        b = _feather(behind, pad)
+        if protect is not None:
+            b = np.where(protect > 127, 0, b)
+        alpha = np.maximum(alpha, b)
+    alpha = alpha[..., None]
     blend = np.clip(ai.astype(np.float32) * alpha + base.astype(np.float32) * (1 - alpha), 0, 255).round().astype(np.uint8)
     return np.where(alpha > 0, blend, base)

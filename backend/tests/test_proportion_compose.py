@@ -53,3 +53,18 @@ def test_build_prompt():
     assert "proportion" in p and "another illustration" not in p
     p2 = compose.build_prompt(True, "接縫畫成毛皮")
     assert "another illustration" in p2 and p2.endswith("接縫畫成毛皮")
+
+
+def test_paste_back_behind_does_not_touch_protected():
+    base = np.full((40, 40, 3), 100, np.uint8)
+    ai = np.full((40, 40, 3), 9, np.uint8)
+    region = np.zeros((40, 40), np.uint8)
+    behind = np.zeros((40, 40), np.uint8)
+    behind[:, :20] = 255
+    protect = np.zeros((40, 40), np.uint8)
+    protect[:, 20:] = 255
+    out = compose.paste_back(ai, base, region, behind, protect)
+    assert (out[:, :20] == 9).all()            # 後面部位的範圍用 AI
+    assert (out[:, 20:] == 100).all()          # 主圖保護的地方漸層也不蓋上去
+    out = compose.paste_back(ai, base, behind)  # 同樣範圍當一般改動: 漸層會蓋到右邊
+    assert (out[:, 21] != 100).all()

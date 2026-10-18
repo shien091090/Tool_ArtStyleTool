@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 
 from .. import config
-from ..imaging import limit_size, load_rgb, read_png, write_png
+from ..imaging import flatten_white, limit_size, load_rgb, load_rgba, read_png, write_png
 from ..names import validate_name
 
 COLORS = ["#e5484d", "#30a46c", "#0090ff", "#f76b15", "#8e4ec6", "#12a594",
@@ -133,7 +133,8 @@ class Work:
         root = Path(root)
         if (root / name).exists():
             raise FileExistsError(f"作品「{name}」已存在")
-        img = limit_size(load_rgb(image_bytes), config.MAX_SIDE)  # 先解碼, 壞圖不留下空資料夾
+        # 主圖保留透明(去背過的圖), 部位才能放到主圖後面; 先解碼, 壞圖不留下空資料夾
+        img = limit_size(load_rgba(image_bytes), config.MAX_SIDE)
         now = _now()
         work = cls(root, name, {"version": 1, "name": name, "created": now, "updated": now,
                                 "images": [], "parts": [], "pad": {"top": 0, "right": 0, "bottom": 0, "left": 0},
@@ -227,6 +228,10 @@ class Work:
         self.image_info(image_id)
         return read_png(self.dir / "images" / f"{image_id}.png")
 
+    def image_rgb(self, image_id: str) -> np.ndarray:
+        """送 AI 用: 透明處鋪白。"""
+        return flatten_white(self.image(image_id))
+
     # ---- 部位 ----
     def part(self, part_id: str) -> dict:
         for p in self.meta["parts"]:
@@ -250,7 +255,8 @@ class Work:
     def add_part(self, name: str, image_id: str, mask: np.ndarray, points: list, box) -> dict:
         mask = self._check_mask(image_id, mask)
         n = self._next("part")
-        z = max((p["transform"]["z"] for p in self.meta["parts"]), default=0) + 1
+        # 主圖的圖層是 0, 新部位一律疊在主圖與所有部位上面
+        z = max(max((p["transform"]["z"] for p in self.meta["parts"]), default=0) + 1, 1)
         part = {"id": f"p{n}", "name": name, "image": image_id, "color": COLORS[(n - 1) % len(COLORS)],
                 "points": list(points), "box": box, "placed": image_id == "main", "place": None,
                 "transform": identity_transform(z), "bbox": mask_bbox(mask)}
