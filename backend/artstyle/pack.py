@@ -12,10 +12,9 @@ from .names import validate_name
 
 LAYERS = ["source", "depth", "normal", "normal_detail", "line", "line_sdf", "delight", "regions", "flat", "user_flat", "ao", "silhouette_sdf", "shade"]
 DEPENDENTS = {
-    "source": ["depth", "normal_detail", "line", "delight", "flat", "shade"],
+    "source": ["depth", "normal_detail", "line", "regions", "flat", "shade"],
     "depth": ["normal", "normal_detail", "ao", "silhouette_sdf"],
-    "line": ["line_sdf", "regions"],
-    "delight": ["regions", "flat", "shade"],
+    "line": ["line_sdf", "shade"],
     "regions": ["flat", "silhouette_sdf", "shade"],
 }
 

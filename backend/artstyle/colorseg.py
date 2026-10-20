@@ -28,7 +28,7 @@ def _smooth(img: np.ndarray) -> np.ndarray:
     return resize_to(sm, w, h)
 
 
-def color_segments(img: np.ndarray, k: int = 12, min_area: int = 40) -> np.ndarray:
+def color_segments(img: np.ndarray, k: int = 12, min_area: int = 40, thin: float = 2) -> np.ndarray:
     """RGB → 區塊編號 1..N: 保邊平滑 → OKLab k-means 分 k 色 → 同色且相連的像素為一塊 → 小碎塊併入最近的大塊。"""
     h, w = img.shape[:2]
     smooth = _smooth(img)
@@ -53,7 +53,7 @@ def color_segments(img: np.ndarray, k: int = 12, min_area: int = 40) -> np.ndarr
         next_id += n - 1
     areas = np.array([0] + areas)
 
-    # 細條(顏色交界的過渡色帶)也要併掉: 區塊內離邊界最遠的距離 < 2px 就算細條
+    # 細條(顏色交界的過渡色帶)也要併掉: 區塊內離邊界最遠的距離 < thin 就算細條
     edge = np.zeros((h, w), bool)
     edge[:, 1:] |= labels[:, 1:] != labels[:, :-1]
     edge[:, :-1] |= labels[:, 1:] != labels[:, :-1]
@@ -62,7 +62,7 @@ def color_segments(img: np.ndarray, k: int = 12, min_area: int = 40) -> np.ndarr
     inner = cv2.distanceTransform((~edge).astype(np.uint8), cv2.DIST_L2, 3)
     thickness = np.zeros(next_id, np.float32)
     np.maximum.at(thickness, labels.ravel(), inner.ravel())
-    small = (areas[labels] < min_area) | (thickness[labels] < 2)
+    small = (areas[labels] < min_area) | (thickness[labels] < thin)
     if small.all():
         small = labels != np.argmax(areas)
     if small.any():

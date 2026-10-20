@@ -11,15 +11,6 @@ export interface LayerInfo {
   origin: string;
   updated: string;
   stale: boolean;
-  params?: {
-    method?: 'color' | 'line';
-    color_source?: 'delight' | 'source';
-    colors?: number;
-    min_area: number;
-    gap_radius: number;
-    merge?: number;
-  };
-  color_source?: 'source' | 'delight' | 'user_flat';
 }
 
 export interface PackMeta {
@@ -28,7 +19,6 @@ export interface PackMeta {
   height: number;
   created: string;
   layers: Record<string, LayerInfo>;
-  flat_color_source?: 'source' | 'user_flat';
   /** colors 可在檢查點編輯; sampled 是拆解當下取的顏色, 不會被改(舊分層包沒有)。 */
   regions: { count: number; colors: Record<string, RGB>; sampled?: Record<string, RGB>; areas: Record<string, number> };
   /** 流程改風格節點: 分層包取自上游第幾版 */

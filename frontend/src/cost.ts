@@ -10,8 +10,6 @@ export const COST = {
   gptImage: 0.06,
   /** Qwen 改圖: 每百萬像素, 送出的圖約 1 百萬像素 */
   qwen: 0.03,
-  /** FLUX Kontext(AI 去光影): 每張 */
-  kontext: 0.04,
   /** Marigold 深度: 依算力, 約 10 秒 */
   depth: 0.01,
   /** 線稿: 依算力, 約幾秒 */

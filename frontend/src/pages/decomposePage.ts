@@ -4,7 +4,7 @@ import { runningJob, trackJob } from '../jobs';
 import { costNote, markPaid, confirmDelete, el, option, showBanner } from './ui';
 import { COST, usd } from '../cost';
 
-const STEP_ORDER = ['depth', 'normal', 'normal_detail', 'line', 'line_sdf', 'delight', 'regions', 'flat', 'shade', 'ao', 'silhouette_sdf'];
+const STEP_ORDER = ['depth', 'normal', 'normal_detail', 'line', 'line_sdf', 'regions', 'flat', 'shade', 'ao', 'silhouette_sdf'];
 
 function originLabel(origin: string | undefined): string {
   if (!origin) return '尚未產生';
@@ -13,7 +13,7 @@ function originLabel(origin: string | undefined): string {
 }
 
 interface Cell {
-  layer: 'source' | 'line' | 'flat' | 'normal' | 'delight';
+  layer: 'source' | 'line' | 'flat' | 'normal';
   title: string;
   root: HTMLElement;
   origin: HTMLElement;
@@ -61,32 +61,6 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams, e
   overlayOpacity.value = '0.7';
 
   // ---- 四格 ----
-  const numberInput = (min: string, max: string, step = '1') => {
-    const i = el('input');
-    i.type = 'number';
-    i.min = min;
-    i.max = max;
-    i.step = step;
-    return i;
-  };
-  const methodSel = el('select');
-  methodSel.append(option('color', '依顏色'), option('line', '依線稿'));
-  const sourceSel = el('select');
-  sourceSel.append(option('delight', 'AI 去光影'), option('source', '原圖'));
-  const colorsInput = numberInput('2', '64');
-  const areaInput = numberInput('1', '100000');
-  const gapInput = numberInput('0', '16');
-  const mergeInput = numberInput('0', '0.5', '0.01');
-  const colorsLabel = el('label', { title: '依顏色分成幾色, 越多細節越多' }, ['色數', colorsInput]);
-  const gapLabel = el('label', { title: '線條沒接起來導致顏色漏到隔壁時調大' }, ['補線縫', gapInput]);
-  const mergeLabel = el('label', { title: '相鄰且顏色差距小於這個值的區塊合併, 0 = 不合併' }, ['合併相近色', mergeInput]);
-  const syncMethod = () => {
-    const line = methodSel.value === 'line';
-    colorsLabel.classList.toggle('hidden', line);
-    gapLabel.classList.toggle('hidden', !line);
-    mergeLabel.classList.toggle('hidden', !line);
-  };
-  methodSel.addEventListener('change', syncMethod);
   const normalView = el('select');
   normalView.append(option('normal', '看大形'), option('normal_detail', '看細部'));
   normalView.addEventListener('change', () => renderCells());
@@ -119,17 +93,8 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams, e
       markPaid(button('重跑', () => step('重跑線稿', [['line', {}]]))), costNote(usd(COST.line)),
     ]),
     makeCell('flat', '平塗', [
-      el('label', {}, ['切法', methodSel]),
-      el('label', { title: 'AI 去光影的圖顏色較乾淨; 若它改變了構圖或顏色就改用原圖' }, ['取色', sourceSel]),
-      colorsLabel, gapLabel, mergeLabel,
-      el('label', { title: '小於這個面積的碎塊併入鄰近區塊' }, ['最小面積', areaInput]),
-      button('重算區塊', () => step('重算區塊', [
-        ['regions', {
-          method: methodSel.value, color_source: sourceSel.value, colors: Number(colorsInput.value),
-          min_area: Number(areaInput.value), gap_radius: Number(gapInput.value), merge: Number(mergeInput.value),
-        }], ['flat', {}],
-      ])),
-      el('span', { className: 'muted', text: '點圖上的區塊可以改色' }),
+      markPaid(button('重畫', () => step('重畫平塗', [['regions', {}], ['flat', {}]]))), costNote(usd(COST.gptImage)),
+      el('span', { className: 'muted', text: 'GPT Image 2 畫平塗再整理成色塊; 點圖上的區塊可以改色' }),
     ]),
     makeCell('normal', '法線', [
       normalView,
@@ -140,14 +105,10 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams, e
         text: '渲染時兩張都會用: 大形決定整體明暗, 細部疊上去; 各自強度在渲染頁的「大形立體感」「細部立體感」調',
       }),
     ]),
-    makeCell('delight', 'AI 去光影', [
-      markPaid(button('重跑', () => step('重跑去光影', [['delight', {}]]))), costNote(usd(COST.kontext)),
-      el('span', { className: 'muted', text: '平塗的取色來源' }),
-    ]),
   ];
   cells[2].root.classList.add('clickable');
 
-  const runAllCost = costNote(`最多${usd(COST.depth + COST.line + COST.kontext)}(只跑還沒跑過的步驟)`);
+  const runAllCost = costNote(`最多${usd(COST.depth + COST.line + COST.gptImage)}(只跑還沒跑過的步驟)`);
   const overlayBar = [el('label', {}, [overlayChk, '疊上線稿比對']), el('label', {}, ['不透明度', overlayOpacity])];
   if (embed) {
     root.append(falBanner, el('div', { className: 'toolbar' }, [runAllBtn, runAllCost, el('span', { className: 'spacer' }), ...overlayBar]),
@@ -227,18 +188,9 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams, e
       if (c.layer === 'flat') img.addEventListener('click', onFlatClick);
       c.view.append(stack);
     }
-    const p = m.layers.regions?.params;
-    methodSel.value = p?.method ?? 'color';
-    sourceSel.value = p?.color_source ?? 'delight';
-    colorsInput.value = String(p?.colors ?? 12);
-    areaInput.value = String(p?.min_area ?? 30);
-    gapInput.value = String(p?.gap_radius ?? 3);
-    mergeInput.value = String(p?.merge ?? 0.06);
-    syncMethod();
     const staleCount = STEP_ORDER.filter((s) => m.layers[s]?.stale).length;
     const missing = STEP_ORDER.filter((s) => !m.layers[s]).length;
     status.textContent = missing ? `還有 ${missing} 步未完成` : staleCount ? `有 ${staleCount} 層已過期` : '拆解完成';
-    if ((m.flat_color_source ?? m.layers.flat?.color_source) === 'user_flat') cells[2].origin.textContent += '(顏色取自上傳的平塗圖)';
   }
 
   function setBusy(on: boolean, text = '') {
@@ -248,7 +200,7 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams, e
   }
 
   /** 會呼叫 fal.ai 的步驟, 顯示在上方進度列 */
-  const AI_LABELS = ['拆解', '重跑線稿', '重跑法線', '重跑去光影'];
+  const AI_LABELS = ['拆解', '重跑線稿', '重跑法線', '重畫平塗'];
 
   async function run(label: string, fn: () => Promise<PackMeta>) {
     setBusy(true, `${label}中…可能需要一兩分鐘`);

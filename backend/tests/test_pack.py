@@ -44,4 +44,4 @@ def test_write_layer_marks_downstream_stale(tmp_path):
     p.write_layer("line", np.zeros((4, 4), np.uint8), "user")
     layers = Pack.open(tmp_path, "a").meta["layers"]
     assert not layers["line"]["stale"]
-    assert layers["line_sdf"]["stale"] and layers["regions"]["stale"] and layers["flat"]["stale"]
+    assert layers["line_sdf"]["stale"] and not layers["regions"]["stale"] and not layers["flat"]["stale"]

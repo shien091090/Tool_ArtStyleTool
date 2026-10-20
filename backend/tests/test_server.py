@@ -41,10 +41,9 @@ def test_upload_decompose_and_fetch(client):
 def test_run_single_step_with_params(client):
     _upload(client)
     client.post("/api/packs/騎士/decompose")
-    r = client.post("/api/packs/騎士/steps/regions", json={"method": "line", "gap_radius": 1, "min_area": 5})
-    assert r.status_code == 200
-    params = r.json()["layers"]["regions"]["params"]
-    assert params["method"] == "line" and params["gap_radius"] == 1 and params["min_area"] == 5
+    r = client.post("/api/packs/騎士/steps/regions", json={})
+    assert r.status_code == 200, r.text
+    assert r.json()["layers"]["regions"]["origin"] == "ai:gpt-image-2"
     assert r.json()["layers"]["flat"]["stale"]
 
 

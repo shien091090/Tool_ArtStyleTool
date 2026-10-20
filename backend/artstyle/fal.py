@@ -8,10 +8,6 @@ import numpy as np
 from .imaging import decode_any, resize_to, to_data_uri, to_gray
 
 DEPTH_MODEL = "fal-ai/imageutils/marigold-depth"
-DELIGHT_MODEL = "fal-ai/flux-pro/kontext"
-DELIGHT_PROMPT = ("Remove only the lighting from this illustration: no shadows, no highlights, no shading gradients, "
-                  "no reflections. Keep every material's original hue and saturation exactly, just as evenly lit flat "
-                  "base colors. Keep composition, outlines, proportions, framing and all details identical.")
 # 使用者實測 lineart 效果最好, 只保留這一種
 LINE_MODELS = {"lineart": "fal-ai/image-preprocessors/lineart"}
 SAM_MODEL = "fal-ai/sam-3/image"

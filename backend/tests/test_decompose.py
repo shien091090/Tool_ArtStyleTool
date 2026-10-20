@@ -12,7 +12,7 @@ def _png(img):
 
 
 def _source():
-    img = np.full((60, 80, 3), 230, np.uint8)
+    img = np.full((60, 80, 3), 255, np.uint8)
     cv2.rectangle(img, (10, 10), (70, 50), (40, 40, 40), 2)
     img[12:49, 12:39] = (60, 60, 200)    # 左半紅(BGR)
     img[12:49, 41:69] = (200, 60, 60)    # 右半藍
@@ -23,7 +23,17 @@ def _source():
 class FakeFal:
     def __init__(self, fail_on=None):
         self.calls = []
+        self.edit_sizes = []
         self.fail_on = fail_on
+
+    def edit(self, model, img, prompt, num_images, extra_images=()):
+        self.calls.append(model)
+        self.edit_sizes.append(img.shape[:2])
+        # AI 平塗: 去掉線條, 右上角故意畫出原圖主體外
+        out = img.copy()
+        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        out[gray < 50] = (230, 230, 230)
+        return [cv2.resize(out, (out.shape[1] * 2, out.shape[0] * 2), interpolation=cv2.INTER_NEAREST)]
 
     def run_image(self, model, img, **params):
         self.calls.append(model)
@@ -31,8 +41,6 @@ class FakeFal:
             raise FalError("模擬失敗")
         if "depth" in model:
             return np.full((30, 40), 128, np.uint8)  # 故意給一半尺寸
-        if "kontext" in model:
-            return cv2.resize(img, (88, 66))         # 去光影: 故意給不同尺寸
         gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
         return 255 - np.where(gray < 50, 0, 255).astype(np.uint8)  # 黑底白線
 
@@ -44,7 +52,7 @@ def pack(tmp_path):
 
 def test_run_all_produces_aligned_layers(pack):
     decompose.run_all(pack, FakeFal())
-    for layer in ["depth", "normal", "normal_detail", "line", "line_sdf", "delight", "regions", "flat"]:
+    for layer in ["depth", "normal", "normal_detail", "line", "line_sdf", "regions", "flat"]:
         assert pack.read(layer).shape[:2] == (60, 80)
     flat = pack.read("flat")
     assert flat[30, 25, 0] > 150 and flat[30, 55, 2] > 150
@@ -62,8 +70,8 @@ def test_rerun_line_marks_downstream_stale(pack):
     decompose.run_step(pack, "line", FakeFal())
     layers = pack.meta["layers"]
     assert layers["line"]["origin"] == "ai:fal-ai/image-preprocessors/lineart"
-    assert layers["regions"]["stale"] and layers["flat"]["stale"] and layers["line_sdf"]["stale"]
-    assert not layers["normal"]["stale"]
+    assert layers["line_sdf"]["stale"] and layers["shade"]["stale"]
+    assert not layers["normal"]["stale"] and not layers["regions"]["stale"]   # 平塗不靠線稿, 不用重畫
     calls = FakeFal()
     decompose.run_all(pack, calls)
     assert calls.calls == []
@@ -85,12 +93,6 @@ def test_ai_step_without_client(pack):
         decompose.run_step(pack, "depth", None)
 
 
-def test_regions_params_recorded(pack):
-    decompose.run_all(pack, FakeFal())
-    decompose.run_step(pack, "regions", None, method="line", gap_radius=5, min_area=30, merge=0.1)
-    params = pack.meta["layers"]["regions"]["params"]
-    assert params["method"] == "line" and params["gap_radius"] == 5 and params["min_area"] == 30 and params["merge"] == 0.1
-    assert pack.meta["layers"]["flat"]["stale"]
 
 
 def test_set_region_color_updates_flat(pack):
@@ -108,13 +110,6 @@ def test_region_at_out_of_bounds(pack):
         decompose.region_at(pack, 999, 0)
 
 
-def test_replace_flat_resamples_from_user_image(pack):
-    decompose.run_all(pack, FakeFal())
-    user = np.zeros((30, 40, 3), np.uint8)
-    user[:] = (0, 200, 0)                     # BGR 綠, 故意給不同尺寸
-    decompose.replace_layer(pack, "flat", _png(user))
-    assert pack.read("flat")[30, 25].tolist() == [0, 200, 0]
-    assert pack.meta["layers"]["flat"]["color_source"] == "user_flat"
 
 
 def test_replace_line_marks_downstream(pack):
@@ -122,7 +117,7 @@ def test_replace_line_marks_downstream(pack):
     line = np.full((60, 80), 255, np.uint8)
     decompose.replace_layer(pack, "line", _png(line))
     assert pack.meta["layers"]["line"]["origin"] == "user"
-    assert pack.meta["layers"]["regions"]["stale"]
+    assert pack.meta["layers"]["line_sdf"]["stale"] and not pack.meta["layers"]["regions"]["stale"]
 
 
 def test_replace_unknown_layer(pack):
@@ -137,13 +132,6 @@ def _line_png():
     return _png(line)
 
 
-def test_no_key_with_user_layers_reaches_renderable(pack):
-    decompose.replace_layer(pack, "line", _line_png())
-    decompose.replace_layer(pack, "normal", _png(np.full((60, 80, 3), (255, 128, 128), np.uint8)))
-    decompose.run_all(pack, None)
-    for layer in ["line_sdf", "regions", "flat"]:
-        assert pack.has(layer)
-    assert not pack.has("depth")
 
 
 def test_run_all_skips_depth_when_user_normal_exists(pack):
@@ -154,19 +142,6 @@ def test_run_all_skips_depth_when_user_normal_exists(pack):
     assert pack.meta["layers"]["normal"]["origin"] == "user"
 
 
-def test_no_key_still_runs_local_steps_then_reports(pack):
-    decompose.replace_layer(pack, "line", _line_png())
-    with pytest.raises(decompose.NoClientError):
-        decompose.run_all(pack, None)          # 缺法線又沒金鑰
-    assert pack.has("regions") and pack.has("flat")
-
-
-def test_upload_flat_before_regions_does_not_fake_flat_layer(pack):
-    decompose.replace_layer(pack, "flat", _png(np.full((60, 80, 3), (0, 200, 0), np.uint8)))
-    assert "flat" not in pack.meta["layers"]
-    decompose.replace_layer(pack, "line", _line_png())
-    decompose.run_all(pack, FakeFal())
-    assert pack.read("flat")[30, 25].tolist() == [0, 200, 0]
 
 
 def test_only_lineart_model():
@@ -174,43 +149,14 @@ def test_only_lineart_model():
     assert list(LINE_MODELS) == ["lineart"] and decompose.DEFAULT_LINE_MODEL == "lineart"
 
 
-def test_default_regions_cut_by_color_from_delight(pack):
-    calls = FakeFal()
-    decompose.run_all(pack, calls)
-    assert any("kontext" in c for c in calls.calls)
-    params = pack.meta["layers"]["regions"]["params"]
-    assert params["method"] == "color" and params["color_source"] == "delight"
-    assert pack.read("delight").shape[:2] == (60, 80)
 
 
-def test_no_key_skips_delight_and_uses_source(pack):
-    decompose.replace_layer(pack, "line", _line_png())
-    decompose.replace_layer(pack, "normal", _png(np.full((60, 80, 3), (255, 128, 128), np.uint8)))
-    decompose.run_all(pack, None)
-    assert not pack.has("delight") and pack.has("flat")
-    assert pack.read("flat")[30, 25, 0] > 150                # 左半紅, 取自原圖
 
 
-def test_color_source_param_source(pack):
-    decompose.run_all(pack, FakeFal())
-    decompose.run_step(pack, "regions", None, color_source="source", colors=4)
-    p = pack.meta["layers"]["regions"]["params"]
-    assert p["color_source"] == "source" and p["colors"] == 4
 
 
-def test_line_method_merge_reduces_regions(pack):
-    decompose.run_all(pack, FakeFal())
-    decompose.run_step(pack, "regions", None, method="line", merge=0.0)
-    decompose.run_step(pack, "flat", None)
-    before = pack.meta["regions"]["count"]
-    decompose.run_step(pack, "regions", None, method="line", merge=0.5)
-    decompose.run_step(pack, "flat", None)
-    assert pack.meta["regions"]["count"] < before
 
 
-def test_bad_region_params(pack):
-    with pytest.raises(ValueError):
-        decompose.run_step(pack, "regions", None, method="nope")
 
 
 def test_run_all_produces_ao_and_silhouette(pack):
@@ -218,16 +164,11 @@ def test_run_all_produces_ao_and_silhouette(pack):
     assert pack.read("ao").shape == (60, 80) and pack.read("silhouette_sdf").shape == (60, 80)
 
 
-def test_silhouette_without_depth_uses_regions(pack):
-    decompose.replace_layer(pack, "line", _line_png())
-    decompose.replace_layer(pack, "normal", _png(np.full((60, 80, 3), (255, 128, 128), np.uint8)))
-    decompose.run_all(pack, None)
-    assert pack.has("silhouette_sdf") and not pack.has("ao")
 
 
 def test_recut_regions_refreshes_silhouette(pack):
     decompose.run_all(pack, FakeFal())
-    decompose.run_step(pack, "regions", None, colors=4)
+    decompose.run_step(pack, "regions", FakeFal())
     assert pack.has("silhouette_sdf") and not pack.is_stale("silhouette_sdf")
 
 
@@ -243,17 +184,11 @@ def test_shade_layer_and_sampled_colors(pack):
 
 def test_recut_regions_and_flat_refresh_shade(pack):
     decompose.run_all(pack, FakeFal())
-    decompose.run_step(pack, "regions", None, colors=4)
+    decompose.run_step(pack, "regions", FakeFal())
     decompose.run_step(pack, "flat", None)
     assert not pack.is_stale("shade")
 
 
-def test_user_flat_refreshes_shade(pack):
-    decompose.run_all(pack, FakeFal())
-    before = pack.read("shade").copy()
-    decompose.replace_layer(pack, "flat", _png(np.full((60, 80, 3), (0, 200, 0), np.uint8)))
-    assert not pack.is_stale("shade")
-    assert not np.array_equal(pack.read("shade"), before)      # 取色變了, 原圖光影跟著重算
 
 
 def test_old_pack_gets_sampled_backfilled(pack):
@@ -262,3 +197,43 @@ def test_old_pack_gets_sampled_backfilled(pack):
     pack.save_meta()
     decompose.run_step(pack, "shade", None)
     assert pack.meta["regions"]["sampled"] == pack.meta["regions"]["colors"]
+
+
+def test_ai_flat_regions_from_gpt(pack):
+    calls = FakeFal()
+    decompose.run_all(pack, calls)
+    assert "gpt-image-2" in calls.calls
+    h, w = calls.edit_sizes[0]
+    assert abs(w / h - 1.5) < 0.01                  # 補白成 GPT 支援的比例才送
+    assert pack.meta["layers"]["regions"]["origin"] == "ai:gpt-image-2"
+    assert pack.meta["layers"]["flat"]["origin"] == "ai:gpt-image-2"
+    flat = pack.read("flat")
+    assert flat[0, 0].tolist() == [255, 255, 255]   # 原圖主體外是背景
+    assert flat[30, 25, 0] > 150 and flat[30, 55, 2] > 150
+    assert flat[30, 39].tolist() != [230, 230, 230]  # AI 漏畫的中線(原圖主體內)用旁邊的色塊補
+
+
+def test_flat_rerun_keeps_edited_colors(pack):
+    decompose.run_all(pack, FakeFal())
+    rid = decompose.region_at(pack, 30, 25)
+    decompose.set_region_color(pack, rid, (0, 255, 0))
+    decompose.run_step(pack, "flat", None)
+    assert pack.read("flat")[30, 25].tolist() == [0, 255, 0]
+
+
+def test_ai_flat_needs_key(pack):
+    with pytest.raises(decompose.NoClientError):
+        decompose.run_step(pack, "regions", None)
+
+
+def test_no_key_runs_local_steps_then_reports(pack):
+    decompose.replace_layer(pack, "line", _line_png())
+    decompose.replace_layer(pack, "normal", _png(np.full((60, 80, 3), (255, 128, 128), np.uint8)))
+    with pytest.raises(decompose.NoClientError, match="AI 平塗"):
+        decompose.run_all(pack, None)
+    assert pack.has("line_sdf") and not pack.has("regions")
+
+
+def test_flat_not_replaceable(pack):
+    with pytest.raises(ValueError):
+        decompose.replace_layer(pack, "flat", _png(_source()))
