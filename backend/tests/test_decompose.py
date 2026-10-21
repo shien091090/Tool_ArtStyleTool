@@ -206,6 +206,7 @@ def test_ai_flat_regions_from_gpt(pack):
     h, w = calls.edit_sizes[0]
     assert abs(w / h - 1.5) < 0.01                  # 補白成 GPT 支援的比例才送
     assert pack.meta["layers"]["regions"]["origin"] == "ai:gpt-image-2"
+    assert pack.read("flat_ai").shape[:2] == pack.read("source").shape[:2]  # AI 原圖留著
     assert pack.meta["layers"]["flat"]["origin"] == "ai:gpt-image-2"
     flat = pack.read("flat")
     assert flat[0, 0].tolist() == [255, 255, 255]   # 原圖主體外是背景
