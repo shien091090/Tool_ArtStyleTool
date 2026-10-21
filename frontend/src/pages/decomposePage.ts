@@ -94,7 +94,8 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams, e
     ]),
     makeCell('flat', '平塗', [
       markPaid(button('重畫', () => step('重畫平塗', [['regions', {}], ['flat', {}]]))), costNote(usd(COST.gptImage)),
-      el('span', { className: 'muted', text: 'GPT Image 2 畫平塗再整理成色塊; 點圖上的區塊可以改色' }),
+      button('復原', () => undoColor()), button('重做', () => redoColor()),
+      el('span', { className: 'muted', text: 'GPT Image 2 畫平塗再整理成色塊; 點圖上的區塊可以改色(Ctrl+Z 復原、Ctrl+Y 重做)' }),
     ]),
     makeCell('normal', '法線', [
       normalView,
@@ -138,9 +139,61 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams, e
   popClose.addEventListener('click', () => pop.classList.add('hidden'));
   popColor.addEventListener('change', () => {
     if (!meta || !popRegion) return;
-    const color = hexToRgb(popColor.value) as RGB;
-    run(`區塊 ${popRegion} 改色`, () => papi.setRegionColor(meta!.name, popRegion, color));
+    const region = popRegion;
+    const before = meta.regions?.colors[String(region)];
+    const after = hexToRgb(popColor.value) as RGB;
+    if (before) {
+      syncHistory();
+      undoStack.push({ region, before, after });
+      redoStack = [];
+    }
+    run(`區塊 ${region} 改色`, () => papi.setRegionColor(meta!.name, region, after));
   });
+
+  // ---- 改色復原 ----
+  interface ColorEdit { region: number; before: RGB; after: RGB }
+  let undoStack: ColorEdit[] = [];
+  let redoStack: ColorEdit[] = [];
+  let historyKey = '';
+  /** 換了分層包或區塊重畫過, 編號對不上了, 清空復原紀錄 */
+  function syncHistory() {
+    const key = meta ? `${meta.name}|${meta.layers.regions?.updated ?? ''}` : '';
+    if (key !== historyKey) {
+      undoStack = [];
+      redoStack = [];
+      historyKey = key;
+    }
+  }
+  function applyColor(edit: ColorEdit, color: RGB, label: string) {
+    if (!meta) return;
+    if (popRegion === edit.region) popColor.value = rgbToHex(color);
+    void run(`${label}區塊 ${edit.region} 改色`, () => papi.setRegionColor(meta!.name, edit.region, color));
+  }
+  function undoColor() {
+    if (busy) return;
+    syncHistory();
+    const edit = undoStack.pop();
+    if (!edit) { showBanner(banner, 'info', '沒有可以復原的改色'); return; }
+    redoStack.push(edit);
+    applyColor(edit, edit.before, '復原');
+  }
+  function redoColor() {
+    if (busy) return;
+    syncHistory();
+    const edit = redoStack.pop();
+    if (!edit) { showBanner(banner, 'info', '沒有可以重做的改色'); return; }
+    undoStack.push(edit);
+    applyColor(edit, edit.after, '重做');
+  }
+  const onKey = (e: KeyboardEvent) => {
+    if (!meta || !root.isConnected || !(e.ctrlKey || e.metaKey)) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+    const k = e.key.toLowerCase();
+    if (k === 'z' && !e.shiftKey) { e.preventDefault(); undoColor(); }
+    else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redoColor(); }
+  };
+  document.addEventListener('keydown', onKey);
 
   async function onFlatClick(e: MouseEvent) {
     if (!meta || busy) return;
@@ -311,5 +364,8 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams, e
     }
   })();
 
-  return () => pop.remove();
+  return () => {
+    pop.remove();
+    document.removeEventListener('keydown', onKey);
+  };
 }
