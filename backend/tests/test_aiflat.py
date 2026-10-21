@@ -1,6 +1,6 @@
 import numpy as np
 
-from artstyle.aiflat import align_to_source, background, flat_regions, snap_to_lines
+from artstyle.aiflat import align_to_source, background, flat_regions
 
 
 def _src():
@@ -41,27 +41,3 @@ def test_align_moves_ai_edges_onto_source_lines():
     out = align_to_source(ai, src, lines)
     blue = (out[30] == (40, 40, 200)).all(axis=1).nonzero()[0]
     assert abs(blue[0] - 30) < abs(33 - 30)     # 交界比原本更貼近線稿
-
-
-def test_snap_moves_color_boundary_onto_line():
-    labels = np.ones((40, 40), np.int32)
-    labels[:, 22:] = 2                          # AI 的交界畫在 x=22
-    lines = np.zeros((40, 40), bool)
-    lines[:, 19:21] = True                      # 線稿在 x=19~20
-    fg = np.zeros((40, 40), bool)
-    fg[5:35, 5:35] = True
-    out = snap_to_lines(labels, lines, fg)
-    assert (out[10, 5:19] == 1).all()
-    assert (out[10, 21:35] == 2).all()          # 越過線的細條改成線另一側的顏色
-    assert out[10, 19] == 1 and out[10, 20] == 2  # 線底下對半分
-    assert (out[~fg] == labels[~fg]).all()
-
-
-def test_snap_keeps_narrow_cell_between_lines():
-    labels = np.ones((40, 40), np.int32)
-    labels[:, 20:23] = 3                        # 兩條線中間一條窄的細節
-    lines = np.zeros((40, 40), bool)
-    lines[:, 19] = lines[:, 23] = True
-    fg = np.ones((40, 40), bool)
-    out = snap_to_lines(labels, lines, fg)
-    assert (out[10, 20:23] == 3).all()

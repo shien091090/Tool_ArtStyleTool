@@ -17,8 +17,6 @@ WHITE = (255, 255, 255)
 # 2026-10-21 實驗: AI 各部位各自偏 1~3px, 局部對齊一次最好(輪廓 93.5% → 97.1%), 多做幾次反而變差
 ALIGN_MAX_SHIFT = 12
 ALIGN_SMOOTH = 3
-# 貼著線稿、最厚不超過這麼多 px 的色塊細條, 當成 AI 畫歪越線的部分
-SNAP_SLIVER = 3
 
 
 def background(img: np.ndarray, level: int = 235) -> np.ndarray:
@@ -50,65 +48,9 @@ def align_to_source(ai: np.ndarray, source: np.ndarray, lines: np.ndarray) -> np
                      borderMode=cv2.BORDER_CONSTANT, borderValue=WHITE)
 
 
-def _fill_nearest(labels: np.ndarray, known: np.ndarray, target: np.ndarray) -> np.ndarray:
-    """target 裡的像素改成最近的 known 像素的編號。"""
-    _, nearest = cv2.distanceTransformWithLabels((~known).astype(np.uint8), cv2.DIST_L2, 5,
-                                                 labelType=cv2.DIST_LABEL_PIXEL)
-    lut = np.zeros(int(nearest.max()) + 1, labels.dtype)
-    lut[nearest[known]] = labels[known]
-    return np.where(target, lut[nearest], labels)
-
-
-def snap_to_lines(labels: np.ndarray, lines: np.ndarray, fg: np.ndarray) -> np.ndarray:
-    """色塊交界貼到線稿上: 線稿圍出的每一格裡, 貼著線的細條(越線畫過來或沒畫到線)
-    改成同一格裡相鄰的色塊, 線稿底下的像素分給兩側最近的色塊, 交界就落在線中間。"""
-    free = fg & ~lines
-    if not free.any():
-        return labels
-    dist = cv2.distanceTransform((~lines).astype(np.uint8), cv2.DIST_L2, 3)
-    _, cell = cv2.connectedComponents(free.astype(np.uint8), connectivity=4)
-    # 每個編號各自切成連通的小塊, 全部編進同一張圖(0 = 不在 free 裡)
-    piece = np.zeros(labels.shape, np.int32)
-    count = 0
-    for k in np.unique(labels[free]):
-        n, cc = cv2.connectedComponents((free & (labels == k)).astype(np.uint8), connectivity=4)
-        piece = np.where(cc > 0, cc + count, piece)
-        count += n - 1
-    on = piece > 0
-    thick = np.zeros(count + 1, np.float32)
-    np.maximum.at(thick, piece[on], dist[on])
-    area = np.bincount(piece[on], minlength=count + 1)
-    piece_cell = np.zeros(count + 1, np.int32)
-    piece_cell[piece[on]] = cell[on]  # 一塊只會落在一格裡
-    thin = thick <= SNAP_SLIVER
-    thin[0] = False
-    # 整格都是細條(兩條線中間的窄格): 留最大的那塊
-    has_thick = np.zeros(int(cell.max()) + 1, bool)
-    has_thick[piece_cell[1:][~thin[1:]]] = True
-    for c in np.unique(piece_cell[thin]):
-        if not has_thick[c]:
-            ids = np.nonzero(thin & (piece_cell == c))[0]
-            thin[ids[np.argmax(area[ids])]] = False
-    sliver = thin[piece]
-    # 細條從同一格的鄰居往內長, 不跨線
-    out = np.where(free & ~sliver, labels, -1)
-    for _ in range(4 * SNAP_SLIVER + 4):
-        todo = sliver & (out < 0)
-        if not todo.any():
-            break
-        for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)):
-            near, near_cell = np.roll(out, (dy, dx), (0, 1)), np.roll(cell, (dy, dx), (0, 1))
-            take = todo & (out < 0) & (near >= 0) & (near_cell == cell)
-            out[take] = near[take]
-    out = np.where(out < 0, labels, out)
-    out = _fill_nearest(out, free, fg & lines)
-    return np.where(fg, out, labels)
-
-
 def flat_regions(ai: np.ndarray, source: np.ndarray,
                  lines: np.ndarray | None = None) -> tuple[np.ndarray, dict[int, tuple[int, int, int]]]:
-    """ai: AI 畫的平塗(已縮回原圖尺寸); lines: 原圖線稿遮罩, 有的話先對齊再把交界貼到線上
-    (用原圖邊緣代替會被光影干擾, 反而更偏)。
+    """ai: AI 畫的平塗(已縮回原圖尺寸); lines: 原圖線稿遮罩, 有的話先對齊(用原圖邊緣代替會被光影干擾, 反而更偏)。
     回傳 (區塊編號 1..N, {編號: 顏色}), 最後一號是背景。
     原圖主體內 AI 沒畫到的地方用最近的色塊補, 原圖主體外的一律當背景。"""
     h, w = source.shape[:2]
@@ -123,9 +65,11 @@ def flat_regions(ai: np.ndarray, source: np.ndarray,
         raise ValueError("AI 畫出來的平塗是空白的, 請再畫一次")
     hole = fg & ~known
     if hole.any():
-        labels = _fill_nearest(labels, known, hole)
-    if lines is not None:
-        labels = snap_to_lines(labels, lines, fg)
+        _, nearest = cv2.distanceTransformWithLabels((~known).astype(np.uint8), cv2.DIST_L2, 5,
+                                                     labelType=cv2.DIST_LABEL_PIXEL)
+        lut = np.zeros(int(nearest.max()) + 1, np.int32)
+        lut[nearest[known]] = labels[known]
+        labels = np.where(hole, lut[nearest], labels)
     ids = np.unique(labels[fg])
     lut = np.zeros(int(labels.max()) + 1, np.int32)
     lut[ids] = np.arange(1, len(ids) + 1)
