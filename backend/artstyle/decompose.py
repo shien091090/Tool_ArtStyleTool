@@ -78,7 +78,8 @@ def run_step(pack: Pack, step: str, client: FalClient | None, **params) -> None:
         src = pack.read("source")
         sent, box = letterbox(src)
         ai = unbox(_client(client).edit(FLAT_MODEL, sent, FLAT_PROMPT, 1)[0], sent.shape[:2], box)
-        labels, colors = flat_regions(resize_to(ai[..., :3], w, h), src)
+        lines = line_mask(pack.read("line")) if pack.has("line") else None
+        labels, colors = flat_regions(resize_to(ai[..., :3], w, h), src, lines)
         pack.write_layer("regions", encode_labels(labels), f"ai:{FLAT_MODEL}")
         pack.set_regions_meta(colors, region_areas(labels))
         if pack.has("silhouette_sdf"):

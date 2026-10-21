@@ -1,6 +1,6 @@
 import numpy as np
 
-from artstyle.aiflat import background, flat_regions
+from artstyle.aiflat import align_to_source, background, flat_regions
 
 
 def _src():
@@ -27,3 +27,17 @@ def test_flat_regions_aligns_to_source():
     assert labels[10, 10] != bg              # 原圖主體內 AI 沒畫到: 補最近的色塊
     assert colors[labels[10, 10]] == colors[labels[20, 20]]
     assert set(np.unique(labels).tolist()) == set(colors)
+
+
+def test_align_moves_ai_edges_onto_source_lines():
+    src = np.full((60, 60, 3), 255, np.uint8)
+    src[10:50, 10:50] = (200, 40, 40)
+    src[10:50, 30:50] = (40, 40, 200)
+    lines = np.zeros((60, 60), bool)
+    lines[10:50, 30] = True                     # 兩色交界的線稿
+    ai = np.full((60, 60, 3), 255, np.uint8)
+    ai[12:52, 12:52] = (200, 40, 40)
+    ai[12:52, 33:52] = (40, 40, 200)            # AI 整塊往右下偏 2~3px
+    out = align_to_source(ai, src, lines)
+    blue = (out[30] == (40, 40, 200)).all(axis=1).nonzero()[0]
+    assert abs(blue[0] - 30) < abs(33 - 30)     # 交界比原本更貼近線稿
