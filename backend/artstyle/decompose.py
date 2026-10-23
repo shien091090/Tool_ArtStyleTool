@@ -2,13 +2,13 @@
 import numpy as np
 
 from . import config
-from .aiflat import FLAT_MODEL, FLAT_PROMPT, flat_regions
+from .aiflat import FLAT_MODEL, FLAT_PROMPT, background, flat_regions, segment_flat
 from .fal import DEPTH_MODEL, LINE_MODELS, FalClient
 from .flat import paint, region_areas
 from .imaging import load_rgb, resize_to
 from .shade import encode_shade, region_shade
 from .masks import ambient_occlusion, foreground, silhouette_sdf
-from .lines import encode_sdf, line_mask, normalize_line, signed_distance
+from .lines import CLEAN_DEFAULT_LEVEL, CLEAN_MAX_LEVEL, clean_line, encode_sdf, line_mask, normalize_line, signed_distance
 from .normals import depth_to_normal, detail_normal, focus_foreground, normalize_depth
 from .pack import Pack
 from .proportion.compose import letterbox, unbox
@@ -17,7 +17,8 @@ from .regions import decode_labels, encode_labels
 STEPS = ["depth", "normal", "normal_detail", "line", "line_sdf", "regions", "flat", "shade", "ao", "silhouette_sdf"]
 STEP_NAMES = {"depth": "深度", "normal": "法線", "normal_detail": "細部法線", "line": "線稿",
               "line_sdf": "線條距離場", "regions": "AI 平塗", "flat": "平塗", "ao": "環境遮蔽",
-              "silhouette_sdf": "主體剪影", "shade": "原圖光影", "source": "原圖"}
+              "silhouette_sdf": "主體剪影", "shade": "原圖光影", "source": "原圖",
+              "line_ai": "線稿原稿", "flat_ai": "AI 平塗原圖", "flat_seg": "AI 平塗色塊"}
 DEFAULT_LINE_MODEL = "lineart"
 REPLACEABLE = ["line", "normal"]
 
@@ -47,6 +48,37 @@ def _depth01(pack: Pack) -> np.ndarray:
     return raw.astype(np.float32) / (65535 if raw.dtype == np.uint16 else 255)
 
 
+def _clean_level(params: dict, pack: Pack) -> int:
+    level = params.get("level", pack.meta["layers"].get("line", {}).get("level", CLEAN_DEFAULT_LEVEL))
+    if not isinstance(level, int) or isinstance(level, bool) or not 0 <= level <= CLEAN_MAX_LEVEL:
+        raise ValueError(f"去雜線程度必須是 0~{CLEAN_MAX_LEVEL} 的整數")
+    return level
+
+
+def _write_clean_line(pack: Pack, level: int) -> None:
+    """線稿原稿 → 乾淨線稿, 再重算靠線稿的層: 線條距離場, 有 AI 平塗原圖的話重新分格平塗。"""
+    fg = ~background(pack.read("source")[..., :3])
+    origin = pack.meta["layers"]["line_ai"]["origin"]
+    pack.write_layer("line", clean_line(pack.read("line_ai"), fg, level), origin, level=level)
+    run_step(pack, "line_sdf", None)
+    if pack.has("flat_ai") and pack.has("regions"):
+        _split_regions(pack)
+        run_step(pack, "flat", None)
+
+
+def _split_regions(pack: Pack) -> None:
+    """AI 平塗原圖 → 照線稿分格的區塊。"""
+    ai, src = pack.read("flat_ai")[..., :3], pack.read("source")[..., :3]
+    if not pack.has("flat_seg") or pack.is_stale("flat_seg"):
+        pack.write_layer("flat_seg", encode_labels(segment_flat(ai, src)), "computed")
+    lines = line_mask(pack.read("line")) if pack.has("line") else None
+    labels, colors = flat_regions(ai, src, lines, decode_labels(pack.read("flat_seg")))
+    pack.write_layer("regions", encode_labels(labels), pack.meta["layers"]["flat_ai"]["origin"])
+    pack.set_regions_meta(colors, region_areas(labels))
+    if pack.has("silhouette_sdf"):
+        run_step(pack, "silhouette_sdf", None)  # 剪影取自區塊, 區塊變了就要跟著重算
+
+
 def run_step(pack: Pack, step: str, client: FalClient | None, **params) -> None:
     w, h = _size(pack)
     if step == "depth":
@@ -67,8 +99,17 @@ def run_step(pack: Pack, step: str, client: FalClient | None, **params) -> None:
         key = params.get("model", DEFAULT_LINE_MODEL)
         if key not in LINE_MODELS:
             raise ValueError(f"未知的線稿模型: {key}(可用: {', '.join(LINE_MODELS)})")
+        level = _clean_level(params, pack)
         raw = _client(client).run_image(LINE_MODELS[key], pack.read("source"))
-        pack.write_layer("line", normalize_line(raw, w, h), f"ai:{LINE_MODELS[key]}")
+        pack.write_layer("line_ai", normalize_line(raw, w, h), f"ai:{LINE_MODELS[key]}")
+        _write_clean_line(pack, level)
+    elif step == "line_clean":
+        level = _clean_level(params, pack)
+        if not pack.has("line_ai"):
+            _require(pack, "line")
+            # 舊分層包: 現有線稿就是原稿
+            pack.write_layer("line_ai", pack.read("line"), pack.meta["layers"]["line"]["origin"])
+        _write_clean_line(pack, level)
     elif step == "line_sdf":
         _require(pack, "line")
         pack.write_layer("line_sdf", encode_sdf(signed_distance(line_mask(pack.read("line")))), "computed")
@@ -78,15 +119,9 @@ def run_step(pack: Pack, step: str, client: FalClient | None, **params) -> None:
         src = pack.read("source")
         sent, box = letterbox(src)
         ai = unbox(_client(client).edit(FLAT_MODEL, sent, FLAT_PROMPT, 1)[0], sent.shape[:2], box)
-        # 留下 AI 原圖, 之後調整整理方式可以直接重跑, 不用再花錢重畫
-        ai = resize_to(ai[..., :3], w, h)
-        pack.write_layer("flat_ai", ai, f"ai:{FLAT_MODEL}")
-        lines = line_mask(pack.read("line")) if pack.has("line") else None
-        labels, colors = flat_regions(ai, src, lines)
-        pack.write_layer("regions", encode_labels(labels), f"ai:{FLAT_MODEL}")
-        pack.set_regions_meta(colors, region_areas(labels))
-        if pack.has("silhouette_sdf"):
-            run_step(pack, "silhouette_sdf", None)  # 剪影取自區塊, 區塊變了就要跟著重算
+        # 留下 AI 原圖: 換線稿時直接重新分格, 不用再花錢重畫
+        pack.write_layer("flat_ai", resize_to(ai[..., :3], w, h), f"ai:{FLAT_MODEL}")
+        _split_regions(pack)
     elif step == "flat":
         _require(pack, "regions")
         labels = decode_labels(pack.read("regions"))
@@ -153,7 +188,8 @@ def replace_layer(pack: Pack, layer: str, image_bytes: bytes) -> None:
     w, h = _size(pack)
     img = load_rgb(image_bytes)
     if layer == "line":
-        pack.write_layer("line", normalize_line(img, w, h), "user")
+        pack.write_layer("line_ai", normalize_line(img, w, h), "user")
+        _write_clean_line(pack, _clean_level({}, pack))
     else:
         pack.write_layer("normal", resize_to(img, w, h), "user")
 

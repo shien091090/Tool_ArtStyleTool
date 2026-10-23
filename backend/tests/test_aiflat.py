@@ -1,6 +1,6 @@
 import numpy as np
 
-from artstyle.aiflat import align_to_source, background, flat_regions
+from artstyle.aiflat import background, fill_cells, flat_regions
 
 
 def _src():
@@ -29,15 +29,36 @@ def test_flat_regions_aligns_to_source():
     assert set(np.unique(labels).tolist()) == set(colors)
 
 
-def test_align_moves_ai_edges_onto_source_lines():
-    src = np.full((60, 60, 3), 255, np.uint8)
-    src[10:50, 10:50] = (200, 40, 40)
-    src[10:50, 30:50] = (40, 40, 200)
-    lines = np.zeros((60, 60), bool)
-    lines[10:50, 30] = True                     # 兩色交界的線稿
-    ai = np.full((60, 60, 3), 255, np.uint8)
-    ai[12:52, 12:52] = (200, 40, 40)
-    ai[12:52, 33:52] = (40, 40, 200)            # AI 整塊往右下偏 2~3px
-    out = align_to_source(ai, src, lines)
-    blue = (out[30] == (40, 40, 200)).all(axis=1).nonzero()[0]
-    assert abs(blue[0] - 30) < abs(33 - 30)     # 交界比原本更貼近線稿
+def test_white_painted_inside_body_is_filled():
+    ai = np.full((40, 40, 3), 255, np.uint8)
+    ai[10:30, 10:30] = (200, 40, 40)
+    ai[14:18, 14:18] = 255                      # AI 在主體裡畫了白色, 原圖那裡是紅的
+    src = _src()
+    labels, colors = flat_regions(ai, src)
+    assert colors[labels[15, 15]] == colors[labels[25, 25]]
+
+
+def test_fill_cells_puts_boundary_on_line():
+    labels = np.ones((40, 40), np.int32)
+    labels[:, 23:] = 2                          # AI 的交界畫在 x=23, 線稿在 x=19~20
+    lines = np.zeros((40, 40), bool)
+    lines[:, 19:21] = True
+    fg = np.zeros((40, 40), bool)
+    fg[5:35, 5:35] = True
+    out = fill_cells(labels, lines, fg)
+    assert (out[10, 5:19] == 1).all()
+    assert (out[10, 21:35] == 2).all()          # 線右邊那格多數是 2, 整格變 2
+    assert (out[~fg] == labels[~fg]).all()
+
+
+def test_flat_regions_fills_cells_from_lines():
+    ai = np.full((40, 40, 3), 255, np.uint8)
+    ai[10:30, 10:30] = (200, 40, 40)
+    ai[10:30, 22:30] = (40, 40, 200)            # AI 的藍色從 x=22 開始, 線稿在 x=19
+    lines = np.zeros((40, 40), bool)
+    lines[10:30, 19] = True
+    src = np.full((40, 40, 3), 255, np.uint8)
+    src[10:30, 10:30] = (120, 120, 120)
+    labels, colors = flat_regions(ai, src, lines)
+    assert colors[labels[20, 21]][2] > 150      # 線右邊整格都是藍色
+    assert colors[labels[20, 17]][0] > 150

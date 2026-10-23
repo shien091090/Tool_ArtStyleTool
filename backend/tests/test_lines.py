@@ -68,3 +68,30 @@ def test_signed_distance_all_inside_no_overflow():
         sd = lines.signed_distance(np.ones((10, 10), bool))
         enc = lines.encode_sdf(sd)
     assert (sd <= -16).all() and (enc == 0).all()
+
+
+def test_thin_makes_one_pixel_line():
+    m = np.zeros((20, 40), bool)
+    m[8:13, 5:35] = True                        # 5px 粗的橫線
+    t = lines.thin(m)
+    assert t[:, 10:30].sum(axis=0).max() == 1   # 每一欄只剩 1px
+
+
+def test_clean_line_drops_short_strokes_and_unifies():
+    raw = np.full((100, 100), 255, np.uint8)
+    raw[20:23, 10:90] = 0                       # 長線
+    raw[50, 40:43] = 0                          # 短碎線
+    fg = np.ones((100, 100), bool)
+    out = lines.clean_line(raw, fg, level=5)
+    assert set(np.unique(out).tolist()) <= {0, 255}
+    assert (out[18:25, 50] == 0).any()          # 長線留著, 變純黑
+    assert (out[48:53, 38:45] == 255).all()     # 短線濾掉
+    assert (lines.clean_line(raw, fg, level=0)[48:53, 38:45] == 0).any()  # 0 不濾
+
+
+def test_clean_line_adds_silhouette():
+    raw = np.full((60, 60), 255, np.uint8)
+    fg = np.zeros((60, 60), bool)
+    fg[10:50, 10:50] = True
+    out = lines.clean_line(raw, fg)
+    assert (out[8:12, 30] == 0).any() and (out[30, 30] == 255)

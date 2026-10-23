@@ -10,11 +10,13 @@ from . import config
 from .imaging import limit_size, load_rgb, read_png, write_png
 from .names import validate_name
 
-LAYERS = ["source", "depth", "normal", "normal_detail", "line", "line_sdf", "delight", "regions", "flat", "user_flat", "flat_ai", "ao", "silhouette_sdf", "shade"]
+LAYERS = ["source", "depth", "normal", "normal_detail", "line_ai", "line", "line_sdf", "delight", "regions", "flat", "user_flat", "flat_ai", "flat_seg", "ao", "silhouette_sdf", "shade"]
 DEPENDENTS = {
     "source": ["depth", "normal_detail", "line", "regions", "flat", "shade"],
     "depth": ["normal", "normal_detail", "ao", "silhouette_sdf"],
-    "line": ["line_sdf", "shade"],
+    "line_ai": ["line"],
+    "line": ["line_sdf", "shade", "regions"],
+    "flat_ai": ["flat_seg", "regions"],
     "regions": ["flat", "silhouette_sdf", "shade"],
 }
 

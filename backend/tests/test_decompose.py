@@ -65,13 +65,14 @@ def test_failure_keeps_completed_steps(pack):
     assert pack.has("depth") and pack.has("normal") and not pack.has("line")
 
 
-def test_rerun_line_marks_downstream_stale(pack):
+def test_rerun_line_recomputes_downstream_free(pack):
     decompose.run_all(pack, FakeFal())
     decompose.run_step(pack, "line", FakeFal())
     layers = pack.meta["layers"]
-    assert layers["line"]["origin"] == "ai:fal-ai/image-preprocessors/lineart"
-    assert layers["line_sdf"]["stale"] and layers["shade"]["stale"]
-    assert not layers["normal"]["stale"] and not layers["regions"]["stale"]   # 平塗不靠線稿, 不用重畫
+    assert layers["line"]["origin"] == layers["line_ai"]["origin"] == "ai:fal-ai/image-preprocessors/lineart"
+    assert layers["line"]["level"] == 5
+    for layer in ["line_sdf", "shade", "regions", "flat"]:              # 從 AI 平塗原圖重新分格, 不用重畫
+        assert not layers[layer]["stale"]
     calls = FakeFal()
     decompose.run_all(pack, calls)
     assert calls.calls == []
@@ -116,8 +117,33 @@ def test_replace_line_marks_downstream(pack):
     decompose.run_all(pack, FakeFal())
     line = np.full((60, 80), 255, np.uint8)
     decompose.replace_layer(pack, "line", _png(line))
-    assert pack.meta["layers"]["line"]["origin"] == "user"
-    assert pack.meta["layers"]["line_sdf"]["stale"] and not pack.meta["layers"]["regions"]["stale"]
+    assert pack.meta["layers"]["line"]["origin"] == pack.meta["layers"]["line_ai"]["origin"] == "user"
+    assert not pack.meta["layers"]["line_sdf"]["stale"] and not pack.meta["layers"]["regions"]["stale"]
+
+
+def test_line_clean_level(pack):
+    decompose.run_all(pack, FakeFal())
+    calls = FakeFal()
+    decompose.run_step(pack, "line_clean", calls, level=0)
+    assert calls.calls == [] and pack.meta["layers"]["line"]["level"] == 0
+    with pytest.raises(ValueError):
+        decompose.run_step(pack, "line_clean", None, level=11)
+
+
+def test_line_clean_migrates_old_pack(pack):
+    decompose.run_all(pack, FakeFal())
+    pack.path("line_ai").unlink()
+    del pack.meta["layers"]["line_ai"]
+    decompose.run_step(pack, "line_clean", None, level=3)
+    assert pack.has("line_ai") and pack.meta["layers"]["line"]["level"] == 3
+
+
+def test_line_change_without_flat_ai_marks_regions_stale(pack):
+    decompose.run_all(pack, FakeFal())
+    pack.path("flat_ai").unlink()
+    del pack.meta["layers"]["flat_ai"]
+    decompose.run_step(pack, "line_clean", None, level=2)
+    assert pack.meta["layers"]["regions"]["stale"]
 
 
 def test_replace_unknown_layer(pack):
@@ -238,3 +264,11 @@ def test_no_key_runs_local_steps_then_reports(pack):
 def test_flat_not_replaceable(pack):
     with pytest.raises(ValueError):
         decompose.replace_layer(pack, "flat", _png(_source()))
+
+
+def test_line_clean_reuses_flat_segments(pack):
+    decompose.run_all(pack, FakeFal())
+    seg = pack.meta["layers"]["flat_seg"]["updated"]
+    pack.meta["layers"]["flat_seg"]["updated"] = "舊"           # 有重算的話會被改掉
+    decompose.run_step(pack, "line_clean", None, level=1)
+    assert pack.meta["layers"]["flat_seg"]["updated"] == "舊" and seg
