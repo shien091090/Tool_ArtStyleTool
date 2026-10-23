@@ -11,6 +11,8 @@ export interface LayerInfo {
   origin: string;
   updated: string;
   stale: boolean;
+  /** 線稿: 去雜線程度 0~10 */
+  level?: number;
 }
 
 export interface PackMeta {

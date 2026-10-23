@@ -65,7 +65,19 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams, e
   normalView.append(option('normal', '看大形'), option('normal_detail', '看細部'));
   normalView.addEventListener('change', () => renderCells());
 
-  const actions: HTMLButtonElement[] = [createBtn, runAllBtn, deleteBtn];
+  /** 線稿去雜線程度, 對應後端 lines.CLEAN_DEFAULT_LEVEL / CLEAN_MAX_LEVEL */
+  const CLEAN_DEFAULT = 5;
+  const cleanLevel = el('input');
+  cleanLevel.type = 'range';
+  cleanLevel.min = '0';
+  cleanLevel.max = '10';
+  cleanLevel.step = '1';
+  cleanLevel.value = String(CLEAN_DEFAULT);
+  const cleanValue = el('span', { text: String(CLEAN_DEFAULT) });
+  cleanLevel.addEventListener('input', () => { cleanValue.textContent = cleanLevel.value; });
+  cleanLevel.addEventListener('change', () => step('整理線稿', [['line_clean', { level: Number(cleanLevel.value) }]]));
+
+  const actions: (HTMLButtonElement | HTMLInputElement)[] = [createBtn, runAllBtn, deleteBtn, cleanLevel];
   const button = (text: string, onClick: () => void) => {
     const b = el('button', { text });
     b.addEventListener('click', onClick);
@@ -90,12 +102,14 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams, e
   const cells: Cell[] = [
     makeCell('source', '原圖', []),
     makeCell('line', '線稿', [
-      markPaid(button('重跑', () => step('重跑線稿', [['line', {}]]))), costNote(usd(COST.line)),
+      markPaid(button('重跑', () => step('重跑線稿', [['line', { level: Number(cleanLevel.value) }]]))), costNote(usd(COST.line)),
+      el('label', {}, ['去雜線', cleanLevel, cleanValue]),
+      el('span', { className: 'muted', text: '拉動會重新整理線稿並重新分格平塗(免費), 平塗改過的顏色會重設' }),
     ]),
     makeCell('flat', '平塗', [
       markPaid(button('重畫', () => step('重畫平塗', [['regions', {}], ['flat', {}]]))), costNote(usd(COST.gptImage)),
       button('復原', () => undoColor()), button('重做', () => redoColor()),
-      el('span', { className: 'muted', text: 'GPT Image 2 畫平塗再整理成色塊; 點圖上的區塊可以改色(Ctrl+Z 復原、Ctrl+Y 重做)' }),
+      el('span', { className: 'muted', text: 'GPT Image 2 畫平塗, 再依線稿分格上色; 點圖上的區塊可以改色(Ctrl+Z 復原、Ctrl+Y 重做)' }),
     ]),
     makeCell('normal', '法線', [
       normalView,
@@ -219,6 +233,9 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams, e
     if (!meta) return;
     const m = meta;
     const lineInfo = m.layers.line;
+    const level = lineInfo?.level ?? CLEAN_DEFAULT;
+    cleanLevel.value = String(level);
+    cleanValue.textContent = String(level);
     for (const c of cells) {
       const shown = c.layer === 'normal' ? normalView.value : c.layer;
       const info = m.layers[shown];
