@@ -30,7 +30,7 @@ def add_pack_routes(r, base: str, resolve: Callable[[dict], Pack], client_factor
     @r.post(base + "/steps/{step}")
     def run_step(request: Request, step: str, params: dict | None = Body(default=None)):
         pack = resolve(request.path_params)
-        if step not in decompose.STEPS:
+        if step not in decompose.STEPS and step not in decompose.EXTRA_STEPS:
             raise ValueError(f"未知的步驟: {step}")
         decompose.run_step(pack, step, client_factory(), **(params or {}))
         return pack.meta

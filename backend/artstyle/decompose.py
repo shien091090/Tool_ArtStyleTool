@@ -15,6 +15,8 @@ from .proportion.compose import letterbox, unbox
 from .regions import decode_labels, encode_labels
 
 STEPS = ["depth", "normal", "normal_detail", "line", "line_sdf", "regions", "flat", "shade", "ao", "silhouette_sdf"]
+# 不在「全部拆解」順序裡、只由前端單獨呼叫的步驟
+EXTRA_STEPS = ["line_clean"]
 STEP_NAMES = {"depth": "深度", "normal": "法線", "normal_detail": "細部法線", "line": "線稿",
               "line_sdf": "線條距離場", "regions": "AI 平塗", "flat": "平塗", "ao": "環境遮蔽",
               "silhouette_sdf": "主體剪影", "shade": "原圖光影", "source": "原圖",

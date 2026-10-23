@@ -47,6 +47,14 @@ def test_run_single_step_with_params(client):
     assert r.json()["layers"]["flat"]["stale"]
 
 
+def test_run_line_clean_step(client):
+    _upload(client)
+    client.post("/api/packs/騎士/decompose")
+    r = client.post("/api/packs/騎士/steps/line_clean", json={"level": 3})
+    assert r.status_code == 200, r.text
+    assert r.json()["layers"]["line"]["level"] == 3
+
+
 def test_replace_layer(client):
     _upload(client)
     client.post("/api/packs/騎士/decompose")
