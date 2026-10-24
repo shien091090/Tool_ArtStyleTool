@@ -10,7 +10,7 @@ import { mountStyleEditor } from '../flow/editors/styleEditor';
 import type { EditorContext, NodeEditor, OutputSource } from '../flow/editors/types';
 import { applyOps } from '../flow/magicWand';
 import {
-  connect, downstreamOf, flowJobKey, isMaterial, materialNames, materialsOf, NODE_INFO, newNodeId, nodeStatus, STATUS_LABEL,
+  chainStale, chainTop, connect, downstreamOf, flowJobKey, isMaterial, materialNames, materialsOf, NODE_INFO, newNodeId, nodeStatus, STATUS_LABEL,
   upstreamOf, wouldCycle, type FlowLink, type FlowMeta, type FlowNode, type FlowNodeType, type PortKind,
 } from '../flow/model';
 import { candidateEyes } from '../pixel/model';
@@ -269,6 +269,28 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
     if (flow && cur?.rev) download(api.flows.fileUrl(flow.name, `out/${nid}.png`, cur.rev), `${flow.name}_${nid}.png`);
   }
 
+  const STALE_TIP = '上游改過了, 先更新輸出再存';
+
+  /** 節點輸出存到素材庫; 後端依鏈頂的圖片輸入判斷原圖 */
+  async function saveToLibrary(nid: string, note: HTMLElement) {
+    const n = flow?.nodes.find((m) => m.id === nid);
+    if (!flow || !n?.rev) return;
+    if (chainStale(flow, nid)) {
+      showBanner(note, 'warn', STALE_TIP);
+      return;
+    }
+    const name = prompt('存到素材庫的名稱', `${flow.name} ${NODE_INFO[n.type].label}`);
+    if (name === null) return;
+    try {
+      const a = await api.flows.toLibrary(flow.name, nid, name);
+      const top = chainTop(flow, nid);
+      const from = a.parent && top?.params.source ? `(派生自 ${String(top.params.source)})` : '';
+      showBanner(note, 'info', `已存到素材庫: ${a.name}${from}`);
+    } catch (e) {
+      showBanner(note, 'error', (e as Error).message);
+    }
+  }
+
   interface MenuItem { label: string; run: () => unknown; disabled?: boolean; danger?: boolean }
 
   function showMenu(cx: number, cy: number, items: MenuItem[]) {
@@ -301,6 +323,8 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
     showMenu(cx, cy, [
       { label: '開啟設定', run: () => openEditor(nid) },
       { label: '下載輸出 PNG', disabled: !n.rev, run: () => downloadOutput(nid) },
+      { label: n.rev && chainStale(flow, nid) ? '存到素材庫(上游改過, 先更新輸出)' : '存到素材庫',
+        disabled: !n.rev || chainStale(flow, nid), run: () => saveToLibrary(nid, banner) },
       { label: '複製節點', run: () => duplicateNode(nid) },
       { label: '中斷連線', disabled: !linked, run: () => disconnectNode(nid) },
       { label: '刪除', danger: true, run: () => remove({ kind: 'node', id: nid }) },
@@ -320,16 +344,20 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
     const edStatus = el('span', { className: 'muted' });
     const back = el('button', { text: '← 返回流程' });
     const dl = el('button', { text: '下載輸出 PNG' });
+    const toLib = el('button', { text: '存到素材庫' });
     const stateText = el('span', { className: 'muted small' });
     const body = el('div', { className: 'fe-body' });
     const shell = el('div', { className: 'fe-shell' }, [
       el('div', { className: 'toolbar' }, [back, el('b', { text: NODE_INFO[node.type].label }), stateText,
-        edStatus, el('span', { className: 'spacer' }), dl]),
+        edStatus, el('span', { className: 'spacer' }), toLib, dl]),
       edBanner, body,
     ]);
     const refreshHeader = () => {
       const cur = flow?.nodes.find((n) => n.id === nid);
       dl.disabled = !cur?.rev;
+      const stale = !!flow && chainStale(flow, nid);
+      toLib.disabled = !cur?.rev || stale;
+      toLib.title = cur?.rev && stale ? STALE_TIP : '';
       stateText.textContent = cur && flow ? STATUS_LABEL[nodeStatus(flow, cur)] : '';
     };
     const ctx: EditorContext = {
@@ -353,6 +381,7 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
     const ed = mount(body, ctx);
     back.addEventListener('click', () => closeEditor(false));
     dl.addEventListener('click', () => downloadOutput(nid));
+    toLib.addEventListener('click', () => void saveToLibrary(nid, edBanner));
     editor = { node: nid, ed, root: shell };
     area.append(shell);
     refreshHeader();

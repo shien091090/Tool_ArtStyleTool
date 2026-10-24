@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  connect, materialNames, materialsOf, newNodeId, nodeStatus, upstreamOf, wouldCycle, type FlowMeta, type FlowNode,
+  chainStale, connect, materialNames, materialsOf, newNodeId, nodeStatus, upstreamOf, wouldCycle, type FlowMeta, type FlowNode,
 } from '../src/flow/model';
 import { applyOps, growMask, selectRegion, type EraseOp, type Img, type WandOp } from '../src/flow/magicWand';
 
@@ -182,5 +182,18 @@ describe('節點種類', () => {
     const { NODE_INFO } = await import('../src/flow/model');
     expect(NODE_INFO.workshop).toEqual({ label: '改部位', hasInput: true, free: false, materials: true });
     expect(NODE_INFO.style).toEqual({ label: '改風格', hasInput: true, free: false });
+  });
+});
+
+describe('存到素材庫的過期檢查', () => {
+  const links = [{ from: 'n1', to: 'n2' }, { from: 'n2', to: 'n3' }];
+  it('鏈中間用的是舊版上游 → 過期', () => {
+    const flow: FlowMeta = { name: 'f', nodes: [node('n1', 'input', 2), node('n2', 'cutout', 1, 1), node('n3', 'pixel', 1, 1)], links };
+    expect(chainStale(flow, 'n3')).toBe(true);
+  });
+  it('整條都是新的 → 不過期; 沒輸出 → 過期', () => {
+    const flow: FlowMeta = { name: 'f', nodes: [node('n1', 'input', 2), node('n2', 'cutout', 1, 2), node('n3', 'pixel', 1, 1)], links };
+    expect(chainStale(flow, 'n3')).toBe(false);
+    expect(chainStale({ ...flow, nodes: [...flow.nodes.slice(0, 2), node('n3', 'pixel')] }, 'n3')).toBe(true);
   });
 });

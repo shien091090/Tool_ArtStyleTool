@@ -94,6 +94,33 @@ export function nodeStatus(flow: FlowMeta, node: FlowNode): NodeStatus {
   return 'done';
 }
 
+/** 主圖輸入鏈上有沒有節點沒輸出或用的是舊版上游(存到素材庫前檢查, 規則同後端 chain_stale) */
+export function chainStale(flow: FlowMeta, id: string): boolean {
+  let cur = flow.nodes.find((n) => n.id === id) ?? null;
+  const seen = new Set<string>();
+  while (cur && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    if (!cur.rev) return true;
+    const up = upstreamOf(flow, cur.id);
+    if (up && cur.type !== 'input' && cur.inputRev !== up.rev) return true;
+    cur = up;
+  }
+  return false;
+}
+
+/** 主圖輸入鏈最上游的節點 */
+export function chainTop(flow: FlowMeta, id: string): FlowNode | null {
+  let cur = flow.nodes.find((n) => n.id === id) ?? null;
+  const seen = new Set<string>();
+  while (cur && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    const up = upstreamOf(flow, cur.id);
+    if (!up) return cur;
+    cur = up;
+  }
+  return cur;
+}
+
 /** 加上 from → to 會不會繞成迴圈 */
 export function wouldCycle(links: FlowLink[], from: string, to: string): boolean {
   const stack = [to];
