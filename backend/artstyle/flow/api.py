@@ -55,8 +55,6 @@ def crop_opaque(img: np.ndarray) -> np.ndarray:
 
 def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]) -> APIRouter:
     flows_dir = Path(data_dir) / "flows"
-    packs_dir = Path(data_dir) / "packs"
-    workshop_dir = Path(data_dir) / "proportion"
     r = APIRouter(prefix="/api/flows")
 
     def client() -> FalClient:
@@ -107,8 +105,7 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
                         headers={"Cache-Control": "no-store"})
 
     @r.post("/{name}/nodes/{nid}/output")
-    async def set_output(name: str, nid: str, file: UploadFile | None = File(None), pack: str | None = Form(None),
-                         workshop: str | None = Form(None), inputRev: int | None = Form(None),
+    async def set_output(name: str, nid: str, file: UploadFile | None = File(None), inputRev: int | None = Form(None),
                          params: str | None = Form(None)):
         flow = open_flow(name)
         node = flow.node(nid)
@@ -120,17 +117,9 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
                 raise ValueError("節點參數格式錯誤") from None
             if not isinstance(p, dict):
                 raise ValueError("節點參數格式錯誤")
-        if (pack or workshop) and node["type"] != "input":
-            raise ValueError("只有圖片輸入節點能選分層包或部位工坊結果")
-        if pack:
-            data = Pack.open(packs_dir, pack).path("source").read_bytes()
-        elif workshop:
-            wname, _, rid = workshop.rpartition("/")
-            data = Work.open(workshop_dir, wname).file_path(f"results/{rid}.png").read_bytes()
-        elif file is not None:
-            data = await file.read()
-        else:
-            raise ValueError("請上傳圖片、選擇分層包或部位工坊結果")
+        if file is None:
+            raise ValueError("請上傳圖片")
+        data = await file.read()
         img = limit_size(load_rgba(data), config.MAX_SIDE)
         return flow.set_output(nid, img, inputRev if node["type"] != "input" else None, p)
 
@@ -266,8 +255,7 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
         work.add_image_rgb(img, label, source=src, inputRev=node["rev"])
         return work.meta
 
-    add_work_routes(r, "/{name}/nodes/{nid}/workshop", open_workshop, lambda p: f"{p['name']}-{p['nid']}", client,
-                    packs_dir)
+    add_work_routes(r, "/{name}/nodes/{nid}/workshop", open_workshop, client)
 
     # ---- 改風格節點: 節點資料夾就是一個分層包 ----
 

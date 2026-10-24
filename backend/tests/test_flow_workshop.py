@@ -55,8 +55,6 @@ def test_init_crops_and_records_rev(client):
     assert client.get(f"{W}/status").json() == {"exists": True, "inputRev": 1}
     img = cv2.imdecode(np.frombuffer(client.get(f"{W}/files/images/main.png").content, np.uint8), cv2.IMREAD_UNCHANGED)
     assert img.shape[:2] == (60, 60)
-    # 不會出現在部位工坊的作品清單
-    assert client.get("/api/proportion/works").json() == []
 
 
 def test_shared_routes_and_reinit(client, fal):

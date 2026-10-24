@@ -8,7 +8,7 @@ from artstyle.pixel import downscale, prompts, service, suggest
 from artstyle.server import create_app
 
 HEADERS = {"X-ArtStyle": "1"}
-P = "/api/pixel"
+N = "/api/flows/流程/nodes/n2/pixel"
 
 
 def _png(rgb):
@@ -162,44 +162,20 @@ def client(tmp_path, fal):
     return TestClient(create_app(tmp_path, lambda: fal), headers=HEADERS)
 
 
-def _create(client, name="像素"):
-    r = client.post(f"{P}/works", data={"name": name}, files={"file": ("騎士.png", _png(_sprite(40, 80)), "image/png")})
+def _create(client):
+    """n1 圖片輸入(騎士) → n2 像素化"""
+    assert client.post("/api/flows", json={"name": "流程"}).status_code == 200
+    graph = {"nodes": [{"id": "n1", "type": "input", "x": 0, "y": 0, "params": {}},
+                       {"id": "n2", "type": "pixel", "x": 0, "y": 0, "params": {}}],
+             "links": [{"from": "n1", "to": "n2"}]}
+    assert client.put("/api/flows/流程/graph", json=graph).status_code == 200
+    r = client.post("/api/flows/流程/nodes/n1/output", files={"file": ("騎士.png", _png(_sprite(40, 80)), "image/png")})
     assert r.status_code == 200, r.text
-    return r.json()
-
-
-def test_create_list_delete(client):
-    meta = _create(client)
-    assert meta["source"] == "騎士" and meta["candidates"] == []
-    assert client.get(f"{P}/works").json()[0]["name"] == "像素"
-    assert client.get(f"{P}/works/像素/files/source.png").status_code == 200
-    assert client.post(f"{P}/works", data={"name": "像素"}, files={"file": ("a.png", _png(_sprite(4, 4)), "image/png")}).status_code == 409
-    assert client.delete(f"{P}/works/像素").status_code == 200
-    assert client.get(f"{P}/works/像素").status_code == 404
-
-
-def test_bad_names_and_files(client):
-    _create(client)
-    assert client.get(f"{P}/works/..").status_code in (400, 404)
-    assert client.delete(f"{P}/works/..%2F..").status_code in (400, 404)
-    assert client.get(f"{P}/works/像素/files/meta.json").status_code == 404
-    assert client.get(f"{P}/works/像素/files/../meta.json").status_code == 404
-    assert client.post(f"{P}/works", data={"name": "沒來源"}).status_code == 400
-
-
-def test_create_from_workshop_result(client, tmp_path):
-    from artstyle.proportion.work import Work
-    w = Work.create(tmp_path / "proportion", "工坊", _png(_sprite(40, 80)))
-    w.add_result(_sprite(40, 80), {"model": "nano-banana"})
-    assert client.get(f"{P}/workshop-results").json() == [{"work": "工坊", "id": "r1"}]
-    r = client.post(f"{P}/works", data={"name": "從工坊", "workshop": "工坊/r1"})
-    assert r.status_code == 200 and r.json()["source"] == "部位工坊 工坊 r1"
-    assert client.post(f"{P}/works", data={"name": "壞", "workshop": "工坊/../x"}).status_code in (400, 404)
 
 
 def test_grid_candidates_and_pixelate(client, fal):
     _create(client)
-    r = client.post(f"{P}/works/像素/candidates", json={"mode": "grid", "cols": 1, "rows": 2, "count": 2, "note": "劍"})
+    r = client.post(f"{N}/candidates", json={"mode": "grid", "cols": 1, "rows": 2, "count": 2, "note": "劍"})
     assert r.status_code == 200, r.text
     body = r.json()
     assert [c["id"] for c in body["candidates"]] == ["c1", "c2"] and body["errors"] == []
@@ -207,7 +183,7 @@ def test_grid_candidates_and_pixelate(client, fal):
     assert model == "gpt-image-2" and n == 2 and shape[:2] == (1024, 512) and "Additional instructions: 劍" in prompt
     assert body["candidates"][0]["colors"] == 8
     assert [i["method"] for i in body["candidates"][0]["previews"]["items"]] == ["dominant", "contrast", "adaptive"]
-    r = client.post(f"{P}/works/像素/candidates/c1/pixelate", json={"colors": 6})
+    r = client.post(f"{N}/candidates/c1/pixelate", json={"colors": 6})
     res = r.json()["results"]
     assert [x["method"] for x in res] == ["dominant", "contrast", "adaptive"]
     assert all(x["w"] == 8 and x["h"] == 16 and x["png"].startswith("data:image/png") for x in res)
@@ -217,18 +193,18 @@ def test_grid_candidates_and_pixelate(client, fal):
 def test_model_picked_by_size(client, fal):
     _create(client)
     assert service.pick_model(12, 12) == "gpt-image-2" and service.pick_model(13, 4) == "nano-banana-pro"
-    r = client.post(f"{P}/works/像素/candidates", json={"cols": 12, "rows": 13, "model": "kontext"})
+    r = client.post(f"{N}/candidates", json={"cols": 12, "rows": 13, "model": "kontext"})
     assert r.status_code == 200 and r.json()["candidates"][0]["model"] == "nano-banana-pro"
     assert fal.calls[-1][1] == "nano-banana-pro"
-    client.post(f"{P}/works/像素/candidates", json={"mode": "grid", "cols": 8, "rows": 12})
+    client.post(f"{N}/candidates", json={"mode": "grid", "cols": 8, "rows": 12})
     assert fal.calls[-1][1] == "gpt-image-2"
-    r = client.post(f"{P}/works/像素/candidates", json={"mode": "auto", "model": "kontext"})
+    r = client.post(f"{N}/candidates", json={"mode": "auto", "model": "kontext"})
     assert r.status_code == 400 and "指定格數" in r.json()["detail"]
 
 
 def test_suggest_sizes(client, fal):
     _create(client)
-    r = client.post(f"{P}/works/像素/suggest")
+    r = client.post(f"{N}/suggest")
     assert r.status_code == 200, r.text
     assert r.json()["sizes"] == [{"cols": 4, "rows": 6, "colors": 16, "reason": "小"},
                                  {"cols": 8, "rows": 12, "colors": 24, "reason": "中"}]
@@ -238,7 +214,7 @@ def test_suggest_sizes(client, fal):
 def test_suggest_bad_reply(tmp_path):
     c = TestClient(create_app(tmp_path, lambda: FakeFal(vision_reply="不知道")), headers=HEADERS)
     _create(c)
-    r = c.post(f"{P}/works/像素/suggest")
+    r = c.post(f"{N}/suggest")
     assert r.status_code == 400 and "沒有給出尺寸建議" in r.json()["detail"]
 
 
@@ -256,10 +232,10 @@ def test_suggest_parse_snaps_and_dedupes():
 
 def test_candidate_delete_ids_not_reused(client):
     _create(client)
-    client.post(f"{P}/works/像素/candidates", json={"cols": 1, "rows": 2})
-    assert client.delete(f"{P}/works/像素/candidates/c1").json()["candidates"] == []
-    assert client.get(f"{P}/works/像素/files/ai/c1.png").status_code == 404
-    r = client.post(f"{P}/works/像素/candidates", json={"cols": 1, "rows": 2})
+    client.post(f"{N}/candidates", json={"cols": 1, "rows": 2})
+    assert client.delete(f"{N}/candidates/c1").json()["candidates"] == []
+    assert client.get("/api/flows/流程/files/nodes/n2/ai/c1.png").status_code == 404
+    r = client.post(f"{N}/candidates", json={"cols": 1, "rows": 2})
     assert r.json()["candidates"][0]["id"] == "c2"
 
 
@@ -275,22 +251,22 @@ def test_candidate_delete_ids_not_reused(client):
 ])
 def test_settings_validation(client, body):
     _create(client)
-    assert client.post(f"{P}/works/像素/candidates", json=body).status_code == 400
+    assert client.post(f"{N}/candidates", json=body).status_code == 400
 
 
 def test_fal_failure_and_short_count(tmp_path):
     bad = TestClient(create_app(tmp_path, lambda: FakeFal(fail=True)), headers=HEADERS)
     _create(bad)
-    assert bad.post(f"{P}/works/像素/candidates", json={"cols": 1, "rows": 2}).status_code == 502
-    assert bad.post(f"{P}/works/像素/suggest").status_code == 502
-    assert bad.get(f"{P}/works/像素").json()["candidates"] == []
+    assert bad.post(f"{N}/candidates", json={"cols": 1, "rows": 2}).status_code == 502
+    assert bad.post(f"{N}/suggest").status_code == 502
+    assert bad.get(N).json()["candidates"] == []
     short = TestClient(create_app(tmp_path, lambda: FakeFal(returned=1)), headers=HEADERS)
-    r = short.post(f"{P}/works/像素/candidates", json={"mode": "grid", "cols": 1, "rows": 2, "count": 3})
+    r = short.post(f"{N}/candidates", json={"mode": "grid", "cols": 1, "rows": 2, "count": 3})
     assert len(r.json()["candidates"]) == 1 and "只回傳 1 張" in r.json()["errors"][0]
 
 
 def test_no_fal_key(tmp_path):
     c = TestClient(create_app(tmp_path, lambda: None), headers=HEADERS)
     _create(c)
-    assert c.post(f"{P}/works/像素/candidates", json={"cols": 1, "rows": 2}).status_code == 503
-    assert c.post(f"{P}/works/像素/suggest").status_code == 503
+    assert c.post(f"{N}/candidates", json={"cols": 1, "rows": 2}).status_code == 503
+    assert c.post(f"{N}/suggest").status_code == 503

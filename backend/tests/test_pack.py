@@ -9,11 +9,10 @@ def _png(h, w):
     return cv2.imencode(".png", np.zeros((h, w, 3), np.uint8))[1].tobytes()
 
 
-def test_create_limits_size_and_lists(tmp_path):
+def test_create_limits_size(tmp_path):
     p = Pack.create(tmp_path, "big", _png(100, 4096))
     assert (p.meta["width"], p.meta["height"]) == (2048, 50)
     assert p.read("source").shape == (50, 2048, 3)
-    assert [m["name"] for m in Pack.list(tmp_path)] == ["big"]
 
 
 def test_open_reads_meta(tmp_path):
@@ -34,7 +33,7 @@ def test_duplicate_and_bad_names(tmp_path):
 def test_bad_image_bytes_leaves_nothing(tmp_path):
     with pytest.raises(ValueError):
         Pack.create(tmp_path, "x", b"not an image")
-    assert Pack.list(tmp_path) == []
+    assert not (tmp_path / "x").exists()
 
 
 def test_write_layer_marks_downstream_stale(tmp_path):

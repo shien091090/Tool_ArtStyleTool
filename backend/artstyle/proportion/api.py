@@ -1,4 +1,4 @@
-"""部位比例 API(前綴 /api/proportion)。單一作品的路由抽成 add_work_routes, 流程的改部位節點也掛同一份。"""
+"""改部位節點的作品路由(由流程 API 掛上)。"""
 import json
 from pathlib import Path
 from typing import Callable
@@ -7,13 +7,10 @@ import numpy as np
 from fastapi import APIRouter, Body, File, Form, Request, UploadFile
 from fastapi.responses import Response
 
-from .. import recipes as recipe_files
 from ..decompose import NoClientError
 from ..fal import EDIT_MODELS, FalClient
 from ..imaging import decode_any, limit_size, load_rgb, resize_to, to_gray
-from ..names import validate_name
-from ..pack import Pack
-from . import compose, material as materials, parts, recipes, suggest
+from . import compose, material as materials, parts, suggest
 from .work import Work, rebase_transform
 
 MAX_EXTRA = 500
@@ -60,17 +57,8 @@ def client_getter(client_factory: Callable[[], FalClient | None]) -> Callable[[]
     return client
 
 
-async def read_source(packs_dir: Path, file: UploadFile | None, pack: str | None) -> tuple[bytes, str]:
-    if pack:
-        return Pack.open(packs_dir, pack).path("source").read_bytes(), pack
-    if file is None:
-        raise ValueError("請上傳圖片或選擇分層包")
-    return await file.read(), Path(file.filename or "圖片").stem
-
-
-def add_work_routes(r: APIRouter, base: str, resolve: Callable[[dict], Work], pack_base: Callable[[dict], str],
-                    client: Callable[[], FalClient], packs_dir: Path) -> None:
-    """單一作品的路由; resolve 以路徑參數開啟作品, pack_base 是送到拆解檢查時分層包名稱的開頭。"""
+def add_work_routes(r: APIRouter, base: str, resolve: Callable[[dict], Work], client: Callable[[], FalClient]) -> None:
+    """單一作品的路由; resolve 以路徑參數開啟作品。"""
 
     def segment(c: FalClient, img: np.ndarray, name: str, points: list, box, aliases: dict) -> np.ndarray:
         boxes = [box] if box else []
@@ -91,10 +79,9 @@ def add_work_routes(r: APIRouter, base: str, resolve: Callable[[dict], Work], pa
         return Response(path.read_bytes(), media_type=media, headers={"Cache-Control": "no-store"})
 
     @r.post(base + "/images")
-    async def add_image(request: Request, file: UploadFile | None = File(None), pack: str | None = Form(None)):
+    async def add_image(request: Request, file: UploadFile = File(...)):
         work = resolve(request.path_params)
-        data, label = await read_source(packs_dir, file, pack)
-        work.add_image(data, label)
+        work.add_image(await file.read(), Path(file.filename or "圖片").stem)
         return work.meta
 
     @r.post(base + "/parts")
@@ -316,63 +303,3 @@ def add_work_routes(r: APIRouter, base: str, resolve: Callable[[dict], Work], pa
         if len(results) < count:
             errors.append(f"要求 {count} 張, AI 只回傳 {len(results)} 張")
         return {"meta": work.meta, "results": results, "errors": errors}
-
-    @r.post(base + "/results/{result_id}/to-pack")
-    def to_pack(request: Request, result_id: str):
-        work = resolve(request.path_params)
-        data = work.file_path(f"results/{result_id}.png").read_bytes()
-        name = f"{pack_base(request.path_params)[:50]}-{result_id}"
-        candidate, n = name, 1
-        while (packs_dir / candidate).exists():
-            n += 1
-            candidate = f"{name}-{n}"
-        validate_name(candidate)
-        Pack.create(packs_dir, candidate, data)
-        return {"pack": candidate}
-
-
-def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]) -> APIRouter:
-    works_dir = Path(data_dir) / "proportion"
-    recipes_dir = Path(data_dir) / "proportion_recipes"
-    packs_dir = Path(data_dir) / "packs"
-    r = APIRouter(prefix="/api/proportion")
-    client = client_getter(client_factory)
-
-    def open_work(name: str) -> Work:
-        return Work.open(works_dir, name)
-
-    @r.get("/works")
-    def list_works():
-        return Work.list(works_dir)
-
-    @r.post("/works")
-    async def create_work(name: str = Form(...), file: UploadFile | None = File(None), pack: str | None = Form(None)):
-        data, label = await read_source(packs_dir, file, pack)
-        return Work.create(works_dir, name, data, label).meta
-
-    @r.delete("/works/{name}")
-    def delete_work(name: str):
-        open_work(name).delete()
-        return {"ok": True}
-
-    add_work_routes(r, "/works/{name}", lambda p: open_work(p["name"]), lambda p: p["name"], client, packs_dir)
-
-    @r.get("/recipes")
-    def list_recipes():
-        return recipe_files.list_recipes(recipes_dir)
-
-    @r.get("/recipes/{name}")
-    def get_recipe(name: str):
-        return recipes.validate(recipe_files.load_recipe(recipes_dir, name))
-
-    @r.put("/recipes/{name}")
-    def put_recipe(name: str, data=Body(...)):
-        recipe_files.save_recipe(recipes_dir, name, recipes.validate(data))
-        return {"ok": True}
-
-    @r.delete("/recipes/{name}")
-    def delete_recipe(name: str):
-        recipe_files.delete_recipe(recipes_dir, name)
-        return {"ok": True}
-
-    return r

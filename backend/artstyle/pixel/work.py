@@ -57,27 +57,6 @@ class PixelWork:
             raise FileNotFoundError(f"找不到作品「{name}」")
         return cls(root, name, json.loads(p.read_text(encoding="utf-8")))
 
-    @classmethod
-    def list(cls, root) -> list[dict]:
-        root = Path(root)
-        if not root.is_dir():
-            return []
-        out = []
-        for d in sorted(root.iterdir()):
-            p = d / "meta.json"
-            if not p.is_file():
-                continue
-            try:
-                m = json.loads(p.read_text(encoding="utf-8"))
-                out.append({"name": m["name"], "updated": m.get("updated"), "candidates": len(m.get("candidates", []))})
-            except (ValueError, KeyError, TypeError):
-                continue  # 壞掉的作品不拖累整份清單
-        return out
-
-    def delete(self) -> None:
-        """整個資料夾從硬碟刪掉, 無法復原。"""
-        shutil.rmtree(self.dir)
-
     def save_meta(self) -> None:
         self.meta["updated"] = _now()
         tmp = self.dir / "meta.json.tmp"

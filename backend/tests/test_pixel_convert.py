@@ -6,7 +6,7 @@ from artstyle.pixel import convert as cv
 from artstyle.pixel.convert import INK
 from tests.test_flow import F, _chain, _rgba_png, _upload
 from tests.test_flow import client, fal  # noqa: F401  共用 fixture
-from tests.test_pixel import P, _create, _png, _sprite
+from tests.test_pixel import N, _create, _png, _sprite
 
 
 def _monster(w=200, h=240):
@@ -78,21 +78,21 @@ def test_all_background_fails():
 
 def test_work_convert_and_pixelate(client):  # noqa: F811
     _create(client)
-    r = client.post(f"{P}/works/像素/convert", json={"cols": 4, "rows": 4})
+    r = client.post(f"{N}/convert", json={"cols": 4, "rows": 4})
     assert r.status_code == 200, r.text
     cand = r.json()["candidate"]
     assert cand["mode"] == "convert" and cand["colors"] == 16 and cand["outline"] is True and cand["eyes"] == []
-    res = client.post(f"{P}/works/像素/candidates/{cand['id']}/pixelate", json={"colors": 6}).json()
+    res = client.post(f"{N}/candidates/{cand['id']}/pixelate", json={"colors": 6}).json()
     assert [x["method"] for x in res["results"]] == ["convert", "convert_lines"]
     assert all(x["w"] == 32 and x["h"] == 32 for x in res["results"])
     # 產生候選時就存好各方式的預覽, 重新縮小時跟著更新
     assert cand["previews"]["colors"] == 16
     assert [i["method"] for i in cand["previews"]["items"]] == ["convert", "convert_lines"]
-    meta = client.get(f"{P}/works/像素").json()
+    meta = client.get(N).json()
     assert meta["candidates"][0]["previews"]["colors"] == 6
-    assert client.get(f"{P}/works/像素/files/ai/{cand['id']}_convert_lines.png").status_code == 200
-    client.delete(f"{P}/works/像素/candidates/{cand['id']}")
-    assert client.get(f"{P}/works/像素/files/ai/{cand['id']}_convert.png").status_code == 404
+    assert client.get(f"/api/flows/流程/files/nodes/n2/ai/{cand['id']}_convert_lines.png").status_code == 200
+    client.delete(f"{N}/candidates/{cand['id']}")
+    assert client.get(f"/api/flows/流程/files/nodes/n2/ai/{cand['id']}_convert.png").status_code == 404
 
 
 @pytest.mark.parametrize("body, msg", [
@@ -106,7 +106,7 @@ def test_work_convert_and_pixelate(client):  # noqa: F811
 ])
 def test_convert_validation(client, body, msg):  # noqa: F811
     _create(client)
-    r = client.post(f"{P}/works/像素/convert", json=body)
+    r = client.post(f"{N}/convert", json=body)
     assert r.status_code == 400 and msg in r.json()["detail"]
 
 
@@ -132,13 +132,13 @@ def test_flow_convert_keeps_alpha_and_input_rev(client):  # noqa: F811
 def test_two_eyes_and_legacy_eye(client):  # noqa: F811
     _create(client)
     two = [{"x": 0.4, "y": 0.3, "r": 0.05}, {"x": 0.6, "y": 0.3, "r": 0.05}]
-    cand = client.post(f"{P}/works/像素/convert", json={"cols": 8, "rows": 8, "eyes": two}).json()["candidate"]
+    cand = client.post(f"{N}/convert", json={"cols": 8, "rows": 8, "eyes": two}).json()["candidate"]
     assert cand["eyes"] == two
-    legacy = client.post(f"{P}/works/像素/convert", json={"cols": 8, "rows": 8, "eye": two[0]}).json()["candidate"]
+    legacy = client.post(f"{N}/convert", json={"cols": 8, "rows": 8, "eye": two[0]}).json()["candidate"]
     assert legacy["eyes"] == [two[0]]
     from artstyle.pixel.service import candidate_eyes
     assert candidate_eyes({"eye": two[0]}) == [two[0]] and candidate_eyes({}) == []
-    res = client.post(f"{P}/works/像素/candidates/{cand['id']}/pixelate", json={}).json()["results"]
+    res = client.post(f"{N}/candidates/{cand['id']}/pixelate", json={}).json()["results"]
     assert all("error" not in x for x in res)
 
 

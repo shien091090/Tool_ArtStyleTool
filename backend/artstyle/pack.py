@@ -58,22 +58,6 @@ class Pack:
             raise FileNotFoundError(f"找不到分層包「{name}」")
         return cls(root, name, json.loads(meta_path.read_text(encoding="utf-8")))
 
-    def delete(self) -> None:
-        """整個資料夾從硬碟刪掉, 無法復原。"""
-        shutil.rmtree(self.dir)
-
-    @classmethod
-    def list(cls, root) -> list[dict]:
-        root = Path(root)
-        if not root.is_dir():
-            return []
-        result = []
-        for d in sorted(root.iterdir()):
-            meta_path = d / "meta.json"
-            if meta_path.is_file():
-                result.append(json.loads(meta_path.read_text(encoding="utf-8")))
-        return result
-
     def path(self, layer: str) -> Path:
         if layer not in LAYERS:
             raise ValueError(f"未知的圖層: {layer}")

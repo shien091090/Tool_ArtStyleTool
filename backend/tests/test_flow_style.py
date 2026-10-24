@@ -39,8 +39,6 @@ def test_style_init_and_shared_routes(client, tmp_path):
     m = max(16, round(max(h, w - 5) * 0.05))  # 裁掉透明後四周補白邊
     assert meta["inputRev"] == 1 and meta["width"] == w - 5 + 2 * m and meta["height"] == h + 2 * m
     assert client.get(f"{S}/status").json() == {"exists": True, "inputRev": 1}
-    # 不會出現在分層包清單
-    assert client.get("/api/packs").json() == []
     # 共用路由: 拆解、讀檔、區塊改色
     assert client.post(f"{S}/decompose").status_code == 200
     assert client.get(f"{S}/files/normal.png").status_code == 200

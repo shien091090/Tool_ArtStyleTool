@@ -2,16 +2,12 @@
 from pathlib import Path
 from typing import Callable
 
-from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse, Response
+from fastapi import Body, FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from . import config, decompose, lospec, recipes
 from .fal import FalClient, FalError, HttpFalClient
-from .pack import Pack
-from .pack_api import add_pack_routes
 from .flow.api import create_router as create_flow_router
-from .pixel.api import create_router as create_pixel_router
-from .proportion.api import create_router as create_proportion_router
 
 
 APP_HEADER = "X-ArtStyle"
@@ -22,7 +18,6 @@ def _default_client() -> FalClient | None:
 
 
 def create_app(data_dir: Path, client_factory: Callable[[], FalClient | None] = _default_client) -> FastAPI:
-    packs_dir = Path(data_dir) / "packs"
     recipes_dir = Path(data_dir) / "recipes"
     app = FastAPI(title="美術風格探索工具")
 
@@ -44,9 +39,6 @@ def create_app(data_dir: Path, client_factory: Callable[[], FalClient | None] = 
     app.add_exception_handler(decompose.NoClientError, error(503))
     app.add_exception_handler(lospec.LospecError, error(502))
 
-    def open_pack(name: str) -> Pack:
-        return Pack.open(packs_dir, name)
-
     @app.get("/api/status")
     def status():
         return {"fal": client_factory() is not None}
@@ -57,21 +49,6 @@ def create_app(data_dir: Path, client_factory: Callable[[], FalClient | None] = 
         if c is None:
             raise decompose.NoClientError("沒有設定 FAL_KEY 環境變數")
         return c.balance()
-
-    @app.get("/api/packs")
-    def list_packs():
-        return Pack.list(packs_dir)
-
-    @app.post("/api/packs")
-    async def create_pack(name: str = Form(...), file: UploadFile = File(...)):
-        return Pack.create(packs_dir, name, await file.read()).meta
-
-    @app.delete("/api/packs/{name}")
-    def delete_pack(name: str):
-        open_pack(name).delete()
-        return {"ok": True}
-
-    add_pack_routes(app, "/api/packs/{name}", lambda p: open_pack(p["name"]), client_factory)
 
     @app.get("/api/lospec")
     def get_lospec(url: str):
@@ -95,8 +72,6 @@ def create_app(data_dir: Path, client_factory: Callable[[], FalClient | None] = 
         recipes.delete_recipe(recipes_dir, name)
         return {"ok": True}
 
-    app.include_router(create_proportion_router(data_dir, client_factory))
-    app.include_router(create_pixel_router(data_dir, client_factory))
     app.include_router(create_flow_router(data_dir, client_factory))
     return app
 

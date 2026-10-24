@@ -116,10 +116,10 @@ def test_delete_node_removes_files(client, tmp_path):
     assert m["nodes"][0]["rev"] == 0 and not (tmp_path / "flows/流程/out/n2.png").exists()
 
 
-def test_pack_source_only_for_input(client):
+def test_output_needs_file(client):
     _chain(client)
-    r = client.post(f"{F}/流程/nodes/n2/output", data={"pack": "x"})
-    assert r.status_code == 400
+    r = client.post(f"{F}/流程/nodes/n1/output", data={"pack": "x"})
+    assert r.status_code == 400 and "請上傳圖片" in r.json()["detail"]
 
 
 def test_files_whitelist(client):

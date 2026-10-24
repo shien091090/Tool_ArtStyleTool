@@ -1,4 +1,4 @@
-"""單一分層包的路由: 拆解檢查(/api/packs/{name})與流程改風格節點共用。"""
+"""單一分層包的路由, 掛在流程改風格節點底下。"""
 from typing import Callable
 
 from fastapi import Body, File, HTTPException, Request, UploadFile

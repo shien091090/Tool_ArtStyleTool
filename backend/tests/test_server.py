@@ -19,29 +19,36 @@ def client(tmp_path):
     return TestClient(create_app(tmp_path, lambda: FakeFal()), headers=HEADERS)
 
 
-def _upload(client, name="騎士", data=None):
-    return client.post("/api/packs", data={"name": name},
-                       files={"file": ("a.png", data or _png(_source()), "image/png")})
+S = "/api/flows/流程/nodes/n2/style"
+
+
+def _upload(client, data=None):
+    """n1 圖片輸入 → n2 改風格, 以上游建立分層包"""
+    client.post("/api/flows", json={"name": "流程"})
+    client.put("/api/flows/流程/graph", json={"nodes": [{"id": "n1", "type": "input", "x": 0, "y": 0, "params": {}},
+                                                       {"id": "n2", "type": "style", "x": 0, "y": 0, "params": {}}],
+                                             "links": [{"from": "n1", "to": "n2"}]})
+    client.post("/api/flows/流程/nodes/n1/output", files={"file": ("a.png", data or _png(_source()), "image/png")})
+    return client.post(f"{S}/init")
 
 
 def test_upload_decompose_and_fetch(client):
     r = _upload(client)
-    assert r.status_code == 200 and r.json()["width"] == 80
-    assert client.post("/api/packs/騎士/decompose").status_code == 200
-    assert [m["name"] for m in client.get("/api/packs").json()] == ["騎士"]
-    r = client.get("/api/packs/騎士/files/normal.png")
+    assert r.status_code == 200 and r.json()["width"] == 80 + 32  # 四周補白邊
+    assert client.post(f"{S}/decompose").status_code == 200
+    r = client.get(f"{S}/files/normal.png")
     assert r.status_code == 200 and r.headers["content-type"] == "image/png"
     assert r.headers["cache-control"] == "no-store"
-    info = client.get("/api/packs/騎士/region", params={"x": 25, "y": 30}).json()
+    info = client.get(f"{S}/region", params={"x": 41, "y": 46}).json()
     assert info["id"] >= 1 and len(info["color"]) == 3
-    r = client.put(f"/api/packs/騎士/regions/{info['id']}", json={"color": [1, 2, 3]})
+    r = client.put(f"{S}/regions/{info['id']}", json={"color": [1, 2, 3]})
     assert r.status_code == 200 and r.json()["regions"]["colors"][str(info["id"])] == [1, 2, 3]
 
 
 def test_run_single_step_with_params(client):
     _upload(client)
-    client.post("/api/packs/騎士/decompose")
-    r = client.post("/api/packs/騎士/steps/regions", json={})
+    client.post(f"{S}/decompose")
+    r = client.post(f"{S}/steps/regions", json={})
     assert r.status_code == 200, r.text
     assert r.json()["layers"]["regions"]["origin"] == "ai:gpt-image-2"
     assert r.json()["layers"]["flat"]["stale"]
@@ -49,35 +56,35 @@ def test_run_single_step_with_params(client):
 
 def test_run_line_clean_step(client):
     _upload(client)
-    client.post("/api/packs/騎士/decompose")
-    r = client.post("/api/packs/騎士/steps/line_clean", json={"level": 3})
+    client.post(f"{S}/decompose")
+    r = client.post(f"{S}/steps/line_clean", json={"level": 3})
     assert r.status_code == 200, r.text
     assert r.json()["layers"]["line"]["level"] == 3
 
 
 def test_replace_layer(client):
     _upload(client)
-    client.post("/api/packs/騎士/decompose")
-    r = client.put("/api/packs/騎士/layers/line",
-                   files={"file": ("l.png", _png(np.full((60, 80), 255, np.uint8)), "image/png")})
+    client.post(f"{S}/decompose")
+    r = client.put(f"{S}/layers/line", files={"file": ("l.png", _png(np.full((60, 80), 255, np.uint8)), "image/png")})
     assert r.status_code == 200 and r.json()["layers"]["line"]["origin"] == "user"
-    r = client.put("/api/packs/騎士/layers/source",
-                   files={"file": ("l.png", _png(_source()), "image/png")})
+    r = client.put(f"{S}/layers/source", files={"file": ("l.png", _png(_source()), "image/png")})
     assert r.status_code == 400
 
 
 def test_errors(client):
-    assert _upload(client, "../x").status_code == 400
-    assert _upload(client, "壞圖", data=b"garbage").status_code == 400
     _upload(client)
-    assert _upload(client).status_code == 409
-    assert client.get("/api/packs/none").status_code == 404
-    assert client.get("/api/packs/騎士/files/meta.json").status_code == 404
-    assert client.get("/api/packs/騎士/files/flat.png").status_code == 404
-    r = client.post("/api/packs/騎士/steps/flat")
+    assert client.get(f"{S}/files/meta.json").status_code == 404
+    assert client.get(f"{S}/files/flat.png").status_code == 404
+    r = client.post(f"{S}/steps/flat")
     assert r.status_code == 400 and "請先完成" in r.json()["detail"]
-    assert client.post("/api/packs/騎士/steps/nope").status_code == 400
-    assert client.get("/api/packs/騎士/region", params={"x": 999, "y": 0}).status_code == 400
+    assert client.post(f"{S}/steps/nope").status_code == 400
+    assert client.get(f"{S}/region", params={"x": 999, "y": 0}).status_code == 400
+
+
+def test_old_routes_removed(client):
+    assert client.get("/api/packs").status_code == 404
+    assert client.get("/api/proportion/works").status_code == 404
+    assert client.get("/api/pixel/works").status_code == 404
 
 
 def test_no_key_returns_503(tmp_path):
@@ -85,14 +92,14 @@ def test_no_key_returns_503(tmp_path):
     assert c.get("/api/status").json() == {"fal": False}
     assert c.get("/api/fal/balance").status_code == 503
     _upload(c)
-    r = c.post("/api/packs/騎士/steps/depth")
+    r = c.post(f"{S}/steps/depth")
     assert r.status_code == 503 and "FAL_KEY" in r.json()["detail"]
 
 
 def test_fal_failure_returns_502(tmp_path):
     c = TestClient(create_app(tmp_path, lambda: FakeFal(fail_on="depth")), headers=HEADERS)
     _upload(c)
-    r = c.post("/api/packs/騎士/decompose")
+    r = c.post(f"{S}/decompose")
     assert r.status_code == 502 and "模擬失敗" in r.json()["detail"]
 
 
@@ -108,9 +115,8 @@ def test_recipes_roundtrip(client):
 
 def test_mutations_require_app_header(tmp_path):
     c = TestClient(create_app(tmp_path, lambda: FakeFal()))
-    r = c.post("/api/packs", data={"name": "x"}, files={"file": ("a.png", _png(_source()), "image/png")})
-    assert r.status_code == 403
-    assert c.get("/api/packs").status_code == 200
+    assert c.put("/api/recipes/x", json={"version": 1}).status_code == 403
+    assert c.get("/api/recipes").status_code == 200
 
 
 def test_lospec_endpoint_rejects_other_hosts(client):
@@ -118,20 +124,9 @@ def test_lospec_endpoint_rejects_other_hosts(client):
     assert r.status_code == 400
 
 
-def test_delete_pack(client, tmp_path):
-    _upload(client)
-    assert client.delete("/api/packs/騎士").status_code == 200
-    assert client.get("/api/packs").json() == []
-    assert not (tmp_path / "packs" / "騎士").exists()
-    assert client.delete("/api/packs/騎士").status_code == 404
-
-
 @pytest.mark.parametrize("name", ["..", "a.b"])
-def test_delete_rejects_bad_names(client, tmp_path, name):
-    _upload(client)
-    assert client.delete(f"/api/packs/{name}").status_code in (400, 404)
+def test_delete_recipe_rejects_bad_names(client, name):
     assert client.delete(f"/api/recipes/{name}").status_code in (400, 404)
-    assert (tmp_path / "packs" / "騎士" / "meta.json").is_file()
 
 
 def test_delete_recipe(client):

@@ -27,12 +27,11 @@ def work(tmp_path):
     return Work.create(tmp_path, "作品", _png(_img()))
 
 
-def test_create_open_list(tmp_path, work):
+def test_create_open(tmp_path, work):
     assert work.meta["images"] == [{"id": "main", "name": "主圖", "w": 80, "h": 60}]
     assert (tmp_path / "作品" / "images" / "main.png").is_file()
     again = Work.open(tmp_path, "作品")
     assert again.meta == work.meta
-    assert [m["name"] for m in Work.list(tmp_path)] == ["作品"]
     with pytest.raises(FileExistsError):
         Work.create(tmp_path, "作品", _png(_img()))
     with pytest.raises(FileNotFoundError):
@@ -175,13 +174,6 @@ def test_set_layout_rejects_malformed_entries(work, entry):
     work.add_part("頭", "main", _mask(), [], None)
     with pytest.raises(ValueError):
         work.set_layout([entry], {"top": 0, "right": 0, "bottom": 0, "left": 0})
-
-
-def test_list_skips_corrupt_work(tmp_path, work):
-    bad = tmp_path / "壞掉"
-    bad.mkdir()
-    (bad / "meta.json").write_text("{not json", encoding="utf-8")
-    assert [m["name"] for m in Work.list(tmp_path)] == ["作品"]
 
 
 # ---- 材質 ----
