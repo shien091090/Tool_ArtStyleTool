@@ -120,3 +120,25 @@ def test_to_library_no_output(client):
     _setup(client, [("n1", "input")], [])
     r = _save(client, "n1")
     assert r.status_code == 400 and "還沒有輸出" in r.json()["detail"]
+
+
+def test_to_library_rewired_is_stale(client):
+    # n2 的輸出是用 n1 做的; 改接到 n5(版本號碰巧也是 1)後不能存, 不然會記成 n5 素材的派生
+    _setup(client, [("n1", "input"), ("n5", "input"), ("n2", "cutout")], [{"from": "n1", "to": "n2"}],
+           assets=(("樹", {"views": ["side"]}), ("石", {"views": ["iso"]})))
+    _pick(client, "n1", "a1")
+    _pick(client, "n5", "a2")
+    _upload(client, "n2", input_rev=1)
+    r = client.put(f"{F}/graph", json={"nodes": [_node("n1", "input"), _node("n5", "input"), _node("n2", "cutout")],
+                                       "links": [{"from": "n5", "to": "n2"}]})
+    assert r.status_code == 200, r.text
+    r = _save(client, "n2")
+    assert r.status_code == 400 and "上游改過了" in r.json()["detail"]
+
+
+def test_to_library_disconnected_is_stale(client):
+    _setup(client, [("n1", "input"), ("n2", "cutout")], [{"from": "n1", "to": "n2"}])
+    _pick(client, "n1")
+    _upload(client, "n2", input_rev=1)
+    client.put(f"{F}/graph", json={"nodes": [_node("n1", "input"), _node("n2", "cutout")], "links": []})
+    assert _save(client, "n2").status_code == 400

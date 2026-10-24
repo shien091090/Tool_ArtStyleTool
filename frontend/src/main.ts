@@ -4,7 +4,8 @@ import { mountLibraryPage } from './pages/libraryPage';
 import { mountFalBalance } from './falBalance';
 import { mountJobBar } from './jobs';
 
-type Mount = (el: HTMLElement, params: URLSearchParams) => () => void;
+type Unmount = (() => void) & { canLeave?: () => boolean };
+type Mount = (el: HTMLElement, params: URLSearchParams) => Unmount;
 
 /** 平面圖沿用 #/flow(舊書籤不失效); 其他網址一律轉到平面圖 */
 const ROUTES: { path: string; label: string; mount: Mount }[] = [
@@ -14,7 +15,7 @@ const ROUTES: { path: string; label: string; mount: Mount }[] = [
 
 const nav = document.querySelector<HTMLElement>('#nav')!;
 const main = document.querySelector<HTMLElement>('#page')!;
-let unmount: (() => void) | null = null;
+let unmount: Unmount | null = null;
 
 for (const r of ROUTES) {
   const a = document.createElement('a');
@@ -24,13 +25,20 @@ for (const r of ROUTES) {
   nav.append(a);
 }
 
-function route() {
+function route(e?: HashChangeEvent) {
   const [raw, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
   const target = ROUTES.find((r) => r.path === raw);
   if (!target) {
     location.replace(raw ? '#/flow' : `#/flow${query ? `?${query}` : ''}`); // 會再觸發 hashchange
     return;
   }
+  const oldHash = e ? new URL(e.oldURL).hash : '';
+  if (e && unmount?.canLeave && !unmount.canLeave()) {
+    history.replaceState(null, '', oldHash); // 不會觸發 hashchange, 留在原頁
+    return;
+  }
+  // 離開平面圖時記住開著的流程, 切回來時接著開
+  if (oldHash.startsWith('#/flow')) nav.querySelector<HTMLAnchorElement>('a[data-path="flow"]')!.href = oldHash;
   for (const a of nav.querySelectorAll<HTMLAnchorElement>('a')) a.classList.toggle('active', a.dataset.path === target.path);
   unmount?.();
   main.replaceChildren();

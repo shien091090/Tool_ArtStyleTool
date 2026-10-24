@@ -132,7 +132,7 @@ export function mountLibraryPage(root: HTMLElement): () => void {
         await refresh(r.added[0]?.id ?? selected);
       } catch (e) {
         showBanner(banner, 'error', (e as Error).message);
-        drawDetail();
+        await refresh(); // 失敗前可能已經存進幾張
       } finally {
         status.textContent = '';
       }

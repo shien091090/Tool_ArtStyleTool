@@ -20,7 +20,7 @@ import { confirmDelete, el, option, showBanner } from './ui';
 const MOVE_SAVE_DELAY = 500;
 const TYPES = Object.keys(NODE_INFO) as FlowNodeType[];
 
-export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () => void {
+export function mountFlowPage(root: HTMLElement, params: URLSearchParams): (() => void) & { canLeave: () => boolean } {
   let flow: FlowMeta | null = null;
   let falOk = false;
   let alive = true;
@@ -279,11 +279,12 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
       showBanner(note, 'warn', STALE_TIP);
       return;
     }
-    const name = prompt('存到素材庫的名稱', `${flow.name} ${NODE_INFO[n.type].label}`);
+    const top = chainTop(flow, nid);
+    const lineage = top?.type === 'input' && top.params.asset ? `派生自: ${String(top.params.source ?? '')}` : '獨立素材';
+    const name = prompt(`存到素材庫的名稱(${lineage})`, `${flow.name} ${NODE_INFO[n.type].label}`);
     if (name === null) return;
     try {
       const a = await api.flows.toLibrary(flow.name, nid, name);
-      const top = chainTop(flow, nid);
       const from = a.parent && top?.params.source ? `(派生自 ${String(top.params.source)})` : '';
       showBanner(note, 'info', `已存到素材庫: ${a.name}${from}`);
     } catch (e) {
@@ -472,7 +473,13 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
     }
   })();
 
-  return () => {
+  /** 切到別的頁籤前: 節點設定有未套用的修改就先問 */
+  const canLeave = () => {
+    const msg = editor?.ed.unsaved();
+    return !msg || confirm(`${msg}, 要放棄嗎?`);
+  };
+
+  return Object.assign(() => {
     alive = false;
     window.clearTimeout(moveTimer);
     if (flow) {
@@ -484,5 +491,5 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): () =>
     document.removeEventListener('pointerdown', onDocDown);
     offJobs();
     canvas.destroy();
-  };
+  }, { canLeave });
 }

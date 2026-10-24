@@ -171,11 +171,13 @@ class Flow:
         return chain
 
     def chain_stale(self, nid: str) -> bool:
-        """鏈上任一節點沒輸出, 或用的不是上游目前的版本。"""
+        """鏈上任一節點沒輸出、沒接上游, 或用的不是上游目前的版本(含改接到別的上游)。"""
         chain = self.main_chain(nid)
-        if any(not n.get("rev") for n in chain):
+        if any(not n.get("rev") for n in chain) or chain[-1]["type"] != "input":
             return True
-        return any(n["type"] != "input" and n.get("inputRev") != up.get("rev") for n, up in zip(chain, chain[1:]))
+        return any(n["type"] != "input" and (n.get("inputRev") != up.get("rev")
+                                             or n.get("inputFrom", up["id"]) not in (None, up["id"]))
+                   for n, up in zip(chain, chain[1:]))
 
     def materials(self, nid: str) -> list[dict]:
         """接到素材接點的上游節點。"""
@@ -190,6 +192,7 @@ class Flow:
                 o = old.get(n["id"])
                 same = o is not None and o["type"] == n["type"]
                 n.update(rev=o["rev"] if same else 0, inputRev=o["inputRev"] if same else None,
+                         inputFrom=o.get("inputFrom") if same else None,
                          error=o.get("error") if same else None)
                 if o is not None and not same:
                     self._remove_files(n["id"])
@@ -212,6 +215,9 @@ class Flow:
             write_png(self.dir / "out" / f"{nid}.png", img)
             n["rev"] = n.get("rev", 0) + 1
             n["inputRev"] = input_rev
+            # 記下用的是哪個上游: 改接線後版本號可能碰巧相同, 只比版本會誤判成最新
+            up = self.upstream(nid) if input_rev is not None else None
+            n["inputFrom"] = up["id"] if up else None
             n["error"] = None
             if params is not None:
                 n["params"] = params

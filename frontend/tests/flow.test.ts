@@ -196,4 +196,11 @@ describe('存到素材庫的過期檢查', () => {
     expect(chainStale(flow, 'n3')).toBe(false);
     expect(chainStale({ ...flow, nodes: [...flow.nodes.slice(0, 2), node('n3', 'pixel')] }, 'n3')).toBe(true);
   });
+  it('改接到別的上游或沒接上游 → 過期', () => {
+    const n2 = { ...node('n2', 'cutout', 1, 1), inputFrom: 'n1' };
+    const rewired: FlowMeta = { name: 'f', nodes: [node('n1', 'input', 1), node('n5', 'input', 1), n2], links: [{ from: 'n5', to: 'n2' }] };
+    expect(chainStale(rewired, 'n2')).toBe(true);
+    expect(chainStale({ ...rewired, links: [] }, 'n2')).toBe(true);
+    expect(chainStale({ ...rewired, links: [{ from: 'n1', to: 'n2' }] }, 'n2')).toBe(false);
+  });
 });

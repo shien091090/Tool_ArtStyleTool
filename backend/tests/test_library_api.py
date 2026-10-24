@@ -60,3 +60,11 @@ def test_bad_tags_400(client):
     _import(client, [("tree.png", png())])
     assert client.patch(f"{L}/a1", json={"tags": {"views": ["3d"]}}).status_code == 400
     assert _import(client, [("x.png", png())], {"type": "魔法"}).status_code == 400
+
+
+def test_import_bad_name_does_not_abort_batch(client):
+    long = "長" * 70 + ".png"
+    r = _import(client, [("ok.png", png()), (long, png()), (" .png", png()), ("z.png", png())])
+    assert r.status_code == 200, r.text
+    names = [a["name"] for a in r.json()["added"]]
+    assert names[0] == "ok" and len(names[1]) == 60 and names[2] == "未命名" and names[3] == "z"

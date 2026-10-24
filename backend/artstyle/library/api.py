@@ -6,7 +6,7 @@ from fastapi import APIRouter, Body, File, Form, UploadFile
 from fastapi.responses import Response
 
 from ..imaging import load_rgba
-from .store import Library, check_tags
+from .store import NAME_MAX, Library, check_tags
 
 
 def create_router(data_dir: Path) -> APIRouter:
@@ -31,10 +31,11 @@ def create_router(data_dir: Path) -> APIRouter:
                 if not data:
                     raise ValueError("空檔案")
                 img = load_rgba(data)
+                # 檔名當名稱: 空白檔名或太長都不能讓整批匯入失敗
+                name = (PurePath(fname).stem.strip() or "未命名")[:NAME_MAX]
+                added.append(lib.add(img, name, {"kind": "import", "file": fname}, tags=t))
             except ValueError as e:
                 errors.append({"file": fname, "detail": str(e)})
-                continue
-            added.append(lib.add(img, PurePath(fname).stem or "未命名", {"kind": "import", "file": fname}, tags=t))
         return {"added": added, "errors": errors}
 
     @r.get("/{aid}/image")

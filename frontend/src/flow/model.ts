@@ -12,6 +12,8 @@ export interface FlowNode {
   rev: number;
   /** 產生輸出時用的上游版本 */
   inputRev: number | null;
+  /** 產生輸出時接的上游節點(舊資料沒有) */
+  inputFrom?: string | null;
   error: string | null;
 }
 
@@ -102,7 +104,10 @@ export function chainStale(flow: FlowMeta, id: string): boolean {
     seen.add(cur.id);
     if (!cur.rev) return true;
     const up = upstreamOf(flow, cur.id);
-    if (up && cur.type !== 'input' && cur.inputRev !== up.rev) return true;
+    if (cur.type !== 'input') {
+      if (!up || cur.inputRev !== up.rev) return true;
+      if (cur.inputFrom && cur.inputFrom !== up.id) return true;
+    }
     cur = up;
   }
   return false;
