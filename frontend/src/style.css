@@ -328,3 +328,24 @@ button.danger { color: var(--danger); }
 .lib-modal { position: fixed; inset: 0; z-index: 50; background: #000a; display: flex; align-items: center; justify-content: center; }
 .lib-import:not(:empty) { border-bottom: 1px solid var(--line); }
 .lib-dialog { width: min(1100px, 92vw); height: 80vh; display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+
+/* 遊戲示意 */
+.mk-body { flex: 1; min-height: 0; display: flex; }
+.mk-stage { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #15171a; }
+.mk-stage canvas { box-shadow: 0 0 0 1px var(--line), 0 4px 18px #0008; cursor: default; touch-action: none; }
+.mk-stage.brush canvas { cursor: crosshair; }
+.mk-palette { width: 170px; flex: none; overflow-y: auto; border-right: 1px solid var(--line); }
+.mk-side { width: 320px; flex: none; overflow-y: auto; border-left: 1px solid var(--line); }
+.mk-pad { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.mk-row { display: flex; flex-direction: column; gap: 3px; }
+.mk-row:has(> input[type=checkbox]) { flex-direction: row; align-items: center; gap: 6px; }
+.mk-row textarea { font: inherit; color: var(--text); background: var(--line); border: 1px solid #50545b; border-radius: 6px; padding: 5px 8px; resize: vertical; }
+.mk-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.mk-grid2 input { width: 100%; box-sizing: border-box; }
+.mk-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.mk-swatch { display: flex; align-items: center; gap: 8px; text-align: left; font-size: 13px; }
+.mk-swatch.on { border-color: var(--accent); background: #2f5ea8; color: #fff; }
+.mk-chip { width: 16px; height: 16px; border-radius: 3px; border: 1px solid #0008; flex: none; }
+.mk-custom { display: flex; flex-wrap: wrap; gap: 4px; }
+.mk-custom input:not([type=color]) { flex: 1 1 100%; min-width: 0; }
+.mk-custom input[type=color] { width: 40px; padding: 0 2px; }
