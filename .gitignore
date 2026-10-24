@@ -1,4 +1,3 @@
-data/packs/
 node_modules/
 dist/
 __pycache__/
@@ -6,6 +5,4 @@ __pycache__/
 .venv/
 .superpowers/
 scratch/
-data/proportion/
-data/pixel/
 data/flows/
