@@ -50,7 +50,7 @@ export function mountStyleEditor(body: HTMLElement, ctx: EditorContext): NodeEdi
     if (!pack) return;
     const load = async () => (pack = await sapi.getPack(''));
     if (tab === 'decompose') {
-      unmount = mountDecomposePage(host, new URLSearchParams(), {
+      unmount = mountDecomposePage(host, {
         api: sapi, load, banner: ctx.banner, status: ctx.status, jobKey,
         onChange: (m) => {
           pack = m;
@@ -62,7 +62,7 @@ export function mountStyleEditor(body: HTMLElement, ctx: EditorContext): NodeEdi
       host.append(el('div', { className: 'muted fe-empty', text: '還沒拆解完成: 先到「1 拆解」按「全部拆解」' }));
       return;
     }
-    unmount = mountRenderPage(host, new URLSearchParams(), {
+    unmount = mountRenderPage(host, {
       api: sapi, load, banner: ctx.banner, recipe,
       onRecipeChange: (r) => {
         recipe = structuredClone(r);

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { cutRadius, dilate, ringMask } from '../src/proportion/draw';
-import { canonicalPath } from '../src/routes';
 
 describe('dilate', () => {
   it('外擴 r 像素並把畫布四邊各加 r', () => {
@@ -38,12 +37,5 @@ describe('ringMask', () => {
     const out = ringMask(src, 3, 3, 1);
     expect(out[2 * 5 + 2]).toBe(0); // 中心
     expect(out[1 * 5 + 1]).toBe(255); // 角落(原本是部位, 但在邊上)
-  });
-});
-
-describe('canonicalPath', () => {
-  it('舊頁籤路徑轉到新的', () => {
-    expect(canonicalPath('proportion')).toBe('workshop');
-    expect(canonicalPath('render')).toBe('render');
   });
 });

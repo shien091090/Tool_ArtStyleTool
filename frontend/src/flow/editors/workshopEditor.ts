@@ -43,7 +43,7 @@ export function mountWorkshopEditor(body: HTMLElement, ctx: EditorContext): Node
   function mount() {
     unmount?.();
     host.replaceChildren();
-    unmount = mountProportionPage(host, new URLSearchParams(), {
+    unmount = mountProportionPage(host, {
       api: wapi,
       load: () => wapi.getWork(''),
       banner: ctx.banner,

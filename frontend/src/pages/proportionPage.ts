@@ -1,4 +1,4 @@
-import { api, type PackMeta, type WorkshopApi } from '../api';
+import { api, type WorkshopApi } from '../api';
 import { exportCollage, hasEdits, loadImage, WorkAssets } from '../proportion/draw';
 import { runningJob, trackJob } from '../jobs';
 import { MATERIALS, swatchUrl } from '../proportion/materials';
@@ -42,7 +42,7 @@ function mouseIcon(side: 'left' | 'right'): SVGSVGElement {
 
 const splitNames = (t: string) => [...new Set(t.split(/[、,，;；\n]/).map((s) => s.trim()).filter(Boolean))];
 
-/** 嵌入流程節點時的設定: 固定一個作品, 不顯示作品列 */
+/** 改部位節點的設定: 節點固定一個作品 */
 export interface WorkshopEmbed {
   api: WorkshopApi;
   /** 讀作品; 還沒有作品回 null */
@@ -57,8 +57,9 @@ export interface WorkshopEmbed {
   jobKey: string;
 }
 
-export function mountProportionPage(root: HTMLElement, params: URLSearchParams, embed?: WorkshopEmbed): () => void {
-  const wapi = embed?.api ?? api.proportion;
+/** 部位工坊(改部位節點的編輯面板)。 */
+export function mountProportionPage(root: HTMLElement, embed: WorkshopEmbed): () => void {
+  const wapi = embed.api;
   let meta: WorkMeta | null = null;
   let assets = new WorkAssets(wapi.fileUrl);
   let view = 'main';
@@ -94,26 +95,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   /** 已經有部位時平常只顯示部位清單, 按「新增部位」才切回拆部位 */
   let adding = false;
 
-  // ---- 上方工具列 ----
-  const banner = embed?.banner ?? el('div');
-  const workSel = el('select');
-  const nameInput = el('input');
-  nameInput.placeholder = '新作品名稱';
-  const fileInput = el('input');
-  fileInput.type = 'file';
-  fileInput.accept = 'image/*';
-  const packSel = el('select');
-  const createBtn = el('button', { text: '建立作品' });
-  const deleteWorkBtn = el('button', { text: '刪除' });
-  deleteWorkBtn.addEventListener('click', () => void deleteWork());
-  const status = embed?.status ?? el('span', { className: 'muted' });
-  const toolbar = el('div', { className: 'toolbar' }, [
-    el('label', {}, ['作品', workSel]),
-    deleteWorkBtn,
-    status,
-    el('span', { className: 'spacer' }),
-    nameInput, fileInput, el('label', {}, ['或從分層包', packSel]), createBtn,
-  ]);
+  const { banner, status } = embed;
 
   // ---- 畫布 ----
   const stage = el('div', { className: 'prop-stage' });
@@ -139,17 +121,8 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
 
   // 檢視與素材圖
   const viewSel = el('select');
-  const imgFile = el('input');
-  imgFile.type = 'file';
-  imgFile.accept = 'image/*';
-  const imgPackSel = el('select');
-  const addImgBtn = button('加入素材圖', () => void addImage());
-  const viewSection = embed
-    ? section('檢視', el('label', {}, ['畫布顯示', viewSel]),
-      el('div', { className: 'muted small', text: '素材圖: 把其他節點接到這個節點的「素材」接點(從別張圖拿部位, 例如換頭)' }))
-    : section('檢視', el('label', {}, ['畫布顯示', viewSel]),
-      el('div', { className: 'muted small', text: '素材圖: 從別張圖拿部位(例如換頭)' }),
-      el('div', { className: 'row' }, [imgFile]), el('div', { className: 'row' }, [el('label', {}, ['或分層包', imgPackSel]), addImgBtn]));
+  const viewSection = section('檢視', el('label', {}, ['畫布顯示', viewSel]),
+    el('div', { className: 'muted small', text: '素材圖: 把其他節點接到這個節點的「素材」接點(從別張圖拿部位, 例如換頭)' }));
 
   // 切部位: 1 選名稱(可請 AI 幫忙找) → 2 切出來; 切不到的再框出位置
   const chipBox = el('div', { className: 'chips' });
@@ -331,8 +304,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   const resultSection = section('結果', resultList);
 
   panel.append(viewSection, segSection, listSection, genSection, resultSection);
-  if (embed) root.append(el('div', { className: 'prop-layout' }, [stage, panel]));
-  else root.append(toolbar, banner, el('div', { className: 'prop-layout' }, [stage, panel]));
+  root.append(el('div', { className: 'prop-layout' }, [stage, panel]));
 
   canvasWrap.append(partPanel, modeBar);
   const editor = new Editor(canvasWrap, {
@@ -361,10 +333,10 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
   // ---- 共用 ----
   const mainInfo = () => meta!.images.find((i) => i.id === 'main')!;
   const selPart = (): Part | undefined => meta?.parts.find((p) => p.id === selected);
-  const actionButtons = [createBtn, addImgBtn, segBtn, suggestBtn, matBtn, splitBtn, delBtn, genBtn, deleteWorkBtn, undoMaskBtn];
+  const actionButtons = [segBtn, suggestBtn, matBtn, splitBtn, delBtn, genBtn, undoMaskBtn];
   /** AI 呼叫進行中鎖住所有會改作品的操作: 後端回傳的 meta 會蓋掉期間的修改。 */
   const lockables = (): (HTMLInputElement | HTMLSelectElement | HTMLButtonElement)[] => [
-    workSel, placeBtn, unplaceBtn, hideChk, resetBtn, upBtn, downBtn, anchorSel, lockChk,
+    placeBtn, unplaceBtn, hideChk, resetBtn, upBtn, downBtn, anchorSel, lockChk,
     fScaleX, fScaleY, fRot, fDx, fDy, pointBtn, boxBtn, customName, pasteChk,
     matInput, refFile, matCount, viewSel, ...swatches.querySelectorAll('button'),
   ];
@@ -377,7 +349,6 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     });
   }
 
-  const jobKey = () => embed?.jobKey ?? (meta ? `workshop:${meta.name}` : null);
 
   // ---- 修正模式: 點選修正持續到按完成; 框選框一次就結束 ----
   function setMode(next: Tool, intent: 'new' | 'part' = 'part') {
@@ -539,7 +510,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     syncAll();
     redraw();
     try {
-      await (label.startsWith('AI ') ? trackJob(label, jobKey(), fn) : fn());
+      await (label.startsWith('AI ') ? trackJob(label, embed.jobKey, fn) : fn());
     } catch (e) {
       showBanner(banner, 'error', (e as Error).message);
     } finally {
@@ -554,7 +525,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
 
   /** 離開又回來時, 這個作品還有 AI 工作在跑: 鎖住操作, 跑完重新載入 */
   async function resumeJob() {
-    const job = runningJob(jobKey());
+    const job = runningJob(embed.jobKey);
     if (!job || !meta) return;
     const name = meta.name;
     await run('上一次的 AI 工作還在跑, 完成後自動載入…', async () => {
@@ -685,7 +656,6 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     cancelAddBtn.classList.toggle('hidden', !meta?.parts.length);
     addPartBtn.disabled = busy;
     for (const b of actionButtons) b.disabled = busy;
-    deleteWorkBtn.disabled = busy || !has;
     for (const c of lockables()) c.disabled = busy;
     syncCosts();
     syncMode();
@@ -770,7 +740,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
       const img = el('img');
       img.src = wapi.fileUrl(meta!.name, `results/${r.id}.png`, r.created);
       img.title = `${r.id} · ${r.model} · ${r.created}`;
-      const tag = embed?.resultTag(r.id);
+      const tag = embed.resultTag(r.id);
       const item = el('div', { className: `result-item${compare?.id === r.id ? ' active' : ''}` },
         tag ? [img, el('span', { className: 'result-tag', text: tag })] : [img]);
       item.addEventListener('click', () => void openCompare(r.id));
@@ -784,7 +754,7 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
       compareBar.replaceChildren(
         el('span', { text: `對照 ${id}: 左 = 原圖, 右 = 結果(拖曳畫面調整分界)` }),
         el('span', { className: 'spacer' }),
-        ...(embed ? embed.compareActions(id) : [button('送到拆解檢查', () => void toPack(id))]),
+        ...embed.compareActions(id),
         button('開新分頁看原尺寸', () => window.open(wapi.fileUrl(meta!.name, `results/${id}.png`), '_blank')),
         ...(meta.results.find((r) => r.id === id)?.raw
           ? [button('看 AI 原圖', () => window.open(wapi.fileUrl(meta!.name, `results/${id}_ai.png`), '_blank'))] : []),
@@ -797,80 +767,6 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     }
   }
 
-  // ---- 作品 ----
-  async function refreshWorks(want = '') {
-    const works = await api.proportion.listWorks();
-    workSel.replaceChildren(option('', works.length ? '— 選擇作品 —' : '— 尚無作品 —'), ...works.map((w) => option(w.name, w.name)));
-    workSel.value = want;
-  }
-
-  async function refreshPacks() {
-    const packs: PackMeta[] = await api.listPacks();
-    const opts = () => [option('', '—'), ...packs.map((p) => option(p.name, p.name))];
-    packSel.replaceChildren(...opts());
-    imgPackSel.replaceChildren(...opts());
-  }
-
-  async function openWork(name: string) {
-    if (busy) {
-      workSel.value = meta?.name ?? '';
-      return;
-    }
-    if (saveTimer !== undefined) {
-      try {
-        await flushSave();
-      } catch (e) {
-        showBanner(banner, 'error', `${(e as Error).message}, 已留在目前的作品`);
-        workSel.value = meta?.name ?? '';
-        return;
-      }
-    }
-    compare = null;
-    selected = null;
-    tool = 'move';
-    extraNames = [];
-    picked.clear();
-    missingNames = [];
-    adding = false;
-    undoStack.length = 0;
-    redoStack.length = 0;
-    view = 'main';
-    meta = null;
-    assets = new WorkAssets(wapi.fileUrl);
-    syncAll();
-    if (!name) {
-      redraw();
-      return;
-    }
-    await run('載入中…', async () => {
-      await setMeta(await wapi.getWork(name));
-      if (!embed) history.replaceState(null, '', `#/workshop?work=${encodeURIComponent(name)}`);
-      redraw();
-    });
-    await resumeJob();
-  }
-
-  async function deleteWork() {
-    if (!meta || busy) return;
-    const name = meta.name;
-    if (!confirmDelete(`作品「${name}」(含素材圖、部位、材質候選與生成結果)`)) return;
-    await run('刪除中…', async () => {
-      // 待存的調整不送了, 作品要刪掉
-      window.clearTimeout(saveTimer);
-      saveTimer = undefined;
-      await api.proportion.deleteWork(name);
-      compare = null;
-      selected = null;
-      view = 'main';
-      meta = null;
-      assets = new WorkAssets(wapi.fileUrl);
-      history.replaceState(null, '', '#/workshop');
-      await refreshWorks('');
-      showBanner(banner, 'info', `已刪除作品「${name}」`);
-    });
-  }
-
-  workSel.addEventListener('change', () => void openWork(workSel.value));
   viewSel.addEventListener('change', () => {
     view = viewSel.value;
     extraNames = [];
@@ -880,34 +776,6 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     redraw();
     syncAll();
   });
-
-  createBtn.addEventListener('click', () => void run('建立中…', async () => {
-    const name = nameInput.value.trim();
-    const file = fileInput.files?.[0];
-    if (!name) throw new Error('請輸入作品名稱');
-    if (!file && !packSel.value) throw new Error('請選擇圖片或分層包');
-    const m = await api.proportion.createWork(name, file ? { file } : { pack: packSel.value });
-    nameInput.value = '';
-    fileInput.value = '';
-    await refreshWorks(m.name);
-    busy = false;
-    await openWork(m.name);
-  }));
-
-  async function addImage() {
-    await run('加入素材圖中…', async () => {
-      if (!meta) return;
-      const file = imgFile.files?.[0];
-      if (!file && !imgPackSel.value) throw new Error('請選擇圖片或分層包');
-      await flushSave();
-      const before = new Set(meta.images.map((i) => i.id));
-      await setMeta(await wapi.addImage(meta.name, file ? { file } : { pack: imgPackSel.value }));
-      imgFile.value = '';
-      view = meta.images.find((i) => !before.has(i.id))?.id ?? view;
-      selected = null;
-      redraw();
-    });
-  }
 
   // ---- 切部位 ----
   async function segmentNames() {
@@ -1215,37 +1083,18 @@ export function mountProportionPage(root: HTMLElement, params: URLSearchParams, 
     }
   }
 
-  async function toPack(id: string) {
-    if (!meta) return;
-    await run('建立分層包中…', async () => {
-      const { pack } = await wapi.toPack(meta!.name, id);
-      location.hash = `#/decompose?pack=${encodeURIComponent(pack)}`;
-    });
-  }
-
   // ---- 啟動 ----
   syncAll();
   void (async () => {
     try {
       falOk = (await api.getStatus()).fal;
-      if (embed) {
-        await refreshPacks();
-        await run('載入中…', async () => {
-          const m = await embed.load();
-          if (m) await setMeta(m);
-        });
-        syncAll();
-        redraw();
-        await resumeJob();
-        return;
-      }
-      await Promise.all([refreshWorks(), refreshPacks()]);
-      const want = params.get('work');
-      if (want) {
-        workSel.value = want;
-        await openWork(want);
-      }
+      await run('載入中…', async () => {
+        const m = await embed.load();
+        if (m) await setMeta(m);
+      });
       syncAll();
+      redraw();
+      await resumeJob();
     } catch (e) {
       showBanner(banner, 'error', (e as Error).message);
     }

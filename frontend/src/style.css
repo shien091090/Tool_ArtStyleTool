@@ -17,9 +17,6 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 body { display: flex; flex-direction: column; }
 
 .topbar { display: flex; align-items: center; gap: 24px; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
-.topbar nav { display: flex; gap: 4px; }
-.topbar nav a { color: var(--muted); text-decoration: none; padding: 6px 12px; border-radius: 6px; }
-.topbar nav a.active { color: var(--text); background: var(--line); }
 .fal-balance { margin-left: auto; font-size: 12px; color: var(--muted); background: none; border-color: var(--line); white-space: nowrap; }
 .fal-balance b { color: var(--text); }
 .fal-balance.low b { color: var(--danger); }
@@ -70,14 +67,6 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .cell .view .empty { color: var(--muted); align-self: center; }
 .cell.clickable img { cursor: crosshair; }
 .region-pop { position: fixed; z-index: 10; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: flex; gap: 8px; align-items: center; box-shadow: 0 4px 16px #000a; }
-
-/* 對照網格 */
-.grid { flex: 1; overflow: auto; padding: 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; align-content: start; }
-.grid figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; cursor: pointer; }
-.grid figure:hover { border-color: var(--accent); }
-.grid canvas { width: 100%; display: block; image-rendering: pixelated; }
-.grid figcaption { margin-top: 6px; color: var(--muted); }
-.grid .unfinished { aspect-ratio: 3 / 4; display: flex; align-items: center; justify-content: center; border: 1px dashed var(--line); color: var(--muted); }
 
 /* 自訂色票編輯區(放在 Tweakpane 色彩資料夾裡) */
 .pal-editor { padding: 6px 8px 8px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }

@@ -1,5 +1,5 @@
 /** 把分層包依風格配方渲染到畫布: 色彩 → 光照 → 線條 → 質感 → 油畫平滑 → 濾鏡 → 泛光 → 調色。 */
-import { api, type PackMeta } from '../api';
+import type { PackMeta } from '../api';
 import { buildRegionTable, hexToRgb, TABLE_SIZE } from '../colorMath';
 import { gradePresetUniforms, gradientTable } from '../grade';
 import type { Recipe } from '../recipe';
@@ -72,7 +72,7 @@ export class Renderer {
   }
 
   /** 載入分層包的圖層。版本字串帶各層的更新時間, 避開瀏覽器快取。 */
-  async loadPack(meta: PackMeta, fileUrl: (name: string, layer: string, version: string) => string = api.fileUrl): Promise<void> {
+  async loadPack(meta: PackMeta, fileUrl: (name: string, layer: string, version: string) => string): Promise<void> {
     const version = PACK_TEXTURES.map((l) => meta.layers[l]?.updated ?? '').join('|');
     const optional = Object.keys(OPTIONAL_TEXTURES) as OptionalTexture[];
     const [bitmaps, optBitmaps] = await Promise.all([

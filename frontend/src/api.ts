@@ -1,7 +1,6 @@
 /** 後端 API 呼叫。非 2xx 一律拋出帶中文訊息的 Error。 */
 import type { Recipe } from './recipe';
 import type { Pad, Part, Place, PartTransform, ResultInfo, SegBox, SegPoint, WorkMeta } from './proportion/model';
-import type { ProportionRecipe } from './proportion/recipe';
 import type { FlowMeta, FlowNode, FlowLink } from './flow/model';
 import type { ConvertSettings, PixelCandidate, PixelResult, PixelSettings, PixelWorkMeta, SizeSuggestion } from './pixel/model';
 
@@ -72,11 +71,9 @@ function form(fields: Record<string, string | Blob>): FormData {
   return fd;
 }
 
-const work = (name: string) => `/api/proportion/works/${enc(name)}`;
-const pwork = (name: string) => `/api/pixel/works/${enc(name)}`;
 const pflow = (name: string) => `/api/flows/${enc(name)}`;
 
-/** 單一分層包的呼叫; base 由分層包名組出網址(流程節點忽略名稱) */
+/** 改風格節點分層包的呼叫(網址固定, 名稱參數不影響) */
 function packApi(base: (name: string) => string) {
   return {
     getPack: (name: string) => request<PackMeta>(base(name)),
@@ -94,12 +91,10 @@ function packApi(base: (name: string) => string) {
 
 export type PackApi = ReturnType<typeof packApi>;
 
-/** 單一部位工坊作品的呼叫; base 由作品名組出網址(流程節點忽略作品名) */
+/** 改部位節點作品的呼叫(網址固定, 名稱參數不影響) */
 function workshopApi(base: (name: string) => string) {
   return {
     getWork: (name: string) => request<WorkMeta>(base(name)),
-    addImage: (name: string, source: { file: File } | { pack: string }) =>
-      request<WorkMeta>(`${base(name)}/images`, { method: 'POST', body: form(source) }),
     fileUrl: (name: string, path: string, version = '') =>
       `${base(name)}/files/${path}?v=${enc(version || String(Date.now()))}`,
     segment: (name: string, image: string, names: string[], points: SegPoint[] = [], box: SegBox | null = null) =>
@@ -124,8 +119,6 @@ function workshopApi(base: (name: string) => string) {
         method: 'POST',
         body: form({ ...masks, options: JSON.stringify(options) }),
       }),
-    toPack: (name: string, resultId: string) =>
-      request<{ pack: string }>(`${base(name)}/results/${resultId}/to-pack`, { method: 'POST' }),
     resultParams: (name: string, resultId: string) =>
       request<{ pad?: Pad; model?: string }>(`${base(name)}/files/results/${resultId}.json`),
     suggestParts: (name: string, image: string) =>
@@ -148,47 +141,11 @@ export type WorkshopApi = ReturnType<typeof workshopApi>;
 export const api = {
   getStatus: () => request<{ fal: boolean }>('/api/status'),
   falBalance: () => request<{ balance: number; currency: string }>('/api/fal/balance'),
-  listPacks: () => request<PackMeta[]>('/api/packs'),
-  createPack: (name: string, file: File) =>
-    request<PackMeta>('/api/packs', { method: 'POST', body: form({ name, file }) }),
-  deletePack: (name: string) => request<{ ok: boolean }>(`/api/packs/${enc(name)}`, { method: 'DELETE' }),
-  ...packApi((name) => `/api/packs/${enc(name)}`),
   lospec: (url: string) => request<{ name: string; colors: string[] }>(`/api/lospec?url=${enc(url)}`),
   listRecipes: () => request<string[]>('/api/recipes'),
   getRecipe: (name: string) => request<unknown>(`/api/recipes/${enc(name)}`),
   saveRecipe: (name: string, recipe: Recipe) => request<{ ok: boolean }>(`/api/recipes/${enc(name)}`, json('PUT', recipe)),
   deleteRecipe: (name: string) => request<{ ok: boolean }>(`/api/recipes/${enc(name)}`, { method: 'DELETE' }),
-  proportion: {
-    listWorks: () => request<{ name: string; updated: string; results: number }[]>('/api/proportion/works'),
-    ...workshopApi(work),
-    deleteWork: (name: string) => request<{ ok: boolean }>(work(name), { method: 'DELETE' }),
-    createWork: (name: string, source: { file: File } | { pack: string }) =>
-      request<WorkMeta>('/api/proportion/works', { method: 'POST', body: form({ name, ...source }) }),
-    listRecipes: () => request<string[]>('/api/proportion/recipes'),
-    getRecipe: (name: string) => request<unknown>(`/api/proportion/recipes/${enc(name)}`),
-    saveRecipe: (name: string, recipe: ProportionRecipe) =>
-      request<{ ok: boolean }>(`/api/proportion/recipes/${enc(name)}`, json('PUT', recipe)),
-    deleteRecipe: (name: string) =>
-      request<{ ok: boolean }>(`/api/proportion/recipes/${enc(name)}`, { method: 'DELETE' }),
-  },
-  pixel: {
-    listWorks: () => request<{ name: string; updated: string; candidates: number }[]>('/api/pixel/works'),
-    getWork: (name: string) => request<PixelWorkMeta>(pwork(name)),
-    deleteWork: (name: string) => request<{ ok: boolean }>(pwork(name), { method: 'DELETE' }),
-    workshopResults: () => request<{ work: string; id: string }[]>('/api/pixel/workshop-results'),
-    createWork: (name: string, source: { file: File } | { pack: string } | { workshop: string }) =>
-      request<PixelWorkMeta>('/api/pixel/works', { method: 'POST', body: form({ name, ...source }) }),
-    fileUrl: (name: string, path: string) => `${pwork(name)}/files/${path}`,
-    addCandidates: (name: string, settings: PixelSettings) => request<{ meta: PixelWorkMeta; candidates: PixelCandidate[]; errors: string[] }>(
-      `${pwork(name)}/candidates`, json('POST', settings)),
-    deleteCandidate: (name: string, cid: string) =>
-      request<PixelWorkMeta>(`${pwork(name)}/candidates/${cid}`, { method: 'DELETE' }),
-    suggestSizes: (name: string) => request<{ sizes: SizeSuggestion[] }>(`${pwork(name)}/suggest`, { method: 'POST' }),
-    convert: (name: string, settings: ConvertSettings) =>
-      request<{ meta: PixelWorkMeta; candidate: PixelCandidate }>(`${pwork(name)}/convert`, json('POST', settings)),
-    pixelate: (name: string, cid: string, colors: number) =>
-      request<{ results: PixelResult[]; colors: number }>(`${pwork(name)}/candidates/${cid}/pixelate`, json('POST', { colors })),
-  },
   flows: {
     list: () => request<{ name: string; updated: string; nodes: number }[]>('/api/flows'),
     create: (name: string) => request<FlowMeta>('/api/flows', json('POST', { name })),
@@ -199,7 +156,7 @@ export const api = {
     fileUrl: (name: string, path: string, version: string | number = Date.now()) =>
       `${pflow(name)}/files/${path}?v=${version}`,
     setOutput: (name: string, nid: string,
-      source: { file: Blob } | { pack: string } | { workshop: string },
+      source: { file: Blob },
       opts: { inputRev?: number | null; params?: Record<string, unknown> } = {}) => {
       const fields: Record<string, string | Blob> = { ...source };
       if (opts.inputRev != null) fields.inputRev = String(opts.inputRev);

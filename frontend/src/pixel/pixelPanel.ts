@@ -1,4 +1,4 @@
-/** 像素素材的來源、候選、縮小結果與右側設定(直接轉換、AI 重畫); 像素素材頁與流程的像素化節點共用。 */
+/** 像素化節點的來源、候選、縮小結果與右側設定(直接轉換、AI 重畫)。 */
 import { costNote, markPaid, el, option, showBanner } from '../pages/ui';
 import { runningJob, trackJob } from '../jobs';
 import { COST, usd } from '../cost';

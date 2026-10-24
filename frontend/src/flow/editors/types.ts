@@ -1,6 +1,6 @@
 import type { FlowMeta, FlowNode } from '../model';
 
-export type OutputSource = { file: Blob } | { pack: string } | { workshop: string };
+export type OutputSource = { file: Blob };
 
 export interface EditorContext {
   flowName: string;

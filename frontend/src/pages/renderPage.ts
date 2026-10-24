@@ -7,21 +7,21 @@ import { DEFAULT_RECIPE, GRADE_PRESET_NAMES, LIMITS, normalizeRecipe, SECTIONS, 
 import { isVisible } from '../visibility';
 import { createPaletteEditor } from './paletteEditor';
 import { fillRecipeSelect, isStarter, loadRecipeValue, STARTER_PREFIX } from './recipeOptions';
-import { confirmDelete, el, option, showBanner } from './ui';
+import { confirmDelete, el, showBanner } from './ui';
 
 const range = (path: string, step?: number) => {
   const [min, max, integer] = LIMITS[path];
   return { min, max, step: step ?? (integer ? 1 : (max - min) / 100) };
 };
 
-/** 嵌入流程節點時拿到的操作 */
+/** 改風格節點拿到的操作 */
 export interface RenderHandle {
   recipe(): Recipe;
   /** 用目前的參數渲染並輸出 PNG */
   toBlob(): Promise<Blob | null>;
 }
 
-/** 嵌入流程節點時的設定: 固定一個分層包, 不顯示分層包選單 */
+/** 改風格節點的設定: 節點固定一個分層包 */
 export interface RenderEmbed {
   api: PackApi;
   load(): Promise<PackMeta>;
@@ -33,17 +33,16 @@ export interface RenderEmbed {
   onRecipeChange?(recipe: Recipe): void;
 }
 
-export function mountRenderPage(root: HTMLElement, params: URLSearchParams, embed?: RenderEmbed): () => void {
+/** 渲染(改風格節點的「渲染」分頁)。 */
+export function mountRenderPage(root: HTMLElement, embed: RenderEmbed): () => void {
   const recipe: Recipe = structuredClone(DEFAULT_RECIPE);
   let currentRecipeName = '';
   let startedFromStarter = false;
-  let packs: PackMeta[] = [];
   let renderer: Renderer | null = null;
   let frame = 0;
   let showingSource = false;
   let disposed = false;
 
-  const packSel = el('select');
   const recipeSel = el('select');
   const loadBtn = el('button', { text: '讀取' });
   const saveBtn = el('button', { text: '存檔' });
@@ -51,7 +50,7 @@ export function mountRenderPage(root: HTMLElement, params: URLSearchParams, embe
   const deleteRecipeBtn = el('button', { text: '刪除配方' });
   const compareBtn = el('button', { text: '按住看原圖' });
   const exportBtn = el('button', { text: '匯出 PNG', className: 'primary' });
-  const banner = embed?.banner ?? el('div');
+  const { banner } = embed;
   const canvas = el('canvas');
   const message = el('div', { className: 'muted' });
   const canvasWrap = el('div', { className: 'canvas-wrap' }, [canvas, message]);
@@ -70,11 +69,9 @@ export function mountRenderPage(root: HTMLElement, params: URLSearchParams, embe
   };
   root.append(
     el('div', { className: 'toolbar' }, [
-      ...(embed ? [] : [el('label', {}, ['分層包', packSel])]),
       el('label', {}, ['配方', recipeSel]), loadBtn, saveBtn, saveAsBtn, deleteRecipeBtn,
-      el('span', { className: 'spacer' }), compareBtn, exportBtn, ...(embed ? embed.actions(handle) : []),
+      el('span', { className: 'spacer' }), compareBtn, exportBtn, ...embed.actions(handle),
     ]),
-    ...(embed ? [] : [banner]),
     el('div', { className: 'render-layout' }, [canvasWrap, panelWrap]),
   );
 
@@ -250,7 +247,7 @@ export function mountRenderPage(root: HTMLElement, params: URLSearchParams, embe
     recipe.lighting.azimuth = ((Math.atan2(ui.light.y, ui.light.x) * 180) / Math.PI + 360) % 360;
     updateVisibility();
     scheduleRender();
-    embed?.onRecipeChange?.(recipe);
+    embed.onRecipeChange?.(recipe);
   });
 
   // ---- 渲染 ----
@@ -276,20 +273,18 @@ export function mountRenderPage(root: HTMLElement, params: URLSearchParams, embe
     if (fixed.length) showBanner(banner, 'warn', `配方「${name}」有欄位已補預設值或修正: ${fixed.join(', ')}`);
     else showBanner(banner, null);
     scheduleRender();
-    embed?.onRecipeChange?.(recipe);
+    embed.onRecipeChange?.(recipe);
   }
 
-  async function selectPack(name: string) {
-    const meta = embed ? packs[0] : packs.find((p) => p.name === name);
+  async function showPack(meta: PackMeta) {
     canvas.classList.add('hidden');
-    if (!meta) { message.textContent = '還沒有分層包, 請先到「拆解檢查」頁建立'; return; }
     if (!isRenderable(meta)) {
-      message.textContent = `「${name}」還沒拆解完成, 請到「拆解檢查」頁完成拆解`;
+      message.textContent = '還沒拆解完成, 請到「拆解」分頁完成拆解';
       return;
     }
     message.textContent = '載入中…';
     try {
-      await renderer?.loadPack(meta, (embed?.api ?? api).fileUrl);
+      await renderer?.loadPack(meta, embed.api.fileUrl);
       message.textContent = '';
       canvas.classList.remove('hidden');
       scheduleRender();
@@ -315,7 +310,6 @@ export function mountRenderPage(root: HTMLElement, params: URLSearchParams, embe
     }
   }
 
-  packSel.addEventListener('change', () => selectPack(packSel.value));
   loadBtn.addEventListener('click', async () => {
     const value = recipeSel.value;
     if (!value) { applyRecipe(DEFAULT_RECIPE, '預設值'); return; }
@@ -363,25 +357,10 @@ export function mountRenderPage(root: HTMLElement, params: URLSearchParams, embe
 
   (async () => {
     try {
-      if (embed) {
-        packs = [await embed.load()];
-        await refreshRecipes();
-        if (embed.recipe) applyRecipe(embed.recipe, '節點上次的設定');
-        await selectPack(packs[0].name);
-        return;
-      }
-      packs = await api.listPacks();
-      packSel.replaceChildren(...packs.map((p) => option(p.name, p.name + (isRenderable(p) ? '' : '(未完成)'))));
-      const wantPack = params.get('pack');
-      const first = packs.find((p) => p.name === wantPack) ?? packs.find(isRenderable) ?? packs[0];
-      if (first) packSel.value = first.name;
-      const wantRecipe = params.get('recipe') ?? '';
-      await refreshRecipes(wantRecipe);
-      if (wantRecipe && recipeSel.value === wantRecipe) {
-        applyRecipe(await loadRecipeValue(wantRecipe), isStarter(wantRecipe) ? wantRecipe.slice(STARTER_PREFIX.length) : wantRecipe);
-        startedFromStarter = isStarter(wantRecipe);
-      }
-      await selectPack(first?.name ?? '');
+      const meta = await embed.load();
+      await refreshRecipes();
+      if (embed.recipe) applyRecipe(embed.recipe, '節點上次的設定');
+      await showPack(meta);
     } catch (e) {
       showBanner(banner, 'error', (e as Error).message);
     }

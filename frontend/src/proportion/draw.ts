@@ -1,7 +1,6 @@
 /**
  * 拼貼與改動範圍的繪製。畫面預覽與送給後端的輸出走同一條 Canvas 2D 路徑, 看到的就是送出的。
  */
-import { api } from '../api';
 import type { Part, WorkMeta } from './model';
 import { applyMat, bboxEdges, invert, isChanged, isDrawn, isMaterialOnly, multiply, partMatrix, type Mat } from './transform';
 
@@ -112,7 +111,7 @@ const sourceKey = (p: Part) => (p.material?.current ? `mat:${p.material.current}
 
 /** 作品的圖與部位圖層快取。部位遮罩或圖改變時呼叫 sync 重載。 */
 export class WorkAssets {
-  constructor(private fileUrl: (name: string, path: string) => string = api.proportion.fileUrl) {}
+  constructor(private fileUrl: (name: string, path: string) => string) {}
 
   images = new Map<string, HTMLImageElement>();
   layers = new Map<string, PartLayer>();

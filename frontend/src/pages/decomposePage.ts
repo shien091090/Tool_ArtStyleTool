@@ -1,7 +1,7 @@
 import { api, type PackApi, type PackMeta, type RGB } from '../api';
 import { hexToRgb, rgbToHex } from '../colorMath';
 import { runningJob, trackJob } from '../jobs';
-import { costNote, markPaid, confirmDelete, el, option, showBanner } from './ui';
+import { costNote, markPaid, el, option, showBanner } from './ui';
 import { COST, usd } from '../cost';
 
 const STEP_ORDER = ['depth', 'normal', 'normal_detail', 'line', 'line_sdf', 'regions', 'flat', 'shade', 'ao', 'silhouette_sdf'];
@@ -21,7 +21,7 @@ interface Cell {
   view: HTMLElement;
 }
 
-/** 嵌入流程節點時的設定: 固定一個分層包, 不顯示建立/選擇/刪除 */
+/** 改風格節點的設定: 節點固定一個分層包 */
 export interface DecomposeEmbed {
   api: PackApi;
   load(): Promise<PackMeta>;
@@ -33,24 +33,15 @@ export interface DecomposeEmbed {
   onChange?(meta: PackMeta): void;
 }
 
-export function mountDecomposePage(root: HTMLElement, params: URLSearchParams, embed?: DecomposeEmbed): () => void {
-  const papi = embed?.api ?? api;
-  let packs: PackMeta[] = [];
+/** 拆解檢查(改風格節點的「拆解」分頁)。 */
+export function mountDecomposePage(root: HTMLElement, embed: DecomposeEmbed): () => void {
+  const papi = embed.api;
   let meta: PackMeta | null = null;
   let busy = false;
 
-  const banner = embed?.banner ?? el('div');
+  const { banner, status } = embed;
   const falBanner = el('div');
-  const nameInput = el('input');
-  nameInput.placeholder = '分層包名稱';
-  const fileInput = el('input');
-  fileInput.type = 'file';
-  fileInput.accept = 'image/*';
-  const createBtn = el('button', { text: '建立' });
-  const packSel = el('select');
   const runAllBtn = markPaid(el('button', { text: '全部拆解', className: 'primary' }));
-  const deleteBtn = el('button', { text: '刪除' });
-  const status = embed?.status ?? el('span', { className: 'muted' });
   const overlayChk = el('input');
   overlayChk.type = 'checkbox';
   const overlayOpacity = el('input');
@@ -77,7 +68,7 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams, e
   cleanLevel.addEventListener('input', () => { cleanValue.textContent = cleanLevel.value; });
   cleanLevel.addEventListener('change', () => step('整理線稿', [['line_clean', { level: Number(cleanLevel.value) }]]));
 
-  const actions: (HTMLButtonElement | HTMLInputElement)[] = [createBtn, runAllBtn, deleteBtn, cleanLevel];
+  const actions: (HTMLButtonElement | HTMLInputElement)[] = [runAllBtn, cleanLevel];
   const button = (text: string, onClick: () => void) => {
     const b = el('button', { text });
     b.addEventListener('click', onClick);
@@ -125,22 +116,8 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams, e
 
   const runAllCost = costNote(`最多${usd(COST.depth + COST.line + COST.gptImage)}(只跑還沒跑過的步驟)`);
   const overlayBar = [el('label', {}, [overlayChk, '疊上線稿比對']), el('label', {}, ['不透明度', overlayOpacity])];
-  if (embed) {
-    root.append(falBanner, el('div', { className: 'toolbar' }, [runAllBtn, runAllCost, el('span', { className: 'spacer' }), ...overlayBar]),
-      el('div', { className: 'cells' }, cells.map((c) => c.root)));
-  } else {
-    root.append(
-      falBanner,
-      el('div', { className: 'toolbar' }, [
-        el('strong', { text: '新增' }), nameInput, fileInput, createBtn,
-        el('span', { className: 'spacer' }),
-        el('label', {}, ['分層包', packSel]), deleteBtn, runAllBtn, runAllCost, status,
-      ]),
-      el('div', { className: 'toolbar' }, overlayBar),
-      banner,
-      el('div', { className: 'cells' }, cells.map((c) => c.root)),
-    );
-  }
+  root.append(falBanner, el('div', { className: 'toolbar' }, [runAllBtn, runAllCost, el('span', { className: 'spacer' }), ...overlayBar]),
+    el('div', { className: 'cells' }, cells.map((c) => c.root)));
 
   // ---- 區塊改色 ----
   const popColor = el('input');
@@ -169,7 +146,7 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams, e
   let undoStack: ColorEdit[] = [];
   let redoStack: ColorEdit[] = [];
   let historyKey = '';
-  /** 換了分層包或區塊重畫過, 編號對不上了, 清空復原紀錄 */
+  /** 區塊重畫過, 編號對不上了, 清空復原紀錄 */
   function syncHistory() {
     const key = meta ? `${meta.name}|${meta.layers.regions?.updated ?? ''}` : '';
     if (key !== historyKey) {
@@ -276,9 +253,8 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams, e
     setBusy(true, `${label}中…可能需要一兩分鐘`);
     showBanner(banner, null);
     try {
-      meta = await (AI_LABELS.includes(label) ? trackJob(`AI ${label}中(約一兩分鐘)…`, jobKey(), fn) : fn());
-      packs = packs.map((p) => (p.name === meta!.name ? meta! : p));
-      embed?.onChange?.(meta);
+      meta = await (AI_LABELS.includes(label) ? trackJob(`AI ${label}中(約一兩分鐘)…`, embed.jobKey, fn) : fn());
+      embed.onChange?.(meta);
     } catch (e) {
       showBanner(banner, 'error', `${label}失敗: ${(e as Error).message}`);
       if (meta) meta = await papi.getPack(meta.name).catch(() => meta);
@@ -298,16 +274,9 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams, e
     });
   }
 
-  function refreshPackList(select?: string) {
-    packSel.replaceChildren(...packs.map((p) => option(p.name, p.name)));
-    if (select) packSel.value = select;
-  }
-
-  const jobKey = () => embed?.jobKey ?? (meta ? `pack:${meta.name}` : null);
-
   /** 上次離開時這個分層包還在拆解: 鎖住操作, 跑完重新載入 */
   function resumeJob() {
-    const job = runningJob(jobKey());
+    const job = runningJob(embed.jobKey);
     if (!job || !meta) return;
     const name = meta.name;
     void run('上一次的拆解還在跑, 等待', async () => {
@@ -316,45 +285,6 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams, e
     });
   }
 
-  function selectPack(name: string) {
-    meta = packs.find((p) => p.name === name) ?? null;
-    pop.classList.add('hidden');
-    renderCells();
-    resumeJob();
-  }
-
-  createBtn.addEventListener('click', async () => {
-    const name = nameInput.value.trim();
-    const file = fileInput.files?.[0];
-    if (!name || !file) { showBanner(banner, 'warn', '請輸入名稱並選擇圖片'); return; }
-    await run('建立分層包', () => api.createPack(name, file));
-    if (meta && meta.name === name) {
-      if (!packs.some((p) => p.name === name)) packs.push(meta);
-      packs.sort((a, b) => a.name.localeCompare(b.name));
-      refreshPackList(name);
-      nameInput.value = '';
-      fileInput.value = '';
-    }
-  });
-  packSel.addEventListener('change', () => selectPack(packSel.value));
-  deleteBtn.addEventListener('click', async () => {
-    if (!meta || busy) return;
-    const name = meta.name;
-    if (!confirmDelete(`分層包「${name}」`)) return;
-    setBusy(true, '刪除中…');
-    try {
-      await api.deletePack(name);
-      packs = packs.filter((p) => p.name !== name);
-      refreshPackList(packs[0]?.name);
-      selectPack(packs[0]?.name ?? '');
-      showBanner(banner, 'info', `已刪除分層包「${name}」`);
-    } catch (e) {
-      showBanner(banner, 'error', `刪除失敗: ${(e as Error).message}`);
-    } finally {
-      setBusy(false);
-      renderCells();
-    }
-  });
   runAllBtn.addEventListener('click', () => meta && run('拆解', () => papi.decomposeAll(meta!.name)));
   overlayChk.addEventListener('change', renderCells);
   overlayOpacity.addEventListener('input', () => {
@@ -365,17 +295,9 @@ export function mountDecomposePage(root: HTMLElement, params: URLSearchParams, e
     try {
       const st = await api.getStatus();
       if (!st.fal) showBanner(falBanner, 'error', '沒有設定 FAL_KEY, 無法執行 AI 步驟(法線、線稿)。設定方式見 README');
-      if (embed) {
-        meta = await embed.load();
-        renderCells();
-        resumeJob();
-        return;
-      }
-      packs = await api.listPacks();
-      const want = params.get('pack');
-      const first = packs.find((p) => p.name === want) ?? packs[0];
-      refreshPackList(first?.name);
-      selectPack(first?.name ?? '');
+      meta = await embed.load();
+      renderCells();
+      resumeJob();
     } catch (e) {
       showBanner(banner, 'error', (e as Error).message);
     }
