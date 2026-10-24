@@ -79,5 +79,7 @@ describe('來源說明', () => {
     expect(sourceText(asset('a1', 'x'))).toBe('自己匯入: a1.png');
     expect(sourceText({ ...asset('a2', 'x'), source: { kind: 'flow', flow: '樹', node: 'n4', rev: 2 } }))
       .toBe('平面圖「樹」節點 n4 第 2 版');
+    expect(sourceText({ ...asset('a3', 'x'), source: { kind: 'mockup', scene: '關卡一', candidate: 'c3' } }))
+      .toBe('遊戲示意「關卡一」候選 3');
   });
 });

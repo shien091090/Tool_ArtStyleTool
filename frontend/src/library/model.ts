@@ -23,7 +23,7 @@ export interface AssetTags {
 export type AssetSource =
   | { kind: 'import'; file: string }
   | { kind: 'flow'; flow: string; node: string; rev: number }
-  | { kind: 'mockup'; [k: string]: unknown };
+  | { kind: 'mockup'; scene: string; candidate: string };
 
 export interface Asset {
   id: string;
@@ -110,5 +110,5 @@ export function sourceText(a: Asset): string {
   const s = a.source;
   if (s.kind === 'import') return `自己匯入: ${s.file}`;
   if (s.kind === 'flow') return `平面圖「${s.flow}」節點 ${s.node} 第 ${s.rev} 版`;
-  return '遊戲示意';
+  return `遊戲示意「${s.scene}」候選 ${s.candidate.replace(/^c/, '')}`;
 }

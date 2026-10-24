@@ -3,6 +3,7 @@ import type { Recipe } from './recipe';
 import type { Pad, Part, Place, PartTransform, ResultInfo, SegBox, SegPoint, WorkMeta } from './proportion/model';
 import type { FlowMeta, FlowNode, FlowLink } from './flow/model';
 import type { Asset, AssetTags } from './library/model';
+import type { Scene, SceneBody } from './mockup/model';
 import type { ConvertSettings, PixelCandidate, PixelResult, PixelSettings, PixelWorkMeta, SizeSuggestion } from './pixel/model';
 
 export type RGB = [number, number, number];
@@ -73,6 +74,7 @@ function form(fields: Record<string, string | Blob>): FormData {
 }
 
 const pflow = (name: string) => `/api/flows/${enc(name)}`;
+const pmock = (name: string) => `/api/mockups/${enc(name)}`;
 
 /** 改風格節點分層包的呼叫(網址固定, 名稱參數不影響) */
 function packApi(base: (name: string) => string) {
@@ -159,6 +161,25 @@ export const api = {
     update: (id: string, patch: { name?: string; tags?: AssetTags }) =>
       request<Asset>(`/api/library/${enc(id)}`, json('PATCH', patch)),
     remove: (id: string) => request<{ ok: boolean }>(`/api/library/${enc(id)}`, { method: 'DELETE' }),
+  },
+  mockups: {
+    list: () => request<{ name: string; view: string; updated: string; candidates: number }[]>('/api/mockups'),
+    create: (name: string, view: string, empty: boolean) => request<Scene>('/api/mockups', json('POST', { name, view, empty })),
+    get: (name: string) => request<Scene>(pmock(name)),
+    save: (name: string, body: SceneBody) => request<Scene>(pmock(name), json('PUT', body)),
+    remove: (name: string) => request<{ ok: boolean }>(pmock(name), { method: 'DELETE' }),
+    addAsset: (name: string, asset: string) =>
+      request<{ scene: Scene; asset: Asset }>(`${pmock(name)}/assets`, json('POST', { asset })),
+    fileUrl: (name: string, path: string, version: string | number = '') =>
+      `${pmock(name)}/files/${path}${version !== '' ? `?v=${version}` : ''}`,
+    render: (name: string, greybox: Blob, layer: Blob, count: number) =>
+      request<Scene>(`${pmock(name)}/render`, { method: 'POST', body: form({ greybox, layer, count: String(count) }) }),
+    removeCandidate: (name: string, cid: string) =>
+      request<Scene>(`${pmock(name)}/candidates/${enc(cid)}`, { method: 'DELETE' }),
+    cut: (name: string, cid: string, box: number[]) =>
+      request<{ file: string; name: string; type: string | null }>(`${pmock(name)}/candidates/${enc(cid)}/cut`, json('POST', { box })),
+    saveCut: (name: string, cid: string, assetName: string, tags: AssetTags) =>
+      request<Asset>(`${pmock(name)}/candidates/${enc(cid)}/cut/save`, json('POST', { name: assetName, tags })),
   },
   flows: {
     list: () => request<{ name: string; updated: string; nodes: number }[]>('/api/flows'),
