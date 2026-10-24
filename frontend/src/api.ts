@@ -2,6 +2,7 @@
 import type { Recipe } from './recipe';
 import type { Pad, Part, Place, PartTransform, ResultInfo, SegBox, SegPoint, WorkMeta } from './proportion/model';
 import type { FlowMeta, FlowNode, FlowLink } from './flow/model';
+import type { Asset, AssetTags } from './library/model';
 import type { ConvertSettings, PixelCandidate, PixelResult, PixelSettings, PixelWorkMeta, SizeSuggestion } from './pixel/model';
 
 export type RGB = [number, number, number];
@@ -146,6 +147,19 @@ export const api = {
   getRecipe: (name: string) => request<unknown>(`/api/recipes/${enc(name)}`),
   saveRecipe: (name: string, recipe: Recipe) => request<{ ok: boolean }>(`/api/recipes/${enc(name)}`, json('PUT', recipe)),
   deleteRecipe: (name: string) => request<{ ok: boolean }>(`/api/recipes/${enc(name)}`, { method: 'DELETE' }),
+  library: {
+    list: () => request<Asset[]>('/api/library'),
+    import: (files: File[], tags?: AssetTags) => {
+      const fd = new FormData();
+      for (const f of files) fd.append('files', f);
+      if (tags) fd.append('tags', JSON.stringify(tags));
+      return request<{ added: Asset[]; errors: { file: string; detail: string }[] }>('/api/library', { method: 'POST', body: fd });
+    },
+    imageUrl: (id: string) => `/api/library/${enc(id)}/image`,
+    update: (id: string, patch: { name?: string; tags?: AssetTags }) =>
+      request<Asset>(`/api/library/${enc(id)}`, json('PATCH', patch)),
+    remove: (id: string) => request<{ ok: boolean }>(`/api/library/${enc(id)}`, { method: 'DELETE' }),
+  },
   flows: {
     list: () => request<{ name: string; updated: string; nodes: number }[]>('/api/flows'),
     create: (name: string) => request<FlowMeta>('/api/flows', json('POST', { name })),
@@ -156,13 +170,16 @@ export const api = {
     fileUrl: (name: string, path: string, version: string | number = Date.now()) =>
       `${pflow(name)}/files/${path}?v=${version}`,
     setOutput: (name: string, nid: string,
-      source: { file: Blob },
+      source: { file: Blob } | { asset: string },
       opts: { inputRev?: number | null; params?: Record<string, unknown> } = {}) => {
       const fields: Record<string, string | Blob> = { ...source };
       if (opts.inputRev != null) fields.inputRev = String(opts.inputRev);
       if (opts.params) fields.params = JSON.stringify(opts.params);
       return request<FlowMeta>(`${pflow(name)}/nodes/${nid}/output`, { method: 'POST', body: form(fields) });
     },
+    /** 節點輸出存到素材庫; 後端判斷原圖 */
+    toLibrary: (name: string, nid: string, assetName: string) =>
+      request<Asset>(`${pflow(name)}/nodes/${nid}/to-library`, json('POST', { name: assetName })),
     /** 改部位節點的作品 */
     workshop: (name: string, nid: string) => {
       const base = `${pflow(name)}/nodes/${nid}/workshop`;

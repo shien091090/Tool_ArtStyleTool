@@ -1,6 +1,7 @@
 import type { FlowMeta, FlowNode } from '../model';
 
-export type OutputSource = { file: Blob };
+/** 上傳的圖, 或素材庫的素材(只限圖片輸入節點) */
+export type OutputSource = { file: Blob } | { asset: string };
 
 export interface EditorContext {
   flowName: string;
