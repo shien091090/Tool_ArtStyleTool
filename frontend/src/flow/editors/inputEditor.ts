@@ -1,18 +1,15 @@
-/** 圖片輸入節點: 上傳圖片, 或從素材庫選。 */
+/** 圖片輸入節點: 從素材庫選圖(新圖在挑選視窗裡匯入)。 */
 import { api } from '../../api';
 import { pickAsset } from '../../library/picker';
 import { el, showBanner } from '../../pages/ui';
 import type { EditorContext, NodeEditor, OutputSource } from './types';
 
 export function mountInputEditor(body: HTMLElement, ctx: EditorContext): NodeEditor {
-  const fileInput = el('input');
-  fileInput.type = 'file';
-  fileInput.accept = 'image/*';
-  const pickBtn = el('button', { text: '從素材庫選' });
+  const pickBtn = el('button', { text: '從素材庫選圖', className: 'primary' });
   const preview = el('div', { className: 'fe-preview checker' });
   const label = el('div', { className: 'muted small' });
   body.append(el('div', { className: 'fe-scroll' }, [
-    el('div', { className: 'toolbar' }, [el('label', {}, ['上傳圖片', fileInput]), pickBtn]),
+    el('div', { className: 'toolbar' }, [pickBtn]),
     label, preview,
   ]));
 
@@ -23,7 +20,7 @@ export function mountInputEditor(body: HTMLElement, ctx: EditorContext): NodeEdi
       img.src = url;
       preview.append(img);
     } else {
-      preview.append(el('div', { className: 'muted', text: '選一張圖, 選好會立刻成為這個節點的輸出' }));
+      preview.append(el('div', { className: 'muted', text: '從素材庫選一張圖, 選好會立刻成為這個節點的輸出; 新圖可以在挑選視窗裡直接匯入' }));
     }
     label.textContent = text;
   }
@@ -39,14 +36,9 @@ export function mountInputEditor(body: HTMLElement, ctx: EditorContext): NodeEdi
       showBanner(ctx.banner, 'error', (e as Error).message);
     } finally {
       ctx.status.textContent = '';
-      fileInput.value = '';
     }
   }
 
-  fileInput.addEventListener('change', () => {
-    const f = fileInput.files?.[0];
-    if (f) void apply({ file: f }, { source: f.name }, f.name);
-  });
   pickBtn.addEventListener('click', async () => {
     const a = await pickAsset();
     if (a) void apply({ asset: a.id }, { source: a.name, asset: a.id }, `素材庫: ${a.name}`);

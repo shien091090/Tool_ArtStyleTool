@@ -1,4 +1,4 @@
-/** 素材庫共用元件: 篩選列、縮圖格、標籤編輯。素材庫頁與挑選視窗共用。 */
+/** 素材庫共用元件: 篩選列、縮圖格、標籤編輯、匯入。素材庫頁與挑選視窗共用。 */
 import { api } from '../api';
 import { el, option } from '../pages/ui';
 import { KINDS, PICK_LABEL, sections, VIEW_LABEL, VIEW_PICKS, VIEWS, type Asset, type AssetTags, type Filter, type ViewKey, type ViewPick } from './model';
@@ -85,4 +85,58 @@ export function tagEditor(tags: AssetTags, onChange: (t: AssetTags) => void): HT
     el('div', { className: 'lib-views' }, boxes),
     el('label', {}, ['類型', kind]),
   ]);
+}
+
+export type ImportResult = Awaited<ReturnType<typeof api.library.import>>;
+
+/** 「匯入圖片」按鈕(附隱藏的檔案選擇), 選好檔案交給 onFiles */
+export function importButton(onFiles: (files: File[]) => void): HTMLElement[] {
+  const input = el('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.multiple = true;
+  input.className = 'hidden';
+  const btn = el('button', { text: '匯入圖片', className: 'primary' });
+  btn.addEventListener('click', () => input.click());
+  input.addEventListener('change', () => {
+    const files = [...(input.files ?? [])];
+    input.value = '';
+    if (files.length) onFiles(files);
+  });
+  return [btn, input];
+}
+
+/** 匯入表單: 先替這批選標籤(可略過)再匯入; 有回應(含部分失敗)交給 onDone, 整批失敗交給 onError */
+export function importForm(files: File[], opts: {
+  onDone: (r: ImportResult) => void | Promise<void>;
+  onCancel: () => void;
+  onError: (msg: string) => void;
+}): HTMLElement {
+  let tags: AssetTags = { views: [], type: null };
+  const ok = el('button', { text: `匯入 ${files.length} 張`, className: 'primary' });
+  const cancel = el('button', { text: '取消' });
+  cancel.addEventListener('click', () => opts.onCancel());
+  ok.addEventListener('click', async () => {
+    ok.disabled = true;
+    cancel.disabled = true;
+    ok.textContent = '匯入中…';
+    try {
+      const empty = !tags.views.length && !tags.type;
+      await opts.onDone(await api.library.import(files, empty ? undefined : tags));
+    } catch (e) {
+      opts.onError((e as Error).message);
+    }
+  });
+  return el('div', { className: 'lib-pad' }, [
+    el('b', { text: '匯入圖片' }),
+    el('div', { className: 'muted small', text: files.map((f) => f.name).join('、') }),
+    el('div', { className: 'muted small', text: '可以先替這批選標籤(可略過, 之後再改)' }),
+    tagEditor(tags, (t) => { tags = t; }),
+    el('div', { className: 'lib-row' }, [ok, cancel]),
+  ]);
+}
+
+/** 部分沒匯入時的提示文字; 全部成功回傳 null */
+export function importErrors(r: ImportResult): string | null {
+  return r.errors.length ? `有 ${r.errors.length} 張沒匯入: ${r.errors.map((e) => `${e.file}(${e.detail})`).join('、')}` : null;
 }

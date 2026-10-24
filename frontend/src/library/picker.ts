@@ -1,19 +1,21 @@
-/** 從素材庫挑一張圖的視窗; 取消回傳 null。 */
+/** 從素材庫挑一張圖的視窗, 也能直接匯入新圖; 取消回傳 null。 */
 import { api } from '../api';
 import { el, showBanner } from '../pages/ui';
-import { filterBar, renderGrid } from './grid';
+import { filterBar, importButton, importErrors, importForm, renderGrid } from './grid';
 import type { Asset } from './model';
 
 export function pickAsset(): Promise<Asset | null> {
   return new Promise((resolve) => {
     let assets: Asset[] = [];
     const banner = el('div');
+    const importSlot = el('div', { className: 'lib-import' });
     const list = el('div', { className: 'lib-groups' }, [el('div', { className: 'muted lib-empty', text: '讀取中…' })]);
     const filter = filterBar(() => draw());
     const cancel = el('button', { text: '取消' });
     const dialog = el('div', { className: 'lib-dialog' }, [
-      el('div', { className: 'toolbar' }, [el('b', { text: '從素材庫選圖' }), filter.root, el('span', { className: 'spacer' }), cancel]),
-      banner, list,
+      el('div', { className: 'toolbar' }, [el('b', { text: '從素材庫選圖' }), ...importButton(showImport), filter.root,
+        el('span', { className: 'spacer' }), cancel]),
+      banner, importSlot, list,
     ]);
     const overlay = el('div', { className: 'lib-modal' }, [dialog]);
 
@@ -27,15 +29,39 @@ export function pickAsset(): Promise<Asset | null> {
     };
     const draw = () => renderGrid(list, assets, filter.value(), { onPick: (a) => close(a) });
 
+    async function load() {
+      try {
+        assets = await api.library.list();
+        draw();
+      } catch (e) {
+        showBanner(banner, 'error', (e as Error).message);
+      }
+    }
+
+    /** 只匯入一張且成功就直接選它; 多張則留在視窗裡讓人挑 */
+    function showImport(files: File[]) {
+      importSlot.replaceChildren(importForm(files, {
+        onDone: async (r) => {
+          importSlot.replaceChildren();
+          const warn = importErrors(r);
+          showBanner(banner, warn ? 'warn' : null, warn ?? undefined);
+          if (r.added.length === 1 && files.length === 1) return close(r.added[0]);
+          await load();
+        },
+        onCancel: () => importSlot.replaceChildren(),
+        onError: (msg) => {
+          importSlot.replaceChildren();
+          showBanner(banner, 'error', msg);
+        },
+      }));
+    }
+
     cancel.addEventListener('click', () => close(null));
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) close(null);
     });
     window.addEventListener('keydown', onKey);
     document.body.append(overlay);
-    api.library.list().then((l) => {
-      assets = l;
-      draw();
-    }).catch((e) => showBanner(banner, 'error', (e as Error).message));
+    void load();
   });
 }

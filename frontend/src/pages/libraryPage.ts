@@ -1,6 +1,6 @@
 /** 素材庫頁: 分組瀏覽、篩選、改名稱與標籤、匯入、刪除。 */
 import { api } from '../api';
-import { filterBar, renderGrid, tagEditor } from '../library/grid';
+import { filterBar, importButton, importErrors, importForm, renderGrid, tagEditor } from '../library/grid';
 import { sourceText, type Asset, type AssetTags } from '../library/model';
 import { download } from '../pixel/pixelPanel';
 import { confirmDelete, el, showBanner } from './ui';
@@ -11,18 +11,11 @@ export function mountLibraryPage(root: HTMLElement): () => void {
   let alive = true;
 
   const banner = el('div');
-  const status = el('span', { className: 'muted' });
-  const fileInput = el('input');
-  fileInput.type = 'file';
-  fileInput.accept = 'image/*';
-  fileInput.multiple = true;
-  fileInput.className = 'hidden';
-  const importBtn = el('button', { text: '匯入圖片', className: 'primary' });
   const filter = filterBar(() => draw());
   const list = el('div', { className: 'lib-groups' });
   const detail = el('div', { className: 'lib-detail panel-wrap' });
   root.append(
-    el('div', { className: 'toolbar' }, [importBtn, fileInput, filter.root, status]),
+    el('div', { className: 'toolbar' }, [...importButton(showImport), filter.root]),
     banner,
     el('div', { className: 'lib-layout' }, [list, detail]),
   );
@@ -117,41 +110,19 @@ export function mountLibraryPage(root: HTMLElement): () => void {
 
   /** 選好檔案後先在右側選這批的標籤, 確定才匯入 */
   function showImport(files: File[]) {
-    let tags: AssetTags = { views: [], type: null };
-    const ok = el('button', { text: `匯入 ${files.length} 張`, className: 'primary' });
-    const cancel = el('button', { text: '取消' });
-    cancel.addEventListener('click', () => drawDetail());
-    ok.addEventListener('click', async () => {
-      ok.disabled = true;
-      status.textContent = '匯入中…';
-      try {
-        const empty = !tags.views.length && !tags.type;
-        const r = await api.library.import(files, empty ? undefined : tags);
-        if (r.errors.length) showBanner(banner, 'warn', `有 ${r.errors.length} 張沒匯入: ${r.errors.map((e) => `${e.file}(${e.detail})`).join('、')}`);
-        else showBanner(banner, null);
+    detail.replaceChildren(importForm(files, {
+      onDone: async (r) => {
+        const warn = importErrors(r);
+        showBanner(banner, warn ? 'warn' : null, warn ?? undefined);
         await refresh(r.added[0]?.id ?? selected);
-      } catch (e) {
-        showBanner(banner, 'error', (e as Error).message);
-        await refresh(); // 失敗前可能已經存進幾張
-      } finally {
-        status.textContent = '';
-      }
-    });
-    detail.replaceChildren(el('div', { className: 'lib-pad' }, [
-      el('b', { text: '匯入圖片' }),
-      el('div', { className: 'muted small', text: files.map((f) => f.name).join('、') }),
-      el('div', { className: 'muted small', text: '可以先替這批選標籤(可略過, 之後再改)' }),
-      tagEditor(tags, (t) => { tags = t; }),
-      el('div', { className: 'lib-row' }, [ok, cancel]),
-    ]));
+      },
+      onCancel: () => drawDetail(),
+      onError: (msg) => {
+        showBanner(banner, 'error', msg);
+        drawDetail();
+      },
+    }));
   }
-
-  importBtn.addEventListener('click', () => fileInput.click());
-  fileInput.addEventListener('change', () => {
-    const files = [...(fileInput.files ?? [])];
-    fileInput.value = '';
-    if (files.length) showImport(files);
-  });
 
   void refresh();
   return () => {

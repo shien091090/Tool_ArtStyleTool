@@ -317,4 +317,5 @@ button.danger { color: var(--danger); }
 .lib-tags { display: flex; flex-direction: column; gap: 6px; }
 .lib-views { display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .lib-modal { position: fixed; inset: 0; z-index: 50; background: #000a; display: flex; align-items: center; justify-content: center; }
+.lib-import:not(:empty) { border-bottom: 1px solid var(--line); }
 .lib-dialog { width: min(1100px, 92vw); height: 80vh; display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
