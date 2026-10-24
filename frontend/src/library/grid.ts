@@ -92,13 +92,14 @@ export function renderStrip(container: HTMLElement, group: Asset[],
   );
 }
 
-/** 視角勾選 + 類型下拉 */
-export function tagEditor(tags: AssetTags, onChange: (t: AssetTags) => void): HTMLElement {
+/** 視角勾選 + 類型下拉; lockedBy 給原圖名稱時整個鎖住(派生圖沿用原圖) */
+export function tagEditor(tags: AssetTags, onChange: (t: AssetTags) => void, lockedBy?: string): HTMLElement {
   let cur: AssetTags = { views: [...tags.views], type: tags.type };
   const boxes = VIEWS.map((v) => {
     const cb = el('input');
     cb.type = 'checkbox';
     cb.checked = cur.views.includes(v);
+    cb.disabled = lockedBy !== undefined;
     cb.addEventListener('change', () => {
       const views = VIEWS.filter((k) => (k === v ? cb.checked : cur.views.includes(k))) as ViewKey[];
       cur = { ...cur, views };
@@ -109,12 +110,13 @@ export function tagEditor(tags: AssetTags, onChange: (t: AssetTags) => void): HT
   const kind = el('select');
   kind.append(option('', '不指定類型'), ...KINDS.map((k) => option(k, k)));
   kind.value = cur.type ?? '';
+  kind.disabled = lockedBy !== undefined;
   kind.addEventListener('change', () => {
     cur = { ...cur, type: kind.value || null };
     onChange(cur);
   });
   return el('div', { className: 'lib-tags' }, [
-    el('div', { className: 'muted small', text: '視角(沒勾 = 未分類)' }),
+    el('div', { className: 'muted small', text: lockedBy !== undefined ? `視角與類型沿用原圖「${lockedBy}」, 要改請到原圖改` : '視角(沒勾 = 未分類)' }),
     el('div', { className: 'lib-views' }, boxes),
     el('label', {}, ['類型', kind]),
   ]);

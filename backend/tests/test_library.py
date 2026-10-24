@@ -77,3 +77,18 @@ def test_bad_id(tmp_path):
         lib.get("../x")
     with pytest.raises(FileNotFoundError):
         lib.image_path("a1")
+
+
+def test_derived_tags_follow_root(tmp_path):
+    """派生圖的視角與類型一律沿用原圖: 新增時照抄, 不能單獨改, 改原圖會一路帶到所有派生"""
+    lib = Library(tmp_path)
+    root_tags = {"views": ["side"], "type": "角色"}
+    lib.add(_img(), "根", SRC, tags=root_tags)
+    assert lib.add(_img(), "子", SRC, parent="a1", tags={"views": ["iso"], "type": "道具"})["tags"] == root_tags
+    lib.add(_img(), "孫", SRC, parent="a2")
+    with pytest.raises(ValueError, match="沿用原圖"):
+        lib.update("a2", None, {"views": [], "type": None})
+    assert lib.update("a2", "子2", None)["name"] == "子2"
+    new = {"views": ["iso", "flat"], "type": "敵人"}
+    lib.update("a1", None, new)
+    assert [lib.get(a)["tags"] for a in ("a1", "a2", "a3")] == [new] * 3

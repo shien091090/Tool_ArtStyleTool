@@ -76,6 +76,8 @@ class Library:
             self.root.mkdir(parents=True, exist_ok=True)
             if parent is not None and not (self.root / str(parent) / "asset.json").is_file():
                 parent = None
+            if parent is not None:  # 派生圖的視角與類型一律沿用原圖
+                tags = self.get(parent)["tags"]
             aid = self._next_id()
             d = self.root / aid
             d.mkdir()
@@ -107,9 +109,24 @@ class Library:
             if name is not None:
                 meta["name"] = check_name(name)
             if tags is not None:
+                if meta["parent"] is not None:
+                    raise ValueError("派生圖沿用原圖的視角與類型, 要改請到原圖改")
                 meta["tags"] = check_tags(tags)
+                self._spread_tags(aid, meta["tags"])
             _write_json(self._dir(aid) / "asset.json", meta)
             return meta
+
+    def _spread_tags(self, aid: str, tags: dict) -> None:
+        """原圖改了標籤, 一路帶到所有派生。"""
+        everything = self.list()
+        todo = [aid]
+        while todo:
+            cur = todo.pop()
+            for child in everything:
+                if child["parent"] == cur:
+                    child["tags"] = tags
+                    _write_json(self.root / child["id"] / "asset.json", child)
+                    todo.append(child["id"])
 
     def delete(self, aid: str) -> None:
         """只刪這一張; 它的子素材改掛到它的原圖(沒有就變成根)。"""

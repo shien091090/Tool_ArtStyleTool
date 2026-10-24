@@ -1,7 +1,7 @@
 /** 素材庫頁: 分組瀏覽、篩選、改名稱與標籤、匯入、刪除。 */
 import { api } from '../api';
 import { filterBar, importButton, importErrors, importForm, renderGrid, renderStrip, tagEditor } from '../library/grid';
-import { groupAssets, sourceText, type Asset, type AssetTags } from '../library/model';
+import { groupAssets, rootOf, sourceText, type Asset, type AssetTags } from '../library/model';
 import { download } from '../pixel/pixelPanel';
 import { confirmDelete, el, showBanner } from './ui';
 
@@ -50,9 +50,12 @@ export function mountLibraryPage(root: HTMLElement): () => void {
   async function patch(id: string, p: { name?: string; tags?: AssetTags }) {
     try {
       const a = await api.library.update(id, p);
-      assets = assets.map((x) => (x.id === id ? a : x));
       showBanner(banner, null);
-      draw();
+      if (p.tags) await refresh(); // 原圖的標籤會帶到所有派生
+      else {
+        assets = assets.map((x) => (x.id === id ? a : x));
+        draw();
+      }
     } catch (e) {
       showBanner(banner, 'error', (e as Error).message);
     }
@@ -85,7 +88,7 @@ export function mountLibraryPage(root: HTMLElement): () => void {
     const rows: HTMLElement[] = [
       el('div', { className: 'lib-big checker' }, [img]),
       el('label', { className: 'lib-row' }, ['名稱', name]),
-      tagEditor(a.tags, (t) => void patch(a.id, { tags: t })),
+      tagEditor(a.tags, (t) => void patch(a.id, { tags: t }), a.parent ? assets.find((x) => x.id === rootOf(assets, a.id))?.name : undefined),
       el('div', { className: 'muted small', text: `來源: ${sourceText(a)}` }),
     ];
     if (parent) {
