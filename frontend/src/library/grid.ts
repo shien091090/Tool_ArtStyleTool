@@ -66,7 +66,6 @@ export function renderGrid(container: HTMLElement, assets: Asset[], filter: Filt
     const c = el('div', { className: `lib-card${kids.length ? ' group' : ''}${on ? ' selected' : ''}`, title: root.name }, [
       el('div', { className: 'lib-cell-row' }, [thumb(root, 'lib-thumb'), ...(kids.length ? [el('div', { className: 'lib-minis' }, minis)] : [])]),
       el('div', { className: 'lib-name', text: root.name }),
-      ...(kids.length ? [el('div', { className: 'lib-from muted small', text: `+ ${kids.length} 張派生` })] : []),
     ]);
     c.addEventListener('click', () => opts.onPick(root, g));
     return c;
