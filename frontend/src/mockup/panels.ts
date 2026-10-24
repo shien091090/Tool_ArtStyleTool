@@ -1,6 +1,7 @@
 /** 遊戲示意右側與左側面板: 物件屬性、背景、地面調色盤、新場景表單。 */
+import { COST, usd } from '../cost';
 import { KINDS, VIEW_LABEL, VIEWS, type ViewKey } from '../library/model';
-import { el, option } from '../pages/ui';
+import { costNote, el, markPaid, option } from '../pages/ui';
 import { terrains, type MockObject, type Scene } from './model';
 
 /** edit(fn): 存復原點 → fn 改場景 → 重畫並排程存檔 */
@@ -146,6 +147,57 @@ export function backgroundPanel(s: Scene, edit: Edit): HTMLElement {
     row('顏色', colorInput(s.background.color, (v) => edit((sc) => {
       sc.background.color = v;
     }))),
+  ]);
+}
+
+/** 風格設定與「AI 畫整張」 */
+export function stylePanel(s: Scene, edit: Edit, opts: {
+  count: number;
+  busy: boolean;
+  refUrl(aid: string): string;
+  onCount(n: number): void;
+  addRef(): void;
+  render(): void;
+}): HTMLElement {
+  const genre = el('input');
+  genre.value = s.style.genre;
+  genre.addEventListener('change', () => edit((sc) => {
+    sc.style.genre = genre.value.trim();
+  }));
+  const text = el('textarea');
+  text.rows = 3;
+  text.placeholder = '例: 16-bit 像素風、手繪水彩、低多邊形…(可空)';
+  text.value = s.style.text;
+  text.addEventListener('change', () => edit((sc) => {
+    sc.style.text = text.value;
+  }));
+  const refs = s.style.refs.map((aid) => {
+    const img = el('img');
+    img.src = opts.refUrl(aid);
+    const x = el('button', { text: '×', className: 'mk-ref-x', title: '移除這張參考圖' });
+    x.addEventListener('click', () => edit((sc) => {
+      sc.style.refs = sc.style.refs.filter((r) => r !== aid);
+    }));
+    return el('div', { className: 'mk-ref checker' }, [img, x]);
+  });
+  const addRef = el('button', { text: '+ 參考圖', className: 'small' });
+  addRef.disabled = s.style.refs.length >= 4;
+  addRef.addEventListener('click', opts.addRef);
+  const count = el('select');
+  count.append(...[1, 2, 3, 4].map((n) => option(String(n), `${n} 張`)));
+  count.value = String(opts.count);
+  const note = costNote(usd(opts.count * COST.gptImage));
+  count.addEventListener('change', () => opts.onCount(Number(count.value)));
+  const go = markPaid(el('button', { text: opts.busy ? 'AI 畫圖中…' : 'AI 畫整張' }));
+  go.disabled = opts.busy;
+  go.addEventListener('click', opts.render);
+  return el('div', { className: 'mk-pad' }, [
+    el('b', { text: '風格' }),
+    row('遊戲類型描述(給 AI 看, 英文較準)', genre),
+    row('風格描述', text),
+    el('div', { className: 'muted small', text: '參考圖(最多 4 張, 只參考畫風)' }),
+    el('div', { className: 'mk-refs' }, [...refs, addRef]),
+    el('div', { className: 'mk-btns' }, [count, go, note]),
   ]);
 }
 

@@ -349,3 +349,16 @@ button.danger { color: var(--danger); }
 .mk-custom { display: flex; flex-wrap: wrap; gap: 4px; }
 .mk-custom input:not([type=color]) { flex: 1 1 100%; min-width: 0; }
 .mk-custom input[type=color] { width: 40px; padding: 0 2px; }
+.mk-stage.cutting canvas { cursor: crosshair; }
+.mk-cands { flex: none; display: flex; gap: 8px; overflow-x: auto; padding: 8px 12px; border-top: 1px solid var(--line); }
+.mk-cand { flex: none; width: 150px; cursor: pointer; border: 2px solid transparent; border-radius: 6px; padding: 3px; }
+.mk-cand:hover { border-color: var(--line); }
+.mk-cand.on { border-color: var(--accent); }
+.mk-cand img { width: 100%; height: 84px; object-fit: contain; background: #0006; border-radius: 4px; display: block; }
+.mk-refs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.mk-ref { position: relative; width: 56px; height: 56px; border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.mk-ref img { max-width: 100%; max-height: 100%; }
+.mk-ref-x { position: absolute; top: 1px; right: 1px; padding: 0 5px; font-size: 12px; line-height: 16px; }
+.mk-preview { display: flex; align-items: center; justify-content: center; min-height: 120px; border-radius: 6px; }
+.mk-preview img { max-width: 100%; max-height: 240px; }
+.mk-prompt { white-space: pre-wrap; font-size: 11px; max-height: 200px; overflow-y: auto; background: #0004; padding: 6px; border-radius: 4px; }

@@ -1,12 +1,15 @@
-/** 遊戲示意頁: 場景管理、灰盒/素材/地面格編輯、自動存檔與復原。 */
+/** 遊戲示意頁: 場景管理、灰盒/素材/地面格編輯、自動存檔與復原、AI 畫整張、候選與截素材。 */
 import { api } from '../api';
-import { VIEW_LABEL, type ViewKey } from '../library/model';
+import { onJobsChange, runningJob, trackJob } from '../jobs';
+import { attachCutter, candidatePanel, candidateStrip, drawCandidate, type Box, type CutPreview } from '../mockup/candidates';
+import { download } from '../pixel/pixelPanel';
+import { VIEW_LABEL, type AssetTags, type ViewKey } from '../library/model';
 import { pickAsset } from '../library/picker';
-import { drawScene, type Images } from '../mockup/draw';
+import { drawScene, renderPngs, type Images } from '../mockup/draw';
 import { attachEditor } from '../mockup/editor';
 import { createHistory } from '../mockup/history';
 import { bodyOf, CANVAS, DEFAULT_BOX_COLOR, newObjectId, type Scene, type SceneBody } from '../mockup/model';
-import { backgroundPanel, groundPanel, newSceneForm, objectPanel, type Edit } from '../mockup/panels';
+import { backgroundPanel, groundPanel, newSceneForm, objectPanel, stylePanel, type Edit } from '../mockup/panels';
 import { confirmDelete, el, option, showBanner } from './ui';
 
 const SAVE_DELAY = 500;
@@ -21,6 +24,14 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   let saveTimer = 0;
   let saving: Promise<void> = Promise.resolve();
   let alive = true;
+  let mode: 'edit' | 'view' = 'edit';
+  let viewing: string | null = null;
+  let candImg: HTMLImageElement | null = null;
+  let box: Box | null = null;
+  let preview: CutPreview | null = null;
+  let cutBusy = false;
+  let count = 1;
+  let wasRendering = false;
   const images: Images = new Map();
   const undoStack = createHistory<string>();
 
@@ -47,7 +58,8 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   const stage = el('div', { className: 'mk-stage' }, [canvas]);
   const palette = el('div', { className: 'mk-palette' });
   const side = el('div', { className: 'mk-side' });
-  root.append(el('div', { className: 'mk-body' }, [palette, stage, side]));
+  const strip = el('div', { className: 'mk-cands hidden' });
+  root.append(el('div', { className: 'mk-body' }, [palette, stage, side]), strip);
 
   function error(e: unknown) {
     showBanner(banner, 'error', (e as Error).message);
@@ -64,6 +76,10 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
 
   function redraw() {
     if (!scene) return;
+    if (mode === 'view' && candImg) {
+      drawCandidate(canvas.getContext('2d')!, scene, candImg, box);
+      return;
+    }
     drawScene(canvas.getContext('2d')!, scene, images, { selected });
   }
 
@@ -81,13 +97,23 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
 
   function sync() {
     deleteBtn.disabled = !scene;
-    for (const b of [undoBtn, redoBtn, addBoxBtn, addAssetBtn, selectTool]) b.disabled = !scene;
-    brushTool.disabled = !scene?.ground;
+    const editing = !!scene && mode === 'edit';
+    for (const b of [undoBtn, redoBtn, addBoxBtn, addAssetBtn, selectTool]) b.disabled = !editing;
+    brushTool.disabled = !editing || !scene?.ground;
     if (!scene?.ground && tool === 'brush') tool = 'select';
     selectTool.classList.toggle('primary', tool === 'select');
     brushTool.classList.toggle('primary', tool === 'brush');
     status.textContent = !scene ? '' : dirty ? '有修改尚未存檔…' : '已存檔';
-    stage.classList.toggle('brush', tool === 'brush');
+    stage.classList.toggle('brush', editing && tool === 'brush');
+    stage.classList.toggle('cutting', mode === 'view');
+  }
+
+  const jobKey = (s: Scene) => `mockup:${s.name}`;
+  const rendering = () => !!scene && !!runningJob(jobKey(scene));
+
+  function drawStrip() {
+    strip.classList.toggle('hidden', !scene?.candidates.length);
+    strip.replaceChildren(...(scene ? candidateStrip(scene, viewing, (cid) => view(cid)) : []));
   }
 
   function drawSide() {
@@ -99,6 +125,21 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
       side.replaceChildren(el('div', { className: 'mk-pad muted', text: '選一個場景, 或按「新場景」' }));
       return;
     }
+    if (mode === 'view' && viewing) {
+      const c = s.candidates.find((x) => x.id === viewing);
+      palette.classList.add('hidden');
+      if (c) {
+        side.replaceChildren(candidatePanel(c, {
+          box, preview, busy: cutBusy,
+          onBack: () => back(),
+          onDownload: () => download(api.mockups.fileUrl(s.name, `candidates/${c.id}.png`), `${s.name}-候選${c.id.slice(1)}.png`),
+          onDelete: () => void removeCandidate(c.id),
+          onCut: () => void cut(),
+          onSave: (name, tags) => void saveCut(name, tags),
+        }));
+      }
+      return;
+    }
     palette.replaceChildren(groundPanel(s, brush, (b) => {
       brush = b;
       tool = 'brush';
@@ -106,14 +147,171 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
       drawSide();
     }, edit));
     const o = s.objects.find((x) => x.id === selected);
-    side.replaceChildren(o ? objectPanel(s, o, edit, removeSelected) : backgroundPanel(s, edit));
+    side.replaceChildren(...(o ? [objectPanel(s, o, edit, removeSelected)] : [
+      stylePanel(s, edit, {
+        count,
+        busy: rendering(),
+        refUrl: (aid) => api.mockups.fileUrl(s.name, `assets/${aid}.png`),
+        onCount: (n) => {
+          count = n;
+          drawSide();
+        },
+        addRef: () => void addRef(),
+        render: () => void renderAI(),
+      }),
+      backgroundPanel(s, edit),
+    ]));
   }
 
   function refresh() {
     sync();
     drawSide();
+    drawStrip();
     redraw();
   }
+
+  // ---- AI 畫整張、候選 ----
+  async function addRef() {
+    const s = scene;
+    if (!s) return;
+    const a = await pickAsset();
+    if (!a || scene !== s || s.style.refs.includes(a.id)) return;
+    try {
+      await save();
+      await api.mockups.addAsset(s.name, a.id);
+      images.delete(a.id);
+      edit((sc) => {
+        sc.style.refs = [...sc.style.refs, a.id].slice(0, 4);
+      });
+    } catch (e) {
+      error(e);
+    }
+  }
+
+  /** 素材圖都載好才畫得出正確的灰盒圖 */
+  async function imagesReady() {
+    await Promise.all([...images.values()].map((img) => img.decode().catch(() => undefined)));
+  }
+
+  async function renderAI() {
+    const s = scene;
+    if (!s || rendering()) return;
+    try {
+      await save();
+      await imagesReady();
+      const pngs = await renderPngs(s, images);
+      const before = new Set(s.candidates.map((c) => c.id));
+      const next = await trackJob(`AI 畫整張中(${count} 張)…`, jobKey(s),
+        () => api.mockups.render(s.name, pngs.greybox, pngs.layer, count));
+      if (scene !== s) return;
+      s.candidates = next.candidates;
+      s.nextCandidate = next.nextCandidate;
+      const added = next.candidates.find((c) => !before.has(c.id));
+      showBanner(banner, null);
+      if (added) view(added.id);
+      else refresh();
+    } catch (e) {
+      error(e);
+      refresh();
+    }
+  }
+
+  /** 換頁回來時 AI 還在跑: 跑完後重新讀候選 */
+  const offJobs = onJobsChange(() => {
+    const now = rendering();
+    if (wasRendering && !now && scene) {
+      const s = scene;
+      api.mockups.get(s.name).then((next) => {
+        if (scene !== s) return;
+        s.candidates = next.candidates;
+        s.nextCandidate = next.nextCandidate;
+        refresh();
+      }).catch(error);
+    }
+    wasRendering = now;
+    if (mode === 'edit' && !selected && !formOpen) drawSide();
+  });
+
+  function view(cid: string) {
+    if (!scene) return;
+    mode = 'view';
+    viewing = cid;
+    box = null;
+    preview = null;
+    selected = null;
+    candImg = new Image();
+    candImg.onload = () => redraw();
+    candImg.src = api.mockups.fileUrl(scene.name, `candidates/${cid}.png`, cid);
+    refresh();
+  }
+
+  function back() {
+    mode = 'edit';
+    viewing = null;
+    candImg = null;
+    box = null;
+    preview = null;
+    refresh();
+  }
+
+  async function removeCandidate(cid: string) {
+    const s = scene;
+    if (!s || !confirmDelete(`候選 ${cid.slice(1)}`)) return;
+    try {
+      const next = await api.mockups.removeCandidate(s.name, cid);
+      if (scene !== s) return;
+      s.candidates = next.candidates;
+      back();
+    } catch (e) {
+      error(e);
+    }
+  }
+
+  async function cut() {
+    const s = scene;
+    const cid = viewing;
+    const b = box;
+    if (!s || !cid || !b || cutBusy) return;
+    cutBusy = true;
+    drawSide();
+    try {
+      const r = await trackJob('去背中…', null, () => api.mockups.cut(s.name, cid, b));
+      if (scene !== s || viewing !== cid) return;
+      preview = { url: api.mockups.fileUrl(s.name, r.file, Date.now()), name: r.name, tags: { views: [s.view], type: r.type } };
+      showBanner(banner, null);
+    } catch (e) {
+      error(e);
+    } finally {
+      cutBusy = false;
+      drawSide();
+    }
+  }
+
+  async function saveCut(name: string, tags: AssetTags) {
+    const s = scene;
+    const cid = viewing;
+    if (!s || !cid) return;
+    try {
+      const a = await api.mockups.saveCut(s.name, cid, name, tags);
+      showBanner(banner, 'info', `已存到素材庫: ${a.name}`);
+      preview = null;
+      box = null;
+      refresh();
+    } catch (e) {
+      error(e);
+    }
+  }
+
+  const detachCutter = attachCutter(canvas, {
+    scene: () => scene,
+    active: () => mode === 'view' && !cutBusy,
+    setBox: (b, done) => {
+      box = b;
+      if (done) preview = null;
+      redraw();
+      if (done) drawSide();
+    },
+  });
 
   // ---- 編輯與存檔 ----
   const snapshotOf = (s: Scene) => JSON.stringify(bodyOf(s));
@@ -175,7 +373,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
 
   const detach = attachEditor(canvas, {
     scene: () => scene,
-    active: () => !formOpen,
+    active: () => !formOpen && mode === 'edit',
     tool: () => tool,
     brush: () => brush,
     selected: () => selected,
@@ -255,6 +453,10 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   function onKey(e: KeyboardEvent) {
     const t = e.target as HTMLElement;
     if (!scene || formOpen || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+    if (mode === 'view') {
+      if (e.key === 'Escape') back();
+      return;
+    }
     if ((e.key === 'Delete' || e.key === 'Backspace') && selected) {
       e.preventDefault();
       removeSelected();
@@ -283,6 +485,11 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
     await save();
     scene = null;
     selected = null;
+    mode = 'edit';
+    viewing = null;
+    candImg = null;
+    box = null;
+    preview = null;
     images.clear();
     undoStack.clear();
     if (name) {
@@ -293,6 +500,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
       }
     }
     if (!alive) return;
+    wasRendering = rendering();
     const [w, h] = scene ? CANVAS[scene.view] : [1, 1];
     canvas.width = w;
     canvas.height = h;
@@ -347,6 +555,8 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
     alive = false;
     ro.disconnect();
     detach();
+    detachCutter();
+    offJobs();
     window.removeEventListener('keydown', onKey);
   }, { canLeave });
 }
