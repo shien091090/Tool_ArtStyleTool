@@ -194,3 +194,22 @@ def test_no_client(tmp_path):
     c = TestClient(create_app(tmp_path, lambda: None), headers=HEADERS)
     _new(c)
     assert _render(c, "場景").status_code == 503
+
+
+def test_render_snapshot_is_layout_at_start(client, fal, tmp_path):
+    """AI 畫圖期間場景又被存檔修改, 候選記的仍是送出時的配置"""
+    from artstyle.mockup.store import Scene
+    s = _new(client)
+    orig_edit = fal.edit
+
+    def edit_and_change(*a, **k):
+        sc = Scene.open(tmp_path / "mockups", "場景")
+        body = {key: sc.meta[key] for key in ("background", "ground", "objects", "style")}
+        body["objects"] = body["objects"][:1]
+        body["style"]["text"] = "改過"
+        sc.save(body)
+        return orig_edit(*a, **k)
+
+    fal.edit = edit_and_change
+    c = _render(client, "場景").json()["candidates"][0]
+    assert len(c["objects"]) == len(s["objects"]) and c["style"]["text"] == ""

@@ -5,7 +5,7 @@ import { costNote, el, markPaid, option } from '../pages/ui';
 import { terrains, type MockObject, type Scene } from './model';
 
 /** edit(fn): 存復原點 → fn 改場景 → 重畫並排程存檔 */
-export type Edit = (fn: (s: Scene) => void) => void;
+export type Edit = (fn: (s: Scene) => void, rebuild?: boolean) => void;
 
 function row(label: string, input: HTMLElement): HTMLElement {
   return el('label', { className: 'mk-row' }, [el('span', { className: 'muted small', text: label }), input]);
@@ -50,11 +50,12 @@ export function objectPanel(s: Scene, o: MockObject, edit: Edit, onDelete: () =>
   const rows: HTMLElement[] = [];
   if (o.kind === 'asset') {
     rows.push(el('b', { text: `素材: ${o.name}` }));
-    rows.push(row('寬', num(o.w, (v) => set((x) => {
+    rows.push(row('寬', num(o.w, (v) => edit((sc) => {
+      const x = find(sc);
       if (x.kind !== 'asset') return;
       x.h = (x.h * v) / x.w;
       x.w = v;
-    }), { min: 8 })));
+    }, true), { min: 8 })));
     const flip = el('input');
     flip.type = 'checkbox';
     flip.checked = o.flip;
@@ -93,7 +94,8 @@ export function objectPanel(s: Scene, o: MockObject, edit: Edit, onDelete: () =>
     rows.push(el('div', { className: 'mk-grid2' }, [f('i', '格 i', 0.5), f('j', '格 j', 0.5), f('w', '佔地寬(格)', 0.5, 0.1),
       f('l', '佔地深(格)', 0.5, 0.1), f('h', '高度(px)', 10, 1)]));
   } else {
-    const f = (key: 'x' | 'y' | 'w' | 'h', min?: number) => row(key, num(o[key], (v) => set((x) => {
+    const f = (key: 'x' | 'y' | 'w' | 'h', min?: number) => row(key, num(o[key], (v) => edit((sc) => {
+      const x = find(sc);
       if (x.kind !== 'block') {
         if (x.kind === 'asset' && (key === 'w' || key === 'h')) {
           const k = v / x[key];
@@ -101,7 +103,7 @@ export function objectPanel(s: Scene, o: MockObject, edit: Edit, onDelete: () =>
           x.h *= k;
         } else x[key] = v;
       }
-    }), { min }));
+    }, o.kind === 'asset'), { min }));
     rows.push(el('div', { className: 'mk-grid2' }, [f('x'), f('y'), f('w', 8), f('h', 8)]));
   }
   if (s.view !== 'iso') {
@@ -177,7 +179,7 @@ export function stylePanel(s: Scene, edit: Edit, opts: {
     const x = el('button', { text: '×', className: 'mk-ref-x', title: '移除這張參考圖' });
     x.addEventListener('click', () => edit((sc) => {
       sc.style.refs = sc.style.refs.filter((r) => r !== aid);
-    }));
+    }, true));
     return el('div', { className: 'mk-ref checker' }, [img, x]);
   });
   const addRef = el('button', { text: '+ 參考圖', className: 'small' });
@@ -210,7 +212,7 @@ export function groundPanel(s: Scene, brush: string | null, onBrush: (b: string 
     on.checked = !!s.ground;
     on.addEventListener('change', () => edit((sc) => {
       sc.ground = on.checked ? { cols: 8, rows: 8, cells: Array(64).fill(null), custom: [] } : null;
-    }));
+    }, true));
     items.push(el('label', { className: 'mk-row' }, [on, '棋盤格']));
     if (s.ground) {
       const resize = (cols: number, rows: number) => edit((sc) => {
@@ -218,7 +220,7 @@ export function groundPanel(s: Scene, brush: string | null, onBrush: (b: string 
         const cells: (string | null)[] = [];
         for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) cells.push(c < g.cols && r < g.rows ? g.cells[r * g.cols + c] : null);
         sc.ground = { ...g, cols, rows, cells };
-      });
+      }, true);
       items.push(el('div', { className: 'mk-grid2' }, [
         row('行數', num(s.ground.cols, (v) => resize(Math.round(Math.min(20, Math.max(2, v))), s.ground!.rows), { min: 2 })),
         row('列數', num(s.ground.rows, (v) => resize(s.ground!.cols, Math.round(Math.min(11, Math.max(2, v)))), { min: 2 })),
@@ -252,7 +254,7 @@ export function groundPanel(s: Scene, brush: string | null, onBrush: (b: string 
     if (!v || v.length > 60 || terrains(s).some((t) => t.label === v)) return;
     edit((sc) => {
       sc.ground!.custom.push({ label: v, color: color.value });
-    });
+    }, true);
     onBrush(v);
   });
   items.push(fill, el('div', { className: 'mk-custom' }, [name, color, add]));

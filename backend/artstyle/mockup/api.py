@@ -1,4 +1,5 @@
 """遊戲示意 API(前綴 /api/mockups)。"""
+import copy
 import json
 import re
 from pathlib import Path
@@ -104,10 +105,11 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
             raise ValueError("素材層要有透明通道")
         refs = [read_png(s.dir / "assets" / f"{a}.png")[..., :3] for a in s.meta["style"]["refs"]]
         prompt = build_prompt(s.meta)
+        objects, style = copy.deepcopy(s.meta["objects"]), copy.deepcopy(s.meta["style"])
         c = client()
         outs = await run_in_threadpool(c.edit, MODEL, grey[..., :3], prompt, count, refs)
         for out in outs:
-            s.add_candidate(paste_layer(fit_to_canvas(out, w, h), lay), prompt)
+            s.add_candidate(paste_layer(fit_to_canvas(out, w, h), lay), prompt, objects, style)
         return s.meta
 
     @r.delete("/{name}/candidates/{cid}")

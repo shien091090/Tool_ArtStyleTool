@@ -228,14 +228,16 @@ class Scene:
         write_png(self.dir / rel, img)
         return rel
 
-    def add_candidate(self, img: np.ndarray, prompt: str) -> dict:
+    def add_candidate(self, img: np.ndarray, prompt: str, objects: list | None = None, style: dict | None = None) -> dict:
+        """objects/style: 送 AI 當下的配置(畫圖期間場景可能又被改); 沒給就取目前存檔的。"""
         with _lock:
             self._reload()
             n = self.meta.get("nextCandidate", 1)
             cid = f"c{n}"
             write_png(self.dir / "candidates" / f"{cid}.png", img)
-            c = {"id": cid, "created": _now(), "prompt": prompt, "style": copy.deepcopy(self.meta["style"]),
-                 "objects": copy.deepcopy(self.meta["objects"])}
+            c = {"id": cid, "created": _now(), "prompt": prompt,
+                 "style": copy.deepcopy(style if style is not None else self.meta["style"]),
+                 "objects": copy.deepcopy(objects if objects is not None else self.meta["objects"])}
             self.meta["candidates"].append(c)
             self.meta["nextCandidate"] = n + 1
             self._save()

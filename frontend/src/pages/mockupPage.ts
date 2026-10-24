@@ -32,6 +32,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   let cutBusy = false;
   let count = 1;
   let wasRendering = false;
+  let renderBusy = false;
   const images: Images = new Map();
   const undoStack = createHistory<string>();
 
@@ -109,7 +110,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   }
 
   const jobKey = (s: Scene) => `mockup:${s.name}`;
-  const rendering = () => !!scene && !!runningJob(jobKey(scene));
+  const rendering = () => renderBusy || (!!scene && !!runningJob(jobKey(scene)));
 
   function drawStrip() {
     strip.classList.toggle('hidden', !scene?.candidates.length);
@@ -179,10 +180,11 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
     try {
       await save();
       await api.mockups.addAsset(s.name, a.id);
+      if (scene !== s) return;
       images.delete(a.id);
       edit((sc) => {
         sc.style.refs = [...sc.style.refs, a.id].slice(0, 4);
-      });
+      }, true);
     } catch (e) {
       error(e);
     }
@@ -196,6 +198,8 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   async function renderAI() {
     const s = scene;
     if (!s || rendering()) return;
+    renderBusy = true; // 送出前就鎖住, 存檔與產圖期間連點不會再付一次錢
+    drawSide();
     try {
       await save();
       await imagesReady();
@@ -208,9 +212,11 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
       s.nextCandidate = next.nextCandidate;
       const added = next.candidates.find((c) => !before.has(c.id));
       showBanner(banner, null);
+      renderBusy = false;
       if (added) view(added.id);
       else refresh();
     } catch (e) {
+      renderBusy = false;
       error(e);
       refresh();
     }
@@ -316,13 +322,17 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   // ---- 編輯與存檔 ----
   const snapshotOf = (s: Scene) => JSON.stringify(bodyOf(s));
 
-  const edit: Edit = (fn) => {
+  /** 面板改值: 預設不重建面板(重建會吃掉滑鼠正要點的按鈕、讓焦點掉回頁面); 面板結構會變時傳 rebuild */
+  const edit: Edit = (fn, rebuild = false) => {
     if (!scene) return;
     undoStack.push(snapshotOf(scene));
     fn(scene);
     loadImages();
     markDirty();
-    refresh();
+    sync();
+    if (rebuild) drawSide();
+    drawStrip();
+    redraw();
   };
 
   function markDirty() {
@@ -368,7 +378,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
     selected = null;
     edit((s) => {
       s.objects = s.objects.filter((o) => o.id !== id);
-    });
+    }, true);
   }
 
   const detach = attachEditor(canvas, {
@@ -457,7 +467,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
       if (e.key === 'Escape') back();
       return;
     }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && selected) {
+    if (e.key === 'Delete' && selected) {
       e.preventDefault();
       removeSelected();
     } else if (e.ctrlKey && e.key.toLowerCase() === 'z') {
