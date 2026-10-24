@@ -285,3 +285,33 @@ button.seg-final { width: 100%; padding: 9px 10px; font-size: 15px; font-weight:
 /* 部位清單一列不換行: 名稱完整顯示, 說明太長就截斷 */
 .part-row > span:nth-child(2) { flex: none; white-space: nowrap; }
 .part-row .part-tags { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.topbar nav { display: flex; gap: 4px; }
+.topbar nav a { color: var(--muted); text-decoration: none; padding: 6px 12px; border-radius: 6px; }
+.topbar nav a.active { color: var(--text); background: var(--line); }
+
+/* 素材庫 */
+button.danger { color: var(--danger); }
+.lib-filter { display: flex; flex-wrap: wrap; gap: 8px; }
+.lib-layout { flex: 1; min-height: 0; display: flex; }
+.lib-groups { flex: 1; min-width: 0; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+.lib-group { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+.lib-card { width: 112px; cursor: pointer; border: 2px solid transparent; border-radius: 6px; padding: 4px; }
+.lib-card:hover { border-color: var(--line); }
+.lib-card.selected { border-color: var(--accent); }
+.lib-card.dim { opacity: 0.35; }
+.lib-thumb { width: 100px; height: 100px; display: flex; align-items: center; justify-content: center; border-radius: 4px; overflow: hidden; }
+.lib-thumb img { max-width: 100%; max-height: 100%; }
+.lib-name { margin-top: 4px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lib-from { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lib-empty { padding: 24px; }
+.lib-detail { width: 340px; }
+.lib-pad { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+.lib-big { display: flex; align-items: center; justify-content: center; min-height: 160px; border-radius: 6px; }
+.lib-big img { max-width: 100%; max-height: 300px; display: block; }
+.lib-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lib-row input { flex: 1; min-width: 0; }
+.lib-tags { display: flex; flex-direction: column; gap: 6px; }
+.lib-views { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.lib-modal { position: fixed; inset: 0; z-index: 50; background: #000a; display: flex; align-items: center; justify-content: center; }
+.lib-dialog { width: min(1100px, 92vw); height: 80vh; display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
