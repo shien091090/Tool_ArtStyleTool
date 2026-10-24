@@ -55,7 +55,7 @@
 - **視角**(可多選): 橫向卷軸、縱向卷軸、俯瞰、斜角俯瞰、平面。內部代號 `side`、`vertical`、`topdown`、`iso`、`flat`。
 - **類型**(單選, 可不選): 地形、背景、角色、敵人、道具、建築、景物、其他。(類型清單是實作者的決定, 可以調)
 - 標籤的三種掛法: 匯入時選(可略過); 素材庫裡補標/修改; 第 2 期在遊戲示意擺未分類素材時自動掛上該場景的視角。
-- **派生素材沿用原圖的標籤**(存入當下複製一份, 之後各自獨立可改)。
+- **派生素材沿用原圖的標籤**(2026-10-25 改為鎖定: 派生不能單獨改, 改原圖會帶到所有派生)。
 
 ---
 
@@ -144,19 +144,152 @@ data/library/
 
 ---
 
-## 第 2 期: 遊戲示意核心(方向已定, 細節到那期再寫)
+## 第 1 期實測後的調整(2026-10-25, 已實作)
 
-- **場景**: 選畫面架構新增; 存「架構 + 物件 + 風格設定 + 候選圖」, 存在 `data/mockups/<場景>/`。
-- **五種畫面架構**: 橫向卷軸、縱向卷軸(直式 9:16)、俯瞰(方格)、斜角俯瞰(2:1 菱形格)、平面(卡牌/棋盤); 其他為橫式 16:9。每種帶一組預設灰盒(參考實驗的灰盒草稿), 可改可刪, 也可從空白開始。
-- **物件**:
-  - 灰盒: 有標籤的方塊(斜角俯瞰是可調高度的立體方塊); 預設灰色, 可上色當顏色提示; 標籤中英都可, 送 AI 時要讓它看得懂。
-  - 素材: 從素材庫擺入, 拖曳、縮放、左右翻轉、前後順序; 擺入未分類素材會自動掛上該場景視角。
-  - 地面: 俯瞰、斜角俯瞰、平面是格子地圖, 筆刷塗每格的地形標籤(草地、水、道路…); 橫向/縱向卷軸的地面當一般灰盒擺。
-  - 不做: 旋轉、多選對齊、UI。
-- **風格設定**: 風格描述文字、參考圖(可多張), 兩種都可選填, 跟著場景存。
-- **畫圖**: GPT Image 2 edit(medium), 一次 1~4 張; 送出「灰盒 + 素材合成的圖 + 參考圖 + 指令」; 指令逐一列出灰盒物件、明說背景也是佔位、要求不畫標籤字、已完成的素材保持不變並以它們的風格補其餘。畫完把素材以原位置貼回, 結果加入候選。遮罩只畫灰盒(GPT Image 2 的 mask)可留作備案。
-- **截素材**: 在候選圖上框選 → SAM 3 依框去背(挑框內面積最大的遮罩, 約 0.005 美元) → 存進素材庫, `source.kind = mockup`, 標籤 = 場景視角 + 依灰盒推測的類型(可改), 名稱預設為框到的灰盒標籤。
-- 付費按鈕照工具慣例(金色 + 價錢)。
+- 素材庫一組一格: 原圖照常大小, 派生以小縮圖排在旁邊(超過四張顯示「+N」); 點組後右側欄左邊出現可捲動的整組清單。
+- 篩選改成視角、類型各一排可複選切換鈕(都不勾 = 不限); 同一排勾兩個以上就依它分區, 區之間用分隔線, 兩排都勾多個則兩兩組合分區。組裡有一張符合該區就整組放進去。
+- 平面圖的圖片輸入**只能從素材庫選**; 挑選視窗可直接匯入新圖(只匯入一張就直接選用)。舊流程以前上傳的圖照常可用, 該輸入存到素材庫後會改指向新素材。
+- **派生圖的視角與類型鎖定為沿用原圖**(取代上面「之後各自獨立可改」): 不能單獨改, 改原圖會帶到所有派生; 原圖刪掉後派生變成新的根才能改。
+
+---
+
+## 第 2 期: 遊戲示意核心
+
+### 範圍
+
+新頁籤「遊戲示意」(`#/mockup`, 排在平面圖與素材庫中間)。一個**場景** = 一種畫面架構 + 物件 + 風格設定 + AI 畫出的候選圖。循環: 擺灰盒/素材 → AI 畫整張 → 在候選圖上框選物件 → 自動去背存進素材庫。
+
+本期不做: 從截圖或自己的遊戲匯入(第 3、4 期)、UI/HUD、旋轉、多選對齊、遮罩只畫灰盒(備案, 不做)。
+
+### 場景管理
+
+- 頁面頂端同平面圖的做法: 場景下拉、「新場景」「刪除場景」。新場景要填名稱、選畫面架構、選「預設擺設」或「空白」。名稱規則沿用流程名稱。
+- 畫面架構建立後不能改(要換就新開場景)。
+- 存在 `data/mockups/<場景名>/`(不進版控, .gitignore 加一行):
+
+```
+scene.json              # 架構、背景、地面格、物件、風格設定、候選清單
+assets/<素材編號>.png    # 擺進來的素材圖複製一份(素材庫刪掉也不影響場景)
+candidates/<候選編號>.png
+```
+
+- 編輯自動存檔(停手約 0.5 秒後送出, 同平面圖存圖結構的做法); 編輯區支援復原/重做(Ctrl+Z / Ctrl+Y, 只在前端, 換場景或重新整理就清掉)。
+
+### 畫面架構
+
+畫布用固定的邏輯尺寸, 物件座標都以它為準; 編輯區等比縮放顯示。
+
+| 架構 | 代號 | 畫布 | 地面 | 給 AI 的遊戲類型描述 |
+|---|---|---|---|---|
+| 橫向卷軸 | side | 1280×720 | 無(地面當灰盒擺) | side-scrolling platformer |
+| 縱向卷軸 | vertical | 720×1280 | 無 | vertical-scrolling shooter |
+| 俯瞰 | topdown | 1280×720 | 方格 64px, 20×12(最後一列超出畫布部分不顯示) | top-down adventure |
+| 斜角俯瞰 | iso | 1280×720 | 2:1 菱形格, 格寬 96、高 48, 10×10, 置中 | isometric strategy / simulation |
+| 平面 | flat | 1280×720 | 可選: 方格棋盤(預設關; 開啟時可設行列數, 置中) | card / board game |
+
+「給 AI 的遊戲類型描述」可在場景的風格設定裡改寫(例如把縱向卷軸改成 vertical platformer)。
+
+### 背景
+
+每個場景有一個背景: 標籤(例如「天空 sky」)+ 顏色。畫在最底層, 送 AI 時當成一個佔位物件(見指令)。預設: side、vertical「天空 sky」淡藍; topdown「草地 grass」; iso「虛空 void」深灰; flat「桌面 table」木色。
+
+### 物件
+
+所有物件共通: 編號、前後順序。選取後右側屬性面板可改; Delete 鍵刪除; 拖曳移動; 「往前一層 / 往後一層 / 最前 / 最後」。
+
+1. **灰盒**: 標籤文字(中英都可, 可換行)、顏色(預設灰, 可改當顏色提示)、類型(素材庫的類型清單, 可不選; 截素材時預設帶它)、位置大小。
+   - 平面類架構(side、vertical、topdown、flat): 矩形, 拖角落控點縮放; 拖曳時對齊 8px(topdown 開地面格時對齊格子)。
+   - 斜角俯瞰: 立體方塊, 位置與佔地以格為單位(對齊 0.5 格), 屬性面板設佔地寬、深(格)與高度(px); 畫法同實驗(頂面原色、左前面 85%、右前面 70% 亮度, 深色描邊)。
+2. **素材**: 按「擺入素材」用素材庫挑選視窗挑一張(同平面圖的挑選視窗, 可直接匯入), 圖複製到場景的 `assets/`。可拖曳、拖角落等比縮放、左右翻轉。名稱沿用素材名稱(只顯示, 送 AI 時列為「已完成的物件」)。
+   - 擺入的素材若沒有任何視角(未分類), 自動在素材庫幫它(派生則是它的原圖那組)掛上這個場景的視角。
+3. **地面格**(topdown、iso、flat 開棋盤時): 每格一個地形標籤或空。左側地形調色盤: 草地、水、道路、沙地、石地、牆、空(橡皮擦), 加「自訂」(輸入標籤與顏色, 存在場景裡)。筆刷: 點或拖曳塗格; 另有「全部填滿」。地面格在所有物件下面、背景上面。
+
+**前後順序**: side、vertical、topdown、flat 照清單順序(後加的在前)。iso 自動依「腳底」排序(方塊依 i+j+寬+深, 素材依底邊 y), 不提供手動調整。
+
+### 預設擺設
+
+照實驗的灰盒草稿(去掉 HUD), 標籤用「中文 English」, 類型括號內:
+
+- **side**: 遠景山(背景) 一長條灰盒、雲 ×2(景物)、地面格 一排兩段中間留坑(地形)、浮空平台 ×2(地形)、樹(景物)、障礙(景物)、主角(角色)、敵人 ×2(敵人)、金幣一排(道具)。
+- **vertical**: 雲 ×2(景物)、島嶼 ×2(地形)、主角戰機 在下方中央(角色)、敵機 ×3 在上半(敵人)、子彈一列(道具)。
+- **topdown**: 地面格以草地為主、一條道路、一角水池; 房子(建築)、樹 ×3(景物)、寶箱(道具)、主角(角色)、敵人 ×2(敵人)。
+- **iso**: 地面格草地為主、十字道路、一角水; 房子、工坊(建築, 高 90/130)、樹 ×2(景物)、資源堆(道具)、主角(角色)、村民 ×2(角色, 0.4 格細高方塊)。
+- **flat**: 桌面背景; 對手手牌 ×5 在上方(道具)、場上卡牌 ×3 + ×3 中間(道具)、我方手牌 ×5 在下方(道具)、牌堆 ×2(道具)、對手頭像、我方頭像(角色)。
+
+確切座標由實作者定, 原則是畫面看得出是那種遊戲、物件大小合理(角色約 1~1.5 格高)。
+
+### 風格設定
+
+右側「風格」區塊, 跟著場景存:
+
+- 風格描述(文字, 可空)。
+- 參考圖(0~4 張, 從素材庫挑選視窗挑, 圖複製進場景 `assets/`; 可移除)。
+- 遊戲類型描述(預設見架構表, 可改)。
+- 風格描述與參考圖都空、場上也沒有素材時, 「AI 畫整張」仍可按, 指令改成「a polished, finished in-game screenshot」不指定風格。
+
+### AI 畫整張
+
+- 按鈕「AI 畫整張」+ 張數(1~4), 付費按鈕慣例(金色 + 價錢, GPT Image 2 medium 每張 0.06 美元)。進度走共用的 AI 進度列(換頁也看得到, 回到場景可接續)。
+- **前端**把目前畫布算成兩張圖送後端: ① 灰盒圖(背景 + 地面格 + 灰盒含標籤字 + 素材, 不畫選取框)② 素材層(只有素材, 透明底, RGBA)。兩張都是畫布邏輯尺寸。
+- **後端**: 灰盒圖 + 參考圖送 GPT Image 2 edit; 結果縮放回畫布尺寸; 素材層以 alpha > 127 為界貼回原位(實驗 A 的做法); 存成候選。
+- 指令(英文)由後端依場景組出, 骨架照實驗(見附錄), 加上:
+  - 逐一列出佔位物件: `- "<標籤>" (<顏色名或 grey> block, <大略位置: top-left / center …>)`, 背景與地形也列。
+  - 明說「the flat <背景標籤> background and ground tiles are placeholders too: paint them fully as finished art」(處理實驗發現的「有素材時背景不畫」)。
+  - iso 加「keep every small character clearly visible at its position」(處理「小角色不見」)。
+  - 有素材時: 列出已完成物件名稱, 要求保持原樣、其餘照它們的風格補。
+  - 有參考圖時: 「The additional images are style references only: match their art style, palette and rendering, not their content.」
+  - 一律「Do not draw any label text, UI or HUD.」
+- 候選: 場景右下(或底部)候選列, 縮圖 + 時間; 點一張放大到編輯區位置顯示(切換「編輯 / 看候選」), 可刪除、下載 PNG。每個候選記下當時的指令與風格設定(看候選時可展開看)。
+
+### 框選截素材
+
+- 看候選時, 在圖上拖一個框 → 按「去背預覽」(付費, SAM 3 約 0.005 美元): 用框當 box prompt, 挑框內面積最大的遮罩、框外清空, 裁到不透明範圍 → 顯示去背結果(透明格底)。
+- 預覽滿意 → 「存到素材庫」對話: 名稱(預設 = 與框重疊面積最大的灰盒標籤, 沒有就「場景名 截圖」)、視角(預設這個場景的視角)、類型(預設那個灰盒的類型)。存入後 `source = {"kind": "mockup", "scene": 場景名, "candidate": 候選編號}`, 沒有原圖(parent = null)。素材庫來源說明顯示「遊戲示意「場景名」候選 N」。
+- 不滿意可重框; SAM 回空遮罩時顯示「框內找不到物件, 換個框」。
+- 框到的位置若是貼回的素材(那張本來就在素材庫), 照樣存成新素材(不判斷重複)。
+
+### API(建議, 實作者可調)
+
+| 方法 | 路徑 | 用途 |
+|---|---|---|
+| GET | `/api/mockups` | 場景清單(名稱、架構、更新時間) |
+| POST | `/api/mockups` | 新場景 `{name, view, preset: bool}` |
+| GET / PUT / DELETE | `/api/mockups/{name}` | 讀 / 存(物件、背景、地面格、風格) / 刪 |
+| POST | `/api/mockups/{name}/assets` | `{asset}` 從素材庫複製圖進場景 |
+| GET | `/api/mockups/{name}/files/{path}` | 場景內圖檔 |
+| POST | `/api/mockups/{name}/render` | multipart: 灰盒圖、素材層、張數 → 新候選 |
+| DELETE | `/api/mockups/{name}/candidates/{cid}` | 刪候選 |
+| POST | `/api/mockups/{name}/candidates/{cid}/cut` | `{box}` → 去背預覽(暫存在場景裡, 回傳圖) |
+| POST | `/api/mockups/{name}/candidates/{cid}/cut/save` | `{name, tags}` 把最近一次預覽存進素材庫 |
+
+預設擺設由後端產生(新場景時), 前端只負責畫。
+
+### 測試重點
+
+- 後端: 場景新增/讀/存/刪與名稱檢查; 五種預設擺設合法(物件在畫布內、標籤非空); 素材複製; 指令組裝(背景、物件清單、iso 句、參考圖句、有無素材兩種); 貼回素材(透明處不動、不透明處等於素材); 去背挑框內最大遮罩與裁切; 存到素材庫的來源與標籤; 擺入未分類素材自動掛視角(派生掛到原圖那組)。用假的 fal 用戶端, 不打真 API。
+- 前端: 座標換算(畫布 ↔ 顯示、iso 格 ↔ 像素)、iso 排序、對齊、復原堆疊、框與灰盒重疊找預設名稱(單元測試); 型別檢查、建置。
+
+### 審閱後補定(我的決定)
+
+- 候選另存一份當時的物件配置(灰盒標籤、類型、位置), 框選時「重疊最大的灰盒」用這份比, 場景之後改了也對得上。
+- iso 排序: 方塊換算成「前下角」(格 i+寬, j+深)的像素 y, 與素材底邊 y 放在同一把尺上比, 越下面越前面。
+- 風格描述空白時指令的 {style} 改寫: 有參考圖 →「the art style of the reference images」; 只有素材 →「the same style as the finished elements」; 都沒有 → 去掉風格字樣。
+- 地面格不在每格寫字: 每塊相連的同地形區域在中心寫一次標籤(區域至少 2 格才寫), 指令另外列出用到的地形與顏色。
+- GPT Image 2 回傳比例若與畫布差超過 2%, 先置中裁成畫布比例再縮放, 避免素材貼歪; 縱向 720×1280 實作時先實測一次。
+
+### 附錄: 實驗用的指令(2026-10-24, 實驗程式在暫存資料夾會消失, 以此為準)
+
+只有灰盒:
+
+> This is a greybox layout mockup of a 2D {genre} game screen. Repaint it as a polished, finished in-game screenshot in {style} style. Keep the exact composition, camera angle, and the position and size of every element. Each block is a placeholder for the object named in its label: replace it with a real, detailed version of that object. Do not draw the label text itself; only the HUD numbers and words that belong to the game UI may remain.
+
+有素材:
+
+> This is a 2D {genre} game screen mockup. Some elements are already finished {style} art: keep them exactly as they are. Every flat grey/colored labeled block is a placeholder for the object named in its label: replace each with a real, detailed version of that object drawn in exactly the same {style} style, palette, outline and level of detail as the finished elements, so the whole screen looks like one consistent game. Keep the composition, camera angle, and the position and size of every element. Do not draw the label text; only HUD numbers and words that belong to the game UI may remain.
+
+(本期不畫 HUD, 所以 HUD 那句改成「Do not draw any label text, UI or HUD.」)
+
+素材擺回灰盒: 等比縮進目標框、底部置中。SAM 去背: box prompt `{x_min, y_min, x_max, y_max}`, 分數最高的遮罩不一定在框內, 要挑框內面積最大的。
 
 ## 第 3 期: 從截圖匯入(方向)
 
