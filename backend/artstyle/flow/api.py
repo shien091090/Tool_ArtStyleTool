@@ -133,7 +133,8 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
 
     @r.post("/{name}/nodes/{nid}/to-library")
     def to_library(name: str, nid: str, body: dict = Body(...)):
-        """節點輸出存到素材庫; 鏈頂的圖片輸入若選自素材庫, 就記成那張的派生並沿用標籤。"""
+        """節點輸出存到素材庫; 鏈頂的圖片輸入若選自素材庫, 就記成那張的派生並沿用標籤。
+        存的是上傳的圖片輸入本身時, 該輸入改記成來自這張新素材。"""
         flow = open_flow(name)
         node = flow.node(nid)
         if not node.get("rev"):
@@ -150,7 +151,11 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
             except FileNotFoundError:
                 pass
         source = {"kind": "flow", "flow": name, "node": nid, "rev": node["rev"]}
-        return library.add(flow.output(nid), body.get("name"), source, parent=parent, tags=tags)
+        asset = library.add(flow.output(nid), body.get("name"), source, parent=parent, tags=tags)
+        if node["type"] == "input" and not aid:
+            # 上傳的圖存進素材庫後, 輸入改指向這張, 之後下游存的圖才會歸到它底下
+            flow.link_asset(nid, asset["id"], asset["name"])
+        return asset
 
     # ---- 像素化節點 ----
 

@@ -142,3 +142,16 @@ def test_to_library_disconnected_is_stale(client):
     _upload(client, "n2", input_rev=1)
     client.put(f"{F}/graph", json={"nodes": [_node("n1", "input"), _node("n2", "cutout")], "links": []})
     assert _save(client, "n2").status_code == 400
+
+
+def test_save_uploaded_input_links_it(client):
+    """上傳的圖片輸入存進素材庫後, 節點改指向新素材, 之後下游存的圖就算它的派生"""
+    _setup(client, [("n1", "input"), ("n2", "cutout")], [{"from": "n1", "to": "n2"}], assets=())
+    _upload(client, "n1")
+    _upload(client, "n2", input_rev=1)
+    a = _save(client, "n1", "怪物").json()
+    assert a["parent"] is None
+    n1 = client.get(F).json()["nodes"][0]
+    assert n1["params"] == {"source": "怪物", "asset": a["id"]} and n1["rev"] == 1
+    b = _save(client, "n2").json()
+    assert b["parent"] == a["id"]

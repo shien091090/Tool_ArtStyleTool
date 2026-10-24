@@ -285,6 +285,8 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): (() =
     if (name === null) return;
     try {
       const a = await api.flows.toLibrary(flow.name, nid, name);
+      // 上傳的圖片輸入存進素材庫後, 後端已改指向這張; 本地也跟上, 免得之後存圖結構時蓋回去
+      if (n.type === 'input' && !n.params.asset) n.params = { ...n.params, source: a.name, asset: a.id };
       const from = a.parent && top?.params.source ? `(派生自 ${String(top.params.source)})` : '';
       showBanner(note, 'info', `已存到素材庫: ${a.name}${from}`);
     } catch (e) {

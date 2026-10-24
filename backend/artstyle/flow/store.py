@@ -224,6 +224,15 @@ class Flow:
             self._save()
             return self.meta
 
+    def link_asset(self, nid: str, aid: str, name: str) -> dict:
+        """圖片輸入改記成來自素材庫的某張(圖不變, 不加版本, 下游不會變過期)。"""
+        with _lock:
+            self._reload()
+            n = self.node(nid)
+            n["params"] = {**n["params"], "source": name, "asset": aid}
+            self._save()
+            return self.meta
+
     def output(self, nid: str) -> np.ndarray:
         n = self.node(nid)
         p = self.dir / "out" / f"{nid}.png"
