@@ -1,6 +1,6 @@
 /** 素材庫頁: 分組瀏覽、篩選、改名稱與標籤、匯入、刪除。 */
 import { api } from '../api';
-import { filterBar, renderGroups, tagEditor } from '../library/grid';
+import { filterBar, renderGrid, tagEditor } from '../library/grid';
 import { sourceText, type Asset, type AssetTags } from '../library/model';
 import { download } from '../pixel/pixelPanel';
 import { confirmDelete, el, showBanner } from './ui';
@@ -28,7 +28,7 @@ export function mountLibraryPage(root: HTMLElement): () => void {
   );
 
   function draw() {
-    renderGroups(list, assets, filter.value(), {
+    renderGrid(list, assets, filter.value(), {
       selected,
       onPick: (a) => {
         selected = a.id;

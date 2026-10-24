@@ -1,47 +1,62 @@
-/** 素材庫共用元件: 篩選列、分組縮圖清單、標籤編輯。素材庫頁與挑選視窗共用。 */
+/** 素材庫共用元件: 篩選列、縮圖格、標籤編輯。素材庫頁與挑選視窗共用。 */
 import { api } from '../api';
 import { el, option } from '../pages/ui';
-import { groupAssets, KINDS, matches, VIEW_LABEL, VIEWS, type Asset, type AssetTags, type Filter, type ViewKey } from './model';
+import { KINDS, PICK_LABEL, sections, VIEW_LABEL, VIEW_PICKS, VIEWS, type Asset, type AssetTags, type Filter, type ViewKey, type ViewPick } from './model';
 
+/** 視角、類型各一排切換鈕(可複選) + 名稱搜尋 */
 export function filterBar(onChange: (f: Filter) => void): { root: HTMLElement; value: () => Filter } {
-  const view = el('select');
-  view.append(option('all', '全部視角'), ...VIEWS.map((v) => option(v, VIEW_LABEL[v])), option('none', '未分類'));
-  const kind = el('select');
-  kind.append(option('all', '全部類型'), ...KINDS.map((k) => option(k, k)));
+  const views = new Set<ViewPick>();
+  const kinds = new Set<string>();
   const text = el('input');
   text.placeholder = '搜尋名稱';
-  const value = (): Filter => ({ view: view.value as Filter['view'], kind: kind.value, text: text.value.trim() });
-  for (const c of [view, kind]) c.addEventListener('change', () => onChange(value()));
+  const value = (): Filter => ({ views: [...views], kinds: [...kinds], text: text.value.trim() });
+  const toggles = <T,>(keys: readonly T[], label: (k: T) => string, set: Set<T>) => el('div', { className: 'chips' }, keys.map((k) => {
+    const b = el('button', { className: 'chip pick', text: label(k) });
+    b.type = 'button';
+    b.addEventListener('click', () => {
+      if (!set.delete(k)) set.add(k);
+      b.classList.toggle('on', set.has(k));
+      onChange(value());
+    });
+    return b;
+  }));
   text.addEventListener('input', () => onChange(value()));
-  return { root: el('div', { className: 'lib-filter' }, [view, kind, text]), value };
+  return {
+    root: el('div', { className: 'lib-filter' }, [
+      el('div', { className: 'lib-filter-row' }, [el('span', { className: 'muted small', text: '視角' }), toggles(VIEW_PICKS, (v) => PICK_LABEL[v], views)]),
+      el('div', { className: 'lib-filter-row' }, [el('span', { className: 'muted small', text: '類型' }), toggles(KINDS, (k) => k, kinds), text]),
+    ]),
+    value,
+  };
 }
 
-/** 一組一列(原圖在前); 組裡只要有一張符合篩選整組都顯示, 不符合的淡化 */
-export function renderGroups(container: HTMLElement, assets: Asset[], filter: Filter,
+/** 縮圖格狀排列; 勾多個切換鈕時依 sections 分區, 區之間用分隔線 */
+export function renderGrid(container: HTMLElement, assets: Asset[], filter: Filter,
   opts: { selected?: string | null; onPick: (a: Asset) => void }) {
   const byId = new Map(assets.map((a) => [a.id, a]));
-  const groups = groupAssets(assets).filter((g) => g.some((a) => matches(a, filter)));
-  if (!groups.length) {
+  const secs = sections(assets, filter);
+  if (!secs.some((x) => x.items.length)) {
     container.replaceChildren(el('div', { className: 'muted lib-empty', text: assets.length ? '沒有符合的素材' : '素材庫是空的' }));
     return;
   }
-  container.replaceChildren(...groups.map((g) => el('div', { className: 'lib-group' }, g.map((a) => {
+  const card = (a: Asset) => {
     const img = el('img');
     img.src = api.library.imageUrl(a.id);
     img.loading = 'lazy';
     img.alt = a.name;
     const parent = a.parent ? byId.get(a.parent) : undefined;
-    const card = el('div', {
-      className: `lib-card${matches(a, filter) ? '' : ' dim'}${opts.selected === a.id ? ' selected' : ''}`,
-      title: a.name,
-    }, [
+    const c = el('div', { className: `lib-card${opts.selected === a.id ? ' selected' : ''}`, title: a.name }, [
       el('div', { className: 'lib-thumb checker' }, [img]),
       el('div', { className: 'lib-name', text: a.name }),
       ...(parent ? [el('div', { className: 'lib-from muted small', text: `← ${parent.name}` })] : []),
     ]);
-    card.addEventListener('click', () => opts.onPick(a));
-    return card;
-  }))));
+    c.addEventListener('click', () => opts.onPick(a));
+    return c;
+  };
+  container.replaceChildren(...secs.map((x) => el('div', { className: 'lib-section' }, [
+    ...(x.label ? [el('div', { className: 'lib-section-title', text: `${x.label}(${x.items.length})` })] : []),
+    x.items.length ? el('div', { className: 'lib-grid' }, x.items.map(card)) : el('div', { className: 'muted small', text: '沒有素材' }),
+  ])));
 }
 
 /** 視角勾選 + 類型下拉 */

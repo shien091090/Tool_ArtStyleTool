@@ -35,10 +35,17 @@ export interface Asset {
   tags: AssetTags;
 }
 
+/** none = 未分類(沒有視角) */
+export type ViewPick = ViewKey | 'none';
+
+export const VIEW_PICKS: ViewPick[] = [...VIEWS, 'none'];
+
+export const PICK_LABEL: Record<ViewPick, string> = { ...VIEW_LABEL, none: '未分類' };
+
+/** 每類沒勾 = 不限; 勾多個 = 任一符合 */
 export interface Filter {
-  /** all = 全部; none = 未分類(沒有視角) */
-  view: ViewKey | 'all' | 'none';
-  kind: string;
+  views: ViewPick[];
+  kinds: string[];
   text: string;
 }
 
@@ -73,10 +80,29 @@ export function groupAssets(assets: Asset[]): Asset[][] {
   return out.sort((x, y) => order(newest(y), newest(x)));
 }
 
+const inView = (a: Asset, v: ViewPick) => (v === 'none' ? !a.tags.views.length : a.tags.views.includes(v));
+
 export function matches(a: Asset, f: Filter): boolean {
-  if (f.view === 'none' ? a.tags.views.length > 0 : f.view !== 'all' && !a.tags.views.includes(f.view)) return false;
-  if (f.kind !== 'all' && a.tags.type !== f.kind) return false;
+  if (f.views.length && !f.views.some((v) => inView(a, v))) return false;
+  if (f.kinds.length && !f.kinds.includes(a.tags.type ?? '')) return false;
   return !f.text || a.name.toLowerCase().includes(f.text.toLowerCase());
+}
+
+export interface Section {
+  /** 不分區時為 null */
+  label: string | null;
+  items: Asset[];
+}
+
+/** 視角或類型勾了兩個以上就依它分區(都勾多個則兩兩組合), 區的順序固定; 區內依組排, 原圖後接派生 */
+export function sections(assets: Asset[], f: Filter): Section[] {
+  const list = groupAssets(assets).flat().filter((a) => matches(a, f));
+  const vs: (ViewPick | null)[] = f.views.length > 1 ? VIEW_PICKS.filter((v) => f.views.includes(v)) : [null];
+  const ks: (string | null)[] = f.kinds.length > 1 ? KINDS.filter((k) => f.kinds.includes(k)) : [null];
+  return vs.flatMap((v) => ks.map((k) => ({
+    label: [v && PICK_LABEL[v], k].filter(Boolean).join('・') || null,
+    items: list.filter((a) => (!v || inView(a, v)) && (!k || a.tags.type === k)),
+  })));
 }
 
 export function sourceText(a: Asset): string {

@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { groupAssets, matches, rootOf, sourceText, type Asset, type Filter } from '../src/library/model';
+import { groupAssets, matches, rootOf, sections, sourceText, type Asset, type Filter } from '../src/library/model';
 
 const asset = (id: string, created: string, parent: string | null = null, tags: Asset['tags'] = { views: [], type: null },
   name = id): Asset => ({ id, name, created, parent, source: { kind: 'import', file: `${id}.png` }, tags });
 
-const ALL: Filter = { view: 'all', kind: 'all', text: '' };
+const ALL: Filter = { views: [], kinds: [], text: '' };
 
 describe('素材庫分組', () => {
   it('派生鏈歸到根底下, 最新的組排前面', () => {
@@ -28,16 +28,49 @@ describe('素材庫分組', () => {
 describe('素材庫篩選', () => {
   it('未分類 = 沒有視角, 即使有類型', () => {
     const a = asset('a1', '2026-10-01', null, { views: [], type: '建築' });
-    expect(matches(a, { ...ALL, view: 'none' })).toBe(true);
-    expect(matches(a, { ...ALL, view: 'side' })).toBe(false);
-    expect(matches(a, { ...ALL, kind: '建築' })).toBe(true);
-    expect(matches(a, { ...ALL, kind: '角色' })).toBe(false);
+    expect(matches(a, { ...ALL, views: ['none'] })).toBe(true);
+    expect(matches(a, { ...ALL, views: ['side'] })).toBe(false);
+    expect(matches(a, { ...ALL, kinds: ['建築'] })).toBe(true);
+    expect(matches(a, { ...ALL, kinds: ['角色'] })).toBe(false);
+  });
+
+  it('同一類勾多個是「任一符合」', () => {
+    const a = asset('a1', '2026-10-01', null, { views: ['iso'], type: '角色' });
+    expect(matches(a, { ...ALL, views: ['side', 'iso'] })).toBe(true);
+    expect(matches(a, { ...ALL, kinds: ['敵人', '角色'] })).toBe(true);
+    expect(matches(a, { ...ALL, views: ['side', 'none'] })).toBe(false);
   });
 
   it('名稱搜尋不分大小寫', () => {
     const a = asset('a1', '2026-10-01', null, undefined, 'Pixel 樹');
     expect(matches(a, { ...ALL, text: 'pixel' })).toBe(true);
     expect(matches(a, { ...ALL, text: '石' })).toBe(false);
+  });
+});
+
+describe('素材庫分區', () => {
+  const list = [
+    asset('a1', '2026-10-01', null, { views: ['side'], type: '角色' }),
+    asset('a2', '2026-10-02', 'a1', { views: ['side', 'iso'], type: '角色' }),
+    asset('a3', '2026-10-03', null, { views: ['iso'], type: '敵人' }),
+    asset('a4', '2026-10-04', null, { views: [], type: '角色' }),
+  ];
+  const ids = (f: Filter) => sections(list, f).map((s) => [s.label, s.items.map((a) => a.id)]);
+
+  it('沒勾或只勾一個不分區, 依組排(原圖後接派生)', () => {
+    expect(ids(ALL)).toEqual([[null, ['a4', 'a3', 'a1', 'a2']]]);
+    expect(ids({ ...ALL, views: ['side'] })).toEqual([[null, ['a1', 'a2']]]);
+  });
+
+  it('勾多個視角就依視角分區, 依固定順序, 多視角的素材在每區都出現', () => {
+    expect(ids({ ...ALL, views: ['none', 'iso', 'side'] })).toEqual([
+      ['橫向卷軸', ['a1', 'a2']], ['斜角俯瞰', ['a3', 'a2']], ['未分類', ['a4']]]);
+  });
+
+  it('視角與類型都勾多個時兩兩組合分區, 沒素材的區也留著', () => {
+    expect(ids({ ...ALL, views: ['side', 'iso'], kinds: ['敵人', '角色'] })).toEqual([
+      ['橫向卷軸・角色', ['a1', 'a2']], ['橫向卷軸・敵人', []],
+      ['斜角俯瞰・角色', ['a2']], ['斜角俯瞰・敵人', ['a3']]]);
   });
 });
 

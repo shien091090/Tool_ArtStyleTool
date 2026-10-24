@@ -1,7 +1,7 @@
 /** 從素材庫挑一張圖的視窗; 取消回傳 null。 */
 import { api } from '../api';
 import { el, showBanner } from '../pages/ui';
-import { filterBar, renderGroups } from './grid';
+import { filterBar, renderGrid } from './grid';
 import type { Asset } from './model';
 
 export function pickAsset(): Promise<Asset | null> {
@@ -25,7 +25,7 @@ export function pickAsset(): Promise<Asset | null> {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') close(null);
     };
-    const draw = () => renderGroups(list, assets, filter.value(), { onPick: (a) => close(a) });
+    const draw = () => renderGrid(list, assets, filter.value(), { onPick: (a) => close(a) });
 
     cancel.addEventListener('click', () => close(null));
     overlay.addEventListener('click', (e) => {
