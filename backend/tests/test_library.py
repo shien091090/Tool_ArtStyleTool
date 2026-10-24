@@ -92,3 +92,13 @@ def test_derived_tags_follow_root(tmp_path):
     new = {"views": ["iso", "flat"], "type": "敵人"}
     lib.update("a1", None, new)
     assert [lib.get(a)["tags"] for a in ("a1", "a2", "a3")] == [new] * 3
+
+
+def test_root_of(tmp_path):
+    lib = Library(tmp_path)
+    lib.add(_img(), "根", SRC)
+    lib.add(_img(), "子", SRC, parent="a1")
+    lib.add(_img(), "孫", SRC, parent="a2")
+    assert lib.root_of("a3") == "a1"
+    lib.delete("a1")
+    assert lib.root_of("a3") == "a2"

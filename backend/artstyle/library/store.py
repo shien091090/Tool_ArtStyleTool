@@ -100,6 +100,18 @@ class Library:
     def get(self, aid: str) -> dict:
         return json.loads((self._dir(aid) / "asset.json").read_text(encoding="utf-8"))
 
+    def root_of(self, aid: str) -> str:
+        """沿原圖一路往上到組的根; 原圖不存在就停在那裡。"""
+        cur = self.get(aid)
+        seen = {cur["id"]}
+        while cur["parent"] and cur["parent"] not in seen:
+            try:
+                cur = self.get(cur["parent"])
+            except FileNotFoundError:
+                break
+            seen.add(cur["id"])
+        return cur["id"]
+
     def image_path(self, aid: str) -> Path:
         return self._dir(aid) / "image.png"
 
