@@ -76,18 +76,15 @@ export function renderGrid(container: HTMLElement, assets: Asset[], filter: Filt
   ])));
 }
 
-/** 一組的垂直清單(原圖 + 所有派生), 可捲動; 派生下方標它的原圖 */
+/** 一組的垂直清單(原圖 + 所有派生), 可捲動 */
 export function renderStrip(container: HTMLElement, group: Asset[],
   opts: { selected?: string | null; onPick: (a: Asset) => void }) {
-  const byId = new Map(group.map((a) => [a.id, a]));
   container.replaceChildren(
-    el('div', { className: 'muted small', text: `這組 ${group.length} 張` }),
+    el('div', { className: 'muted small', text: `共 ${group.length} 張` }),
     ...group.map((a) => {
-      const parent = a.parent ? byId.get(a.parent) : undefined;
       const c = el('div', { className: `lib-card${opts.selected === a.id ? ' selected' : ''}`, title: a.name }, [
         thumb(a, 'lib-thumb'),
         el('div', { className: 'lib-name', text: a.name }),
-        ...(parent ? [el('div', { className: 'lib-from muted small', text: `← ${parent.name}` })] : []),
       ]);
       c.addEventListener('click', () => opts.onPick(a));
       return c;
