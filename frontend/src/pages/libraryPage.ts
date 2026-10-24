@@ -1,7 +1,7 @@
 /** 素材庫頁: 分組瀏覽、篩選、改名稱與標籤、匯入、刪除。 */
 import { api } from '../api';
-import { filterBar, importButton, importErrors, importForm, renderGrid, tagEditor } from '../library/grid';
-import { sourceText, type Asset, type AssetTags } from '../library/model';
+import { filterBar, importButton, importErrors, importForm, renderGrid, renderStrip, tagEditor } from '../library/grid';
+import { groupAssets, sourceText, type Asset, type AssetTags } from '../library/model';
 import { download } from '../pixel/pixelPanel';
 import { confirmDelete, el, showBanner } from './ui';
 
@@ -13,21 +13,25 @@ export function mountLibraryPage(root: HTMLElement): () => void {
   const banner = el('div');
   const filter = filterBar(() => draw());
   const list = el('div', { className: 'lib-groups' });
+  const strip = el('div', { className: 'lib-strip hidden' });
   const detail = el('div', { className: 'lib-detail panel-wrap' });
   root.append(
     el('div', { className: 'toolbar' }, [...importButton(showImport), filter.root]),
     banner,
-    el('div', { className: 'lib-layout' }, [list, detail]),
+    el('div', { className: 'lib-layout' }, [list, strip, detail]),
   );
 
+  const pick = (a: Asset) => {
+    selected = a.id;
+    draw();
+  };
+
+  /** 選到的素材那組有派生時, 在右側欄左邊列出整組 */
   function draw() {
-    renderGrid(list, assets, filter.value(), {
-      selected,
-      onPick: (a) => {
-        selected = a.id;
-        draw();
-      },
-    });
+    renderGrid(list, assets, filter.value(), { selected, onPick: pick });
+    const group = selected ? groupAssets(assets).find((g) => g.some((a) => a.id === selected)) : undefined;
+    strip.classList.toggle('hidden', !group || group.length < 2);
+    if (group && group.length > 1) renderStrip(strip, group, { selected, onPick: pick });
     drawDetail();
   }
 

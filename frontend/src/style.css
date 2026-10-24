@@ -303,6 +303,15 @@ button.danger { color: var(--danger); }
 .lib-card { width: 112px; cursor: pointer; border: 2px solid transparent; border-radius: 6px; padding: 4px; }
 .lib-card:hover { border-color: var(--line); }
 .lib-card.selected { border-color: var(--accent); }
+.lib-card.group { grid-column: span 2; width: 232px; }
+.lib-cell-row { display: flex; gap: 8px; }
+.lib-minis { display: grid; grid-template-columns: repeat(2, 48px); grid-auto-rows: 48px; gap: 4px; align-content: start; }
+.lib-mini { display: flex; align-items: center; justify-content: center; border-radius: 4px; overflow: hidden; border: 1px solid transparent; }
+.lib-mini img { max-width: 100%; max-height: 100%; }
+.lib-mini:hover { border-color: var(--line); }
+.lib-mini.selected { border-color: var(--accent); }
+.lib-more { background: var(--line); font-size: 12px; color: var(--muted); }
+.lib-strip { width: 140px; flex: none; overflow-y: auto; border-left: 1px solid var(--line); padding: 12px 10px; display: flex; flex-direction: column; gap: 8px; }
 .lib-thumb { width: 100px; height: 100px; display: flex; align-items: center; justify-content: center; border-radius: 4px; overflow: hidden; }
 .lib-thumb img { max-width: 100%; max-height: 100%; }
 .lib-name { margin-top: 4px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -30,33 +30,70 @@ export function filterBar(onChange: (f: Filter) => void): { root: HTMLElement; v
   };
 }
 
-/** 縮圖格狀排列; 勾多個切換鈕時依 sections 分區, 區之間用分隔線 */
+const MINI_MAX = 4;
+
+function thumb(a: Asset, className: string): HTMLElement {
+  const img = el('img');
+  img.src = api.library.imageUrl(a.id);
+  img.loading = 'lazy';
+  img.alt = a.name;
+  return el('div', { className: `${className} checker` }, [img]);
+}
+
+/** 縮圖格, 一組一格: 原圖照常大小, 有派生時旁邊放派生小縮圖; 勾多個切換鈕時依 sections 分區, 區之間用分隔線。
+ *  點原圖傳回原圖, 點小縮圖傳回那張 */
 export function renderGrid(container: HTMLElement, assets: Asset[], filter: Filter,
-  opts: { selected?: string | null; onPick: (a: Asset) => void }) {
-  const byId = new Map(assets.map((a) => [a.id, a]));
+  opts: { selected?: string | null; onPick: (a: Asset, group: Asset[]) => void }) {
   const secs = sections(assets, filter);
-  if (!secs.some((x) => x.items.length)) {
+  if (!secs.some((x) => x.groups.length)) {
     container.replaceChildren(el('div', { className: 'muted lib-empty', text: assets.length ? '沒有符合的素材' : '素材庫是空的' }));
     return;
   }
-  const card = (a: Asset) => {
-    const img = el('img');
-    img.src = api.library.imageUrl(a.id);
-    img.loading = 'lazy';
-    img.alt = a.name;
-    const parent = a.parent ? byId.get(a.parent) : undefined;
-    const c = el('div', { className: `lib-card${opts.selected === a.id ? ' selected' : ''}`, title: a.name }, [
-      el('div', { className: 'lib-thumb checker' }, [img]),
-      el('div', { className: 'lib-name', text: a.name }),
-      ...(parent ? [el('div', { className: 'lib-from muted small', text: `← ${parent.name}` })] : []),
+  const cell = (g: Asset[]) => {
+    const [root, ...kids] = g;
+    const on = g.some((a) => a.id === opts.selected);
+    const shown = kids.length > MINI_MAX ? kids.slice(0, MINI_MAX - 1) : kids;
+    const minis = shown.map((a) => {
+      const m = thumb(a, `lib-mini${opts.selected === a.id ? ' selected' : ''}`);
+      m.title = a.name;
+      m.addEventListener('click', (e) => {
+        e.stopPropagation();
+        opts.onPick(a, g);
+      });
+      return m;
+    });
+    if (shown.length < kids.length) minis.push(el('div', { className: 'lib-mini lib-more', text: `+${kids.length - shown.length}` }));
+    const c = el('div', { className: `lib-card${kids.length ? ' group' : ''}${on ? ' selected' : ''}`, title: root.name }, [
+      el('div', { className: 'lib-cell-row' }, [thumb(root, 'lib-thumb'), ...(kids.length ? [el('div', { className: 'lib-minis' }, minis)] : [])]),
+      el('div', { className: 'lib-name', text: root.name }),
+      ...(kids.length ? [el('div', { className: 'lib-from muted small', text: `+ ${kids.length} 張派生` })] : []),
     ]);
-    c.addEventListener('click', () => opts.onPick(a));
+    c.addEventListener('click', () => opts.onPick(root, g));
     return c;
   };
   container.replaceChildren(...secs.map((x) => el('div', { className: 'lib-section' }, [
-    ...(x.label ? [el('div', { className: 'lib-section-title', text: `${x.label}(${x.items.length})` })] : []),
-    x.items.length ? el('div', { className: 'lib-grid' }, x.items.map(card)) : el('div', { className: 'muted small', text: '沒有素材' }),
+    ...(x.label ? [el('div', { className: 'lib-section-title', text: `${x.label}(${x.groups.length} 組)` })] : []),
+    x.groups.length ? el('div', { className: 'lib-grid' }, x.groups.map(cell)) : el('div', { className: 'muted small', text: '沒有素材' }),
   ])));
+}
+
+/** 一組的垂直清單(原圖 + 所有派生), 可捲動; 派生下方標它的原圖 */
+export function renderStrip(container: HTMLElement, group: Asset[],
+  opts: { selected?: string | null; onPick: (a: Asset) => void }) {
+  const byId = new Map(group.map((a) => [a.id, a]));
+  container.replaceChildren(
+    el('div', { className: 'muted small', text: `這組 ${group.length} 張` }),
+    ...group.map((a) => {
+      const parent = a.parent ? byId.get(a.parent) : undefined;
+      const c = el('div', { className: `lib-card${opts.selected === a.id ? ' selected' : ''}`, title: a.name }, [
+        thumb(a, 'lib-thumb'),
+        el('div', { className: 'lib-name', text: a.name }),
+        ...(parent ? [el('div', { className: 'lib-from muted small', text: `← ${parent.name}` })] : []),
+      ]);
+      c.addEventListener('click', () => opts.onPick(a));
+      return c;
+    }),
+  );
 }
 
 /** 視角勾選 + 類型下拉 */

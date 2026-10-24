@@ -1,7 +1,7 @@
 /** 從素材庫挑一張圖的視窗, 也能直接匯入新圖; 取消回傳 null。 */
 import { api } from '../api';
 import { el, showBanner } from '../pages/ui';
-import { filterBar, importButton, importErrors, importForm, renderGrid } from './grid';
+import { filterBar, importButton, importErrors, importForm, renderGrid, renderStrip } from './grid';
 import type { Asset } from './model';
 
 export function pickAsset(): Promise<Asset | null> {
@@ -10,12 +10,13 @@ export function pickAsset(): Promise<Asset | null> {
     const banner = el('div');
     const importSlot = el('div', { className: 'lib-import' });
     const list = el('div', { className: 'lib-groups' }, [el('div', { className: 'muted lib-empty', text: '讀取中…' })]);
+    const strip = el('div', { className: 'lib-strip hidden' });
     const filter = filterBar(() => draw());
     const cancel = el('button', { text: '取消' });
     const dialog = el('div', { className: 'lib-dialog' }, [
       el('div', { className: 'toolbar' }, [el('b', { text: '從素材庫選圖' }), ...importButton(showImport), filter.root,
         el('span', { className: 'spacer' }), cancel]),
-      banner, importSlot, list,
+      banner, importSlot, el('div', { className: 'lib-layout' }, [list, strip]),
     ]);
     const overlay = el('div', { className: 'lib-modal' }, [dialog]);
 
@@ -27,11 +28,25 @@ export function pickAsset(): Promise<Asset | null> {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') close(null);
     };
-    const draw = () => renderGrid(list, assets, filter.value(), { onPick: (a) => close(a) });
+    let group: Asset[] | null = null;
+    /** 沒有派生的直接選; 有派生的先在右側列出整組再挑 */
+    const draw = () => {
+      renderGrid(list, assets, filter.value(), {
+        selected: group?.[0].id,
+        onPick: (a, g) => {
+          if (g.length < 2) return close(a);
+          group = g;
+          draw();
+        },
+      });
+      strip.classList.toggle('hidden', !group);
+      if (group) renderStrip(strip, group, { onPick: (a) => close(a) });
+    };
 
     async function load() {
       try {
         assets = await api.library.list();
+        group = null;
         draw();
       } catch (e) {
         showBanner(banner, 'error', (e as Error).message);

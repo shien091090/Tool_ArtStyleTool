@@ -91,17 +91,18 @@ export function matches(a: Asset, f: Filter): boolean {
 export interface Section {
   /** 不分區時為 null */
   label: string | null;
-  items: Asset[];
+  /** 每組原圖在前接派生 */
+  groups: Asset[][];
 }
 
-/** 視角或類型勾了兩個以上就依它分區(都勾多個則兩兩組合), 區的順序固定; 區內依組排, 原圖後接派生 */
+/** 視角或類型勾了兩個以上就依它分區(都勾多個則兩兩組合), 區的順序固定; 組裡有一張符合該區就整組放進去 */
 export function sections(assets: Asset[], f: Filter): Section[] {
-  const list = groupAssets(assets).flat().filter((a) => matches(a, f));
+  const all = groupAssets(assets);
   const vs: (ViewPick | null)[] = f.views.length > 1 ? VIEW_PICKS.filter((v) => f.views.includes(v)) : [null];
   const ks: (string | null)[] = f.kinds.length > 1 ? KINDS.filter((k) => f.kinds.includes(k)) : [null];
   return vs.flatMap((v) => ks.map((k) => ({
     label: [v && PICK_LABEL[v], k].filter(Boolean).join('・') || null,
-    items: list.filter((a) => (!v || inView(a, v)) && (!k || a.tags.type === k)),
+    groups: all.filter((g) => g.some((a) => matches(a, f) && (!v || inView(a, v)) && (!k || a.tags.type === k))),
   })));
 }
 

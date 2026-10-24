@@ -55,22 +55,22 @@ describe('素材庫分區', () => {
     asset('a3', '2026-10-03', null, { views: ['iso'], type: '敵人' }),
     asset('a4', '2026-10-04', null, { views: [], type: '角色' }),
   ];
-  const ids = (f: Filter) => sections(list, f).map((s) => [s.label, s.items.map((a) => a.id)]);
+  const ids = (f: Filter) => sections(list, f).map((s) => [s.label, s.groups.map((g) => g.map((a) => a.id))]);
 
-  it('沒勾或只勾一個不分區, 依組排(原圖後接派生)', () => {
-    expect(ids(ALL)).toEqual([[null, ['a4', 'a3', 'a1', 'a2']]]);
-    expect(ids({ ...ALL, views: ['side'] })).toEqual([[null, ['a1', 'a2']]]);
+  it('沒勾或只勾一個不分區, 以組為單位(原圖在前接派生), 新的組在前', () => {
+    expect(ids(ALL)).toEqual([[null, [['a4'], ['a3'], ['a1', 'a2']]]]);
+    expect(ids({ ...ALL, views: ['side'] })).toEqual([[null, [['a1', 'a2']]]]);
   });
 
-  it('勾多個視角就依視角分區, 依固定順序, 多視角的素材在每區都出現', () => {
+  it('組裡只要有一張符合該區就整組放進去', () => {
     expect(ids({ ...ALL, views: ['none', 'iso', 'side'] })).toEqual([
-      ['橫向卷軸', ['a1', 'a2']], ['斜角俯瞰', ['a3', 'a2']], ['未分類', ['a4']]]);
+      ['橫向卷軸', [['a1', 'a2']]], ['斜角俯瞰', [['a3'], ['a1', 'a2']]], ['未分類', [['a4']]]]);
   });
 
   it('視角與類型都勾多個時兩兩組合分區, 沒素材的區也留著', () => {
     expect(ids({ ...ALL, views: ['side', 'iso'], kinds: ['敵人', '角色'] })).toEqual([
-      ['橫向卷軸・角色', ['a1', 'a2']], ['橫向卷軸・敵人', []],
-      ['斜角俯瞰・角色', ['a2']], ['斜角俯瞰・敵人', ['a3']]]);
+      ['橫向卷軸・角色', [['a1', 'a2']]], ['橫向卷軸・敵人', []],
+      ['斜角俯瞰・角色', [['a1', 'a2']]], ['斜角俯瞰・敵人', [['a3']]]]);
   });
 });
 
