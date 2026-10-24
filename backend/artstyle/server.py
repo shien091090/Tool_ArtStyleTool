@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from . import config, decompose, lospec, recipes
 from .fal import FalClient, FalError, HttpFalClient
 from .flow.api import create_router as create_flow_router
+from .library.api import create_router as create_library_router
 
 
 APP_HEADER = "X-ArtStyle"
@@ -73,6 +74,7 @@ def create_app(data_dir: Path, client_factory: Callable[[], FalClient | None] = 
         return {"ok": True}
 
     app.include_router(create_flow_router(data_dir, client_factory))
+    app.include_router(create_library_router(data_dir))
     return app
 
 
