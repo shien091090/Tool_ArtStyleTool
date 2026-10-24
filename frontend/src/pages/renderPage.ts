@@ -33,7 +33,7 @@ export interface RenderEmbed {
   onRecipeChange?(recipe: Recipe): void;
 }
 
-/** 渲染(改風格節點的「渲染」分頁)。 */
+/** 渲染(改風格節點的「2 渲染」)。 */
 export function mountRenderPage(root: HTMLElement, embed: RenderEmbed): () => void {
   const recipe: Recipe = structuredClone(DEFAULT_RECIPE);
   let currentRecipeName = '';
@@ -279,7 +279,7 @@ export function mountRenderPage(root: HTMLElement, embed: RenderEmbed): () => vo
   async function showPack(meta: PackMeta) {
     canvas.classList.add('hidden');
     if (!isRenderable(meta)) {
-      message.textContent = '還沒拆解完成, 請到「拆解」分頁完成拆解';
+      message.textContent = '還沒拆解完成, 請到「1 拆解」完成拆解';
       return;
     }
     message.textContent = '載入中…';

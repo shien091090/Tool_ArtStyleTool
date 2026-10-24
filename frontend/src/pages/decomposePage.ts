@@ -33,7 +33,7 @@ export interface DecomposeEmbed {
   onChange?(meta: PackMeta): void;
 }
 
-/** 拆解檢查(改風格節點的「拆解」分頁)。 */
+/** 拆解檢查(改風格節點的「1 拆解」)。 */
 export function mountDecomposePage(root: HTMLElement, embed: DecomposeEmbed): () => void {
   const papi = embed.api;
   let meta: PackMeta | null = null;
