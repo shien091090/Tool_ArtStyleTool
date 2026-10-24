@@ -163,6 +163,20 @@ class Flow:
                 return self.node(l["from"])
         return None
 
+    def main_chain(self, nid: str) -> list[dict]:
+        """從 nid 沿主圖輸入一路往上: [nid 節點, 上游, 上上游, ...]。"""
+        chain = [self.node(nid)]
+        while (up := self.upstream(chain[-1]["id"])) is not None:
+            chain.append(up)
+        return chain
+
+    def chain_stale(self, nid: str) -> bool:
+        """鏈上任一節點沒輸出, 或用的不是上游目前的版本。"""
+        chain = self.main_chain(nid)
+        if any(not n.get("rev") for n in chain):
+            return True
+        return any(n["type"] != "input" and n.get("inputRev") != up.get("rev") for n, up in zip(chain, chain[1:]))
+
     def materials(self, nid: str) -> list[dict]:
         """接到素材接點的上游節點。"""
         return [self.node(l["from"]) for l in self.meta["links"] if l["to"] == nid and l.get("port") == "material"]

@@ -12,7 +12,8 @@ from fastapi.responses import Response
 from .. import config
 from ..decompose import NoClientError
 from ..fal import FalClient
-from ..imaging import encode_png, limit_size, load_rgba
+from ..imaging import encode_png, limit_size, load_rgba, read_png
+from ..library.store import Library
 from ..pack import Pack
 from ..pack_api import add_pack_routes
 from ..pixel import service
@@ -55,6 +56,7 @@ def crop_opaque(img: np.ndarray) -> np.ndarray:
 
 def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]) -> APIRouter:
     flows_dir = Path(data_dir) / "flows"
+    library = Library(Path(data_dir) / "library")
     r = APIRouter(prefix="/api/flows")
 
     def client() -> FalClient:
@@ -106,7 +108,7 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
 
     @r.post("/{name}/nodes/{nid}/output")
     async def set_output(name: str, nid: str, file: UploadFile | None = File(None), inputRev: int | None = Form(None),
-                         params: str | None = Form(None)):
+                         params: str | None = Form(None), asset: str | None = Form(None)):
         flow = open_flow(name)
         node = flow.node(nid)
         p = None
@@ -117,11 +119,38 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
                 raise ValueError("節點參數格式錯誤") from None
             if not isinstance(p, dict):
                 raise ValueError("節點參數格式錯誤")
+        if asset is not None:
+            if node["type"] != "input":
+                raise ValueError("只有圖片輸入節點能從素材庫選圖")
+            meta = library.get(asset)
+            img = read_png(library.image_path(asset))
+            return flow.set_output(nid, img, None, p if p is not None else {"source": meta["name"], "asset": asset})
         if file is None:
             raise ValueError("請上傳圖片")
         data = await file.read()
         img = limit_size(load_rgba(data), config.MAX_SIDE)
         return flow.set_output(nid, img, inputRev if node["type"] != "input" else None, p)
+
+    @r.post("/{name}/nodes/{nid}/to-library")
+    def to_library(name: str, nid: str, body: dict = Body(...)):
+        """節點輸出存到素材庫; 鏈頂的圖片輸入若選自素材庫, 就記成那張的派生並沿用標籤。"""
+        flow = open_flow(name)
+        node = flow.node(nid)
+        if not node.get("rev"):
+            raise ValueError("節點還沒有輸出")
+        if flow.chain_stale(nid):
+            raise ValueError("上游改過了, 先更新輸出再存")
+        top = flow.main_chain(nid)[-1]
+        parent, tags = None, None
+        aid = top["params"].get("asset") if top["type"] == "input" else None
+        if aid:
+            try:
+                tags = library.get(aid)["tags"]
+                parent = aid
+            except FileNotFoundError:
+                pass
+        source = {"kind": "flow", "flow": name, "node": nid, "rev": node["rev"]}
+        return library.add(flow.output(nid), body.get("name"), source, parent=parent, tags=tags)
 
     # ---- 像素化節點 ----
 
