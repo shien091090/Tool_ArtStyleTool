@@ -50,17 +50,18 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   const status = el('span', { className: 'muted small' });
   root.append(
     el('div', { className: 'toolbar' }, [
-      el('label', {}, ['場景', sceneSel]), deleteBtn, undoBtn, redoBtn, addBoxBtn, addAssetBtn, selectTool, brushTool, status,
+      el('label', {}, ['場景', sceneSel]), deleteBtn, undoBtn, redoBtn, status,
       el('span', { className: 'spacer' }), newBtn,
     ]),
     banner,
   );
   const canvas = el('canvas');
   const stage = el('div', { className: 'mk-stage' }, [canvas]);
+  const sceneTools = el('div', { className: 'mk-tools' }, [addBoxBtn, addAssetBtn, selectTool, brushTool]);
   const palette = el('div', { className: 'mk-palette' });
   const side = el('div', { className: 'mk-side' });
   const strip = el('div', { className: 'mk-cands hidden' });
-  root.append(el('div', { className: 'mk-body' }, [palette, stage, side]), strip);
+  root.append(el('div', { className: 'mk-body' }, [palette, el('div', { className: 'mk-center' }, [sceneTools, stage]), side]), strip);
 
   function error(e: unknown) {
     showBanner(banner, 'error', (e as Error).message);
