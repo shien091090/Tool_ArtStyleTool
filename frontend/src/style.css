@@ -337,9 +337,9 @@ button.danger { color: var(--danger); }
 .mk-palette { width: 170px; flex: none; overflow-y: auto; border-right: 1px solid var(--line); }
 .mk-side { width: 320px; flex: none; overflow-y: auto; border-left: 1px solid var(--line); }
 .mk-pad { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
-.mk-row { display: flex; flex-direction: column; gap: 3px; }
+.mk-row { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
 .mk-row:has(> input[type=checkbox]) { flex-direction: row; align-items: center; gap: 6px; }
-.mk-row textarea { font: inherit; color: var(--text); background: var(--line); border: 1px solid #50545b; border-radius: 6px; padding: 5px 8px; resize: vertical; }
+.mk-row textarea { align-self: stretch; font: inherit; color: var(--text); background: var(--line); border: 1px solid #50545b; border-radius: 6px; padding: 5px 8px; resize: vertical; }
 .mk-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .mk-grid2 input { width: 100%; box-sizing: border-box; }
 .mk-btns { display: flex; flex-wrap: wrap; gap: 6px; }
