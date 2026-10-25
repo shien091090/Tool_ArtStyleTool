@@ -24,8 +24,8 @@ def test_presets_valid(view):
 
 def test_empty_preset():
     s = preset_scene("topdown", empty=True)
-    assert s["objects"] == [] and s["ground"]["cols"] == 20 and s["background"]["label"] == "草地 grass"
-    assert s["style"] == {"text": "", "refs": [], "genre": "top-down adventure"}
+    assert s["objects"] == [] and s["ground"]["cols"] == 40 and s["background"]["label"] == "草地 grass"
+    assert s["style"] == {"text": "", "refs": [], "genre": "top-down adventure", "colors": 32}
 
 
 def test_iso_point():

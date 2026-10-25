@@ -56,7 +56,8 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
 
     @r.post("")
     def create_scene(body: dict = Body(...)):
-        return Scene.create(root, body.get("name"), body.get("view"), bool(body.get("empty", False))).meta
+        return Scene.create(root, body.get("name"), body.get("view"), bool(body.get("empty", False)),
+                            bool(body.get("pixel", False)), body.get("camera")).meta
 
     @r.get("/{name}")
     def get_scene(name: str):

@@ -13,8 +13,8 @@ import numpy as np
 from ..imaging import read_png, write_png
 from ..library.store import KINDS
 from ..names import validate_name
-from .geometry import VIEWS
-from .presets import TERRAINS, preset_scene
+from .geometry import LEVELS, VIEWS, ground_size
+from .presets import DEFAULT_COLORS, TERRAINS, expand_ground, preset_scene
 
 LABEL_MAX = 60
 REFS_MAX = 4
@@ -23,9 +23,34 @@ _COLOR = re.compile(r"#[0-9a-fA-F]{6}")
 _OBJ_ID = re.compile(r"o[0-9]{1,6}")
 _ASSET_ID = re.compile(r"a[0-9]{1,6}")
 _CAND_ID = re.compile(r"c[0-9]{1,6}")
-_FILE = re.compile(r"(assets/a[0-9]{1,6}|candidates/c[0-9]{1,6}|cut)\.png")
+_FILE = re.compile(r"(assets/a[0-9]{1,6}|candidates/c[0-9]{1,6}(_raw)?|cut)\.png")
+COLORS = (16, 24, 32, 48, 64)
+# 舊場景的地面格大小 → (新大小, 舊格子左上角的偏移)
+_OLD_GROUND = {"topdown": ((20, 12), (40, 24), (10, 6)), "iso": ((10, 10), (20, 20), (5, 5))}
 
 _lock = threading.RLock()
+
+
+def check_camera(view: str, pixel: bool, camera) -> str:
+    if camera not in LEVELS:
+        raise ValueError(f"未知的鏡頭: {camera!r}")
+    if view == "flat" and not pixel and camera != "std":
+        raise ValueError("桌面的一般場景不能換鏡頭")
+    return camera
+
+
+def upgrade_meta(meta: dict) -> dict:
+    """舊場景補上鏡頭、像素、色數欄位, 俯瞰/斜角地面格放大成新的世界大小(可重複呼叫)。"""
+    meta.setdefault("pixel", False)
+    meta.setdefault("camera", "std")
+    meta["style"].setdefault("colors", DEFAULT_COLORS)
+    for c in meta.get("candidates", []):
+        c.setdefault("camera", "std")
+    g = meta.get("ground")
+    old = _OLD_GROUND.get(meta["view"])
+    if g and old and not meta["pixel"] and (g["cols"], g["rows"]) == old[0]:
+        meta["ground"] = expand_ground(g, *old[1], *old[2])
+    return meta
 
 
 def _now() -> str:
@@ -70,17 +95,20 @@ class Scene:
     # ---- 場景本身 ----
 
     @classmethod
-    def create(cls, root, name: str, view: str, empty: bool) -> "Scene":
+    def create(cls, root, name: str, view: str, empty: bool, pixel: bool = False, camera: str | None = None) -> "Scene":
         validate_name(name)
         if view not in VIEWS:
             raise ValueError(f"未知的畫面架構: {view!r}")
+        pixel = bool(pixel)
+        camera = check_camera(view, pixel, camera or ("far" if pixel else "std"))
         d = Path(root) / name
         with _lock:
             if d.exists():
                 raise FileExistsError(f"場景「{name}」已存在")
             now = _now()
-            meta = {"version": 1, "name": name, "view": view, "created": now, "updated": now,
-                    **preset_scene(view, bool(empty)), "candidates": [], "nextCandidate": 1}
+            meta = {"version": 1, "name": name, "view": view, "pixel": pixel, "camera": camera,
+                    "created": now, "updated": now,
+                    **preset_scene(view, bool(empty), pixel), "candidates": [], "nextCandidate": 1}
             (d / "assets").mkdir(parents=True)
             (d / "candidates").mkdir()
             s = cls(root, name, meta)
@@ -93,7 +121,7 @@ class Scene:
         p = Path(root) / name / "scene.json"
         if not p.is_file():
             raise FileNotFoundError(f"找不到場景「{name}」")
-        return cls(root, name, json.loads(p.read_text(encoding="utf-8")))
+        return cls(root, name, upgrade_meta(json.loads(p.read_text(encoding="utf-8"))))
 
     @classmethod
     def list(cls, root) -> list[dict]:
@@ -107,7 +135,7 @@ class Scene:
                 continue
             try:
                 m = json.loads(p.read_text(encoding="utf-8"))
-                out.append({"name": m["name"], "view": m["view"], "updated": m.get("updated"),
+                out.append({"name": m["name"], "view": m["view"], "pixel": bool(m.get("pixel")), "updated": m.get("updated"),
                             "candidates": len(m.get("candidates", []))})
             except (ValueError, KeyError, TypeError):
                 continue
@@ -140,7 +168,7 @@ class Scene:
         tmp.replace(self.dir / "scene.json")
 
     def _reload(self) -> None:
-        self.meta = json.loads((self.dir / "scene.json").read_text(encoding="utf-8"))
+        self.meta = upgrade_meta(json.loads((self.dir / "scene.json").read_text(encoding="utf-8")))
 
     # ---- 編輯內容 ----
 
@@ -148,7 +176,7 @@ class Scene:
         return isinstance(aid, str) and bool(_ASSET_ID.fullmatch(aid)) and (self.dir / "assets" / f"{aid}.png").is_file()
 
     def _check_ground(self, g) -> dict | None:
-        view = self.meta["view"]
+        view, pixel = self.meta["view"], self.meta["pixel"]
         if g is None:
             if view in ("topdown", "iso"):
                 raise ValueError("這個畫面架構一定要有地面格")
@@ -157,12 +185,13 @@ class Scene:
             raise ValueError("橫向、縱向卷軸沒有地面格")
         g = _dict(g, "地面格")
         cols, rows = g.get("cols"), g.get("rows")
-        fixed = {"topdown": (20, 12), "iso": (10, 10)}.get(view)
+        fixed = ground_size(view, pixel)
+        max_c, max_r = (40, 22) if pixel else (20, 11)
         if fixed:
             if (cols, rows) != fixed:
                 raise ValueError(f"地面格大小必須是 {fixed[0]}×{fixed[1]}")
-        elif not (isinstance(cols, int) and isinstance(rows, int) and 2 <= cols <= 20 and 2 <= rows <= 11):
-            raise ValueError("棋盤格行數 2~20、列數 2~11")
+        elif not (isinstance(cols, int) and isinstance(rows, int) and 2 <= cols <= max_c and 2 <= rows <= max_r):
+            raise ValueError(f"棋盤格行數 2~{max_c}、列數 2~{max_r}")
         custom = g.get("custom", [])
         if not isinstance(custom, list) or len(custom) > 20:
             raise ValueError("自訂地形格式錯誤")
@@ -201,11 +230,20 @@ class Scene:
             raise ValueError(f"這個畫面架構不能放「{kind}」物件")
         for k, positive in keys:
             out[k] = _num(o.get(k), f"物件 {oid} 的 {k}", positive)
+        if self.meta["pixel"]:
+            # 像素場景: 位置大小是整數遊戲像素; 斜角方塊以格為單位可對齊半格, 高度是整數
+            for k, _ in keys:
+                unit = 0.5 if kind == "block" and k != "h" else 1
+                if out[k] / unit != round(out[k] / unit):
+                    raise ValueError(f"像素場景物件 {oid} 的 {k} 要是{'半格的倍數' if unit == 0.5 else '整數'}")
         return out
 
     def _check_style(self, st) -> dict:
         st = _dict(st, "風格設定")
         text, genre, refs = st.get("text", ""), st.get("genre", ""), st.get("refs", [])
+        colors = st.get("colors", DEFAULT_COLORS)
+        if colors not in COLORS:
+            raise ValueError(f"色數只能是 {'/'.join(map(str, COLORS))}")
         if not isinstance(text, str) or len(text) > TEXT_MAX:
             raise ValueError(f"風格描述最長 {TEXT_MAX} 字")
         if not isinstance(genre, str) or len(genre) > 200:
@@ -215,7 +253,7 @@ class Scene:
         for a in refs:
             if not self._has_asset(a):
                 raise ValueError(f"場景裡沒有參考圖 {a!r}")
-        return {"text": text, "refs": list(dict.fromkeys(refs)), "genre": genre}
+        return {"text": text, "refs": list(dict.fromkeys(refs)), "genre": genre, "colors": colors}
 
     def save(self, body: dict) -> dict:
         """存背景、地面格、物件、風格; 名稱、架構、候選不由這裡改。"""
@@ -232,7 +270,8 @@ class Scene:
             if len({o["id"] for o in objects}) != len(objects):
                 raise ValueError("物件編號重複")
             style = self._check_style(body.get("style"))
-            self.meta.update(background=background, ground=ground, objects=objects, style=style)
+            camera = check_camera(self.meta["view"], self.meta["pixel"], body.get("camera", self.meta["camera"]))
+            self.meta.update(background=background, ground=ground, objects=objects, style=style, camera=camera)
             self._save()
             return self.meta
 
@@ -245,8 +284,10 @@ class Scene:
         write_png(self.dir / rel, img)
         return rel
 
-    def add_candidate(self, img: np.ndarray, prompt: str, objects: list | None = None, style: dict | None = None) -> dict:
-        """objects/style: 送 AI 當下的配置(畫圖期間場景可能又被改); 沒給就取目前存檔的。"""
+    def add_candidate(self, img: np.ndarray, prompt: str, objects: list | None = None, style: dict | None = None,
+                      camera: str = "std", raw: np.ndarray | None = None) -> dict:
+        """objects/style/camera: 送 AI 當下的配置(畫圖期間場景可能又被改); 沒給就取目前存檔的。
+        raw: 像素場景對齊格子前的圖, 存成 <候選>_raw.png。"""
         with _lock:
             self._reload()
             n = self.meta.get("nextCandidate", 1)
@@ -254,7 +295,10 @@ class Scene:
             write_png(self.dir / "candidates" / f"{cid}.png", img)
             c = {"id": cid, "created": _now(), "prompt": prompt,
                  "style": copy.deepcopy(style if style is not None else self.meta["style"]),
-                 "objects": copy.deepcopy(objects if objects is not None else self.meta["objects"])}
+                 "objects": copy.deepcopy(objects if objects is not None else self.meta["objects"]), "camera": camera}
+            if raw is not None:
+                c["raw"] = f"candidates/{cid}_raw.png"
+                write_png(self.dir / c["raw"], raw)
             self.meta["candidates"].append(c)
             self.meta["nextCandidate"] = n + 1
             self._save()
@@ -272,6 +316,7 @@ class Scene:
             self.candidate(cid)
             self.meta["candidates"] = [c for c in self.meta["candidates"] if c["id"] != cid]
             (self.dir / "candidates" / f"{cid}.png").unlink(missing_ok=True)
+            (self.dir / "candidates" / f"{cid}_raw.png").unlink(missing_ok=True)
             self._save()
             return self.meta
 

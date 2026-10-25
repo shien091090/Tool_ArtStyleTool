@@ -235,3 +235,11 @@ def test_rename_scene_rejects_taken_or_bad_name(client):
     assert client.post(f"{M}/場景/rename", json={"name": "別的"}).status_code == 409
     assert client.post(f"{M}/場景/rename", json={"name": "a/b"}).status_code == 400
     assert client.get(f"{M}/場景").status_code == 200
+
+
+def test_create_pixel_scene(client):
+    r = client.post(M, json={"name": "像素", "view": "side", "empty": True, "pixel": True})
+    assert r.status_code == 200, r.text
+    assert r.json()["pixel"] is True and r.json()["camera"] == "far"
+    r = client.post(M, json={"name": "像素2", "view": "side", "empty": True, "pixel": True, "camera": "near"})
+    assert r.json()["camera"] == "near"

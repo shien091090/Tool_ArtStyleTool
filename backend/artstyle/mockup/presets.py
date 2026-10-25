@@ -1,5 +1,5 @@
 """五種畫面架構的預設: 背景、地面格、灰盒擺設、遊戲類型描述(參照 2026-10-24 實驗的灰盒草稿, 不含 HUD)。"""
-
+from .geometry import ground_size
 
 TERRAINS = [
     {"label": "草地 grass", "color": "#96b978"},
@@ -132,8 +132,29 @@ def _objects(view: str) -> list[dict]:
     return out
 
 
-def preset_scene(view: str, empty: bool) -> dict:
+DEFAULT_COLORS = 32
+
+
+def expand_ground(g: dict, cols: int, rows: int, dc: int, dr: int, fill: str | None = GRASS) -> dict:
+    """把地面格放進較大的格子(舊格子左上角移到第 dc 行、第 dr 列), 多出來的格子填 fill。"""
+    cells = [fill] * (cols * rows)
+    for r in range(g["rows"]):
+        for c in range(g["cols"]):
+            cells[(r + dr) * cols + c + dc] = g["cells"][r * g["cols"] + c]
+    return {**g, "cols": cols, "rows": rows, "cells": cells}
+
+
+def preset_scene(view: str, empty: bool, pixel: bool = False) -> dict:
     """新場景的內容; empty 時沒有物件, 背景與地面格照預設。"""
-    return {"background": dict(DEFAULT_BG[view]), "ground": _ground(view),
-            "objects": [] if empty else _objects(view),
-            "style": {"text": "", "refs": [], "genre": GENRE[view]}}
+    size = ground_size(view, pixel)
+    if pixel:
+        ground = {"cols": size[0], "rows": size[1], "cells": [GRASS] * (size[0] * size[1]), "custom": []} if size else None
+        objects = []
+    else:
+        ground = _ground(view)
+        if ground and size:
+            ground = expand_ground(ground, *size, (size[0] - ground["cols"]) // 2, (size[1] - ground["rows"]) // 2)
+        objects = _objects(view)
+    return {"background": dict(DEFAULT_BG[view]), "ground": ground,
+            "objects": [] if empty else objects,
+            "style": {"text": "", "refs": [], "genre": GENRE[view], "colors": DEFAULT_COLORS}}
