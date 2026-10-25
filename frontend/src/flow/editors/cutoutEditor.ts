@@ -1,5 +1,5 @@
 /** 去除區塊節點: 魔術棒點選移除或保留, 橡皮擦直接擦掉。 */
-import { el, showBanner } from '../../pages/ui';
+import { el, iconButton, showBanner } from '../../pages/ui';
 import { applyOps, DEFAULT_TOL, eraseSegment, MAX_TOL, type CutoutOp, type EraseOp, type Img, type WandOp } from '../magicWand';
 import type { EditorContext, NodeEditor } from './types';
 
@@ -82,7 +82,7 @@ export function mountCutoutEditor(body: HTMLElement, ctx: EditorContext): NodeEd
   const grow = el('input');
   grow.type = 'checkbox';
   grow.checked = true;
-  const undoBtn = el('button', { text: '復原' });
+  const undoBtn = iconButton('undo', '復原');
   const resetBtn = el('button', { text: '全部重來' });
   const applyBtn = el('button', { text: '套用', className: 'primary' });
   const hint = el('div', { className: 'muted small' });

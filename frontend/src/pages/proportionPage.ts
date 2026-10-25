@@ -5,7 +5,7 @@ import { MATERIALS, swatchUrl } from '../proportion/materials';
 import { Editor, type Tool } from '../proportion/editor';
 import { ANCHORS, EDIT_MODELS, ZERO_PAD, type Anchor, type Pad, type Part, type PartTransform, type SegBox, type SegPoint, type WorkMeta } from '../proportion/model';
 import { autoPad, hasMaterial, isChanged, placeForeign } from '../proportion/transform';
-import { costNote, markPaid, confirmDelete, el, option, showBanner } from './ui';
+import { costNote, markPaid, confirmDelete, el, iconButton, option, showBanner } from './ui';
 import { COST, usd } from '../cost';
 
 const QUICK_NAMES = ['頭', '手', '腳', '身體', '翅膀', '尾巴'];
@@ -175,7 +175,8 @@ export function mountProportionPage(root: HTMLElement, embed: WorkshopEmbed): ()
   const resetBtn = button('重設變形', () => editSelected((t) => identity(t.z)));
   const pointBtn = markPaid(button('點選修正', () => (tool === 'point' ? exitMode() : setMode('point'))));
   const boxBtn = markPaid(button('框選重切', () => setMode('box', 'part')));
-  const undoMaskBtn = button('復原上一次切法', () => void undoMask());
+  const undoMaskBtn = iconButton('undo', '復原上一次切法 (Ctrl+Z)');
+  undoMaskBtn.addEventListener('click', () => void undoMask());
   const lockChk = el('input');
   lockChk.type = 'checkbox';
   lockChk.checked = true;
@@ -261,7 +262,7 @@ export function mountProportionPage(root: HTMLElement, embed: WorkshopEmbed): ()
       el('div', { className: 'row' }, [pointBtn, boxBtn]),
       costNote(`每個點或框一次${usd(COST.segment)}`),
       el('div', { className: 'row' }, [undoMaskBtn, splitBtn]),
-      el('div', { className: 'muted small', text: '切壞了按「復原上一次切法」或 Ctrl+Z' }),
+      el('div', { className: 'muted small', text: '切壞了按復原箭頭或 Ctrl+Z' }),
     ]),
     material: matBox,
   };
@@ -606,7 +607,8 @@ export function mountProportionPage(root: HTMLElement, embed: WorkshopEmbed): ()
       const n = pending.length;
       const ok = markPaid(button(n ? `確定修正(${n} 點)` : '確定修正', () => void confirmPoints(), 'primary'));
       ok.disabled = busy || !n;
-      const back = button('復原上一點', () => undoPoint());
+      const back = iconButton('undo', '復原上一點');
+      back.addEventListener('click', () => undoPoint());
       back.disabled = !n;
       modeBar.replaceChildren(
         el('b', { text: `修正「${p?.name ?? ''}」` }),

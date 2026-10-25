@@ -1,7 +1,7 @@
 import { api, type PackApi, type PackMeta, type RGB } from '../api';
 import { hexToRgb, rgbToHex } from '../colorMath';
 import { runningJob, trackJob } from '../jobs';
-import { costNote, markPaid, el, option, showBanner } from './ui';
+import { costNote, markPaid, el, iconButton, option, showBanner } from './ui';
 import { COST, usd } from '../cost';
 
 const STEP_ORDER = ['depth', 'normal', 'normal_detail', 'line', 'line_sdf', 'regions', 'flat', 'shade', 'ao', 'silhouette_sdf'];
@@ -75,6 +75,12 @@ export function mountDecomposePage(root: HTMLElement, embed: DecomposeEmbed): ()
     actions.push(b);
     return b;
   };
+  const iconAction = (icon: 'undo' | 'redo', label: string, onClick: () => void) => {
+    const b = iconButton(icon, label);
+    b.addEventListener('click', onClick);
+    actions.push(b);
+    return b;
+  };
   const makeCell = (layer: Cell['layer'], title: string, controls: (Node | string)[]): Cell => {
     const origin = el('div', { className: 'origin' });
     const stale = el('span', { className: 'tag-stale' });
@@ -99,7 +105,7 @@ export function mountDecomposePage(root: HTMLElement, embed: DecomposeEmbed): ()
     ]),
     makeCell('flat', '平塗', [
       markPaid(button('重畫', () => step('重畫平塗', [['regions', {}], ['flat', {}]]))), costNote(usd(COST.gptImage)),
-      button('復原', () => undoColor()), button('重做', () => redoColor()),
+      iconAction('undo', '復原改色 (Ctrl+Z)', () => undoColor()), iconAction('redo', '重做改色 (Ctrl+Y)', () => redoColor()),
       el('span', { className: 'muted', text: 'GPT Image 2 畫平塗, 再依線稿分格上色; 點圖上的區塊可以改色(Ctrl+Z 復原、Ctrl+Y 重做)' }),
     ]),
     makeCell('normal', '法線', [
