@@ -280,6 +280,16 @@ export function drawOrder(s: Scene): MockObject[] {
   return s.objects.map((o, n) => ({ o, n })).sort((a, b) => isoDepth(s.pixel, a.o) - isoDepth(s.pixel, b.o) || a.n - b.n).map((x) => x.o);
 }
 
+/** 圖層清單拖拉: 清單由前到後顯示, gap = 放進第幾個縫隙(0 = 最前面, 物件數 = 最後面) */
+export function moveLayer(s: Scene, id: string, gap: number): void {
+  const list = [...s.objects].reverse();
+  const from = list.findIndex((o) => o.id === id);
+  if (from < 0) return;
+  const [it] = list.splice(from, 1);
+  list.splice(Math.max(0, Math.min(list.length, gap > from ? gap - 1 : gap)), 0, it);
+  s.objects = list.reverse();
+}
+
 export function hitTest(s: Scene, x: number, y: number): MockObject | null {
   const order = drawOrder(s);
   for (let n = order.length - 1; n >= 0; n--) {

@@ -2,7 +2,7 @@
 import { COST, usd } from '../cost';
 import { KINDS, VIEW_LABEL, VIEWS, type ViewKey } from '../library/model';
 import { costNote, el, markPaid, option } from '../pages/ui';
-import { COLOR_CHOICES, LEVEL_LABEL, LEVELS, nativeRes, terrains, type CameraLevel, type MockObject, type Scene } from './model';
+import { COLOR_CHOICES, drawOrder, LEVEL_LABEL, LEVELS, nativeRes, terrains, type CameraLevel, type MockObject, type Scene } from './model';
 
 /** edit(fn): 存復原點 → fn 改場景 → 重畫並排程存檔 */
 export type Edit = (fn: (s: Scene) => void, rebuild?: boolean) => void;
@@ -111,23 +111,6 @@ export function objectPanel(s: Scene, o: MockObject, edit: Edit, onDelete: () =>
       }
     }, o.kind === 'asset'), { min }));
     rows.push(el('div', { className: 'mk-grid2' }, [f('x'), f('y'), f('w', minSize), f('h', minSize)]));
-  }
-  if (s.view !== 'iso') {
-    const move = (text: string, to: (n: number, len: number) => number) => {
-      const b = el('button', { text, className: 'small' });
-      b.addEventListener('click', () => edit((sc) => {
-        const n = sc.objects.findIndex((x) => x.id === o.id);
-        const t = Math.max(0, Math.min(sc.objects.length - 1, to(n, sc.objects.length)));
-        const [it] = sc.objects.splice(n, 1);
-        sc.objects.splice(t, 0, it);
-      }));
-      return b;
-    };
-    rows.push(el('div', { className: 'mk-btns' }, [
-      move('往前一層', (n) => n + 1), move('往後一層', (n) => n - 1), move('最前', (_n, len) => len - 1), move('最後', () => 0),
-    ]));
-  } else {
-    rows.push(el('div', { className: 'muted small', text: '斜角俯瞰依腳底位置自動排前後' }));
   }
   const del = el('button', { text: '刪除(Delete)', className: 'danger' });
   del.addEventListener('click', onDelete);
@@ -319,4 +302,58 @@ export function newSceneForm(onCreate: (name: string, view: ViewKey, empty: bool
     row('內容', preset),
     el('div', { className: 'mk-btns' }, [ok, cancel]),
   ]);
+}
+
+/** 圖層清單: 由前到後列出所有物件, 點一下選取, 拖拉調整前後(斜角俯瞰自動排序, 不能拖) */
+export function layerPanel(s: Scene, selected: string | null, opts: {
+  thumb: (asset: string) => string;
+  onSelect: (id: string) => void;
+  onMove: (id: string, gap: number) => void;
+}): HTMLElement {
+  const order = [...drawOrder(s)].reverse();
+  const canDrag = s.view !== 'iso';
+  const list = el('div', { className: 'mk-layer-list' });
+  let dragging: string | null = null;
+  const clearMarks = () => list.querySelectorAll('.drop-before, .drop-after').forEach((x) => x.classList.remove('drop-before', 'drop-after'));
+  order.forEach((o, n) => {
+    const icon = o.kind === 'asset'
+      ? Object.assign(el('img', { className: 'mk-layer-thumb' }), { src: opts.thumb(o.asset), draggable: false })
+      : el('span', { className: 'mk-chip' });
+    if (o.kind !== 'asset') icon.style.background = o.color;
+    const name = o.kind === 'asset' ? o.name || '素材' : o.label || '灰盒';
+    const item = el('div', { className: `mk-layer${o.id === selected ? ' on' : ''}`, title: name }, [icon, el('span', { className: 'mk-layer-name', text: name })]);
+    item.addEventListener('click', () => opts.onSelect(o.id));
+    if (canDrag) {
+      item.draggable = true;
+      item.addEventListener('dragstart', (e) => {
+        dragging = o.id;
+        e.dataTransfer?.setData('text/plain', o.id);
+        item.classList.add('dragging');
+      });
+      item.addEventListener('dragend', () => {
+        dragging = null;
+        item.classList.remove('dragging');
+        clearMarks();
+      });
+      const after = (e: DragEvent) => e.offsetY > item.clientHeight / 2;
+      item.addEventListener('dragover', (e) => {
+        if (!dragging) return;
+        e.preventDefault();
+        clearMarks();
+        item.classList.add(after(e) ? 'drop-after' : 'drop-before');
+      });
+      item.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const id = dragging;
+        clearMarks();
+        if (id) opts.onMove(id, n + (after(e) ? 1 : 0));
+      });
+    }
+    list.append(item);
+  });
+  const head = el('div', { className: 'mk-layer-head' }, [
+    el('b', { text: '圖層' }),
+    el('span', { className: 'muted small', text: canDrag ? '上 = 前面, 拖拉調整' : '依腳底位置自動排前後' }),
+  ]);
+  return el('div', { className: 'mk-pad' }, [head, order.length ? list : el('div', { className: 'muted small', text: '還沒有物件' })]);
 }

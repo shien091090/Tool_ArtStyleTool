@@ -9,10 +9,10 @@ import { drawScene, renderPngs, type Images } from '../mockup/draw';
 import { attachEditor } from '../mockup/editor';
 import { createHistory } from '../mockup/history';
 import {
-  bodyOf, cameraScale, CANVAS, DEFAULT_BOX_COLOR, frameRect, maxViewZoom, viewRectAt, isoCell, LEVEL_LABEL, LEVELS, nativeRes, newObjectId, snap,
+  bodyOf, cameraScale, CANVAS, DEFAULT_BOX_COLOR, frameRect, maxViewZoom, moveLayer, viewRectAt, isoCell, LEVEL_LABEL, LEVELS, nativeRes, newObjectId, snap,
   type CameraLevel, type Rect, type Scene, type SceneBody,
 } from '../mockup/model';
-import { backgroundPanel, groundPanel, newSceneForm, objectPanel, stylePanel, type Edit } from '../mockup/panels';
+import { backgroundPanel, groundPanel, layerPanel, newSceneForm, objectPanel, stylePanel, type Edit } from '../mockup/panels';
 import { confirmDelete, el, iconButton, option, showBanner } from './ui';
 
 const SAVE_DELAY = 500;
@@ -71,9 +71,10 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   const stage = el('div', { className: 'mk-stage' }, [canvas]);
   const sceneTools = el('div', { className: 'mk-tools' }, [addBoxBtn, addAssetBtn, selectTool, brushTool, cameraSeg, gridBtn, zoomBtn]);
   const palette = el('div', { className: 'mk-palette' });
+  const layers = el('div', { className: 'mk-layers' });
   const side = el('div', { className: 'mk-side' });
   const strip = el('div', { className: 'mk-cands hidden' });
-  root.append(el('div', { className: 'mk-body' }, [palette, el('div', { className: 'mk-center' }, [sceneTools, stage]), side]), strip);
+  root.append(el('div', { className: 'mk-body' }, [palette, el('div', { className: 'mk-center' }, [sceneTools, stage]), layers, side]), strip);
 
   function error(e: unknown) {
     showBanner(banner, 'error', (e as Error).message);
@@ -176,7 +177,23 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
     strip.replaceChildren(...(scene ? candidateStrip(scene, viewing, (cid) => view(cid)) : []));
   }
 
+  function drawLayers() {
+    const s = scene;
+    layers.classList.toggle('hidden', !s || mode !== 'edit' || formOpen);
+    if (!s || mode !== 'edit' || formOpen) return;
+    layers.replaceChildren(layerPanel(s, selected, {
+      thumb: (aid) => api.mockups.fileUrl(s.name, `assets/${aid}.png`),
+      onSelect: (id) => {
+        selected = id;
+        drawSide();
+        redraw();
+      },
+      onMove: (id, gap) => edit((sc) => moveLayer(sc, id, gap)),
+    }));
+  }
+
   function drawSide() {
+    drawLayers();
     if (formOpen) return;
     const s = scene;
     palette.classList.toggle('hidden', !s || (s.view !== 'flat' && !s.ground));
@@ -407,6 +424,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
     markDirty();
     sync();
     if (rebuild) drawSide();
+    else drawLayers();
     drawStrip();
     redraw();
   };
@@ -645,6 +663,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
 
   newBtn.addEventListener('click', () => {
     formOpen = true;
+    drawLayers();
     side.replaceChildren(newSceneForm(async (name, view, empty, pixel, camera) => {
       try {
         await api.mockups.create(name, view, empty, pixel, camera);

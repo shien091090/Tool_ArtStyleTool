@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   cellAt, clampToWorld, drawOrder, frameRect, hitTest, isoCell, isoPoint, nativeRes, newObjectId, objectBox, regions,
-  editRect, maxViewZoom, roundPixel, snapStep, visible, viewRectAt, worldRect, type BlockObj, type BoxObj, type Rect, type Scene,
+  editRect, maxViewZoom, moveLayer, roundPixel, snapStep, visible, viewRectAt, worldRect, type BlockObj, type BoxObj, type Rect, type Scene,
 } from '../src/mockup/model';
 import { createHistory } from '../src/mockup/history';
 import { toWorld } from '../src/mockup/editor';
@@ -183,5 +183,32 @@ describe('編輯區範圍與滑鼠換算', () => {
     expect(toWorld(canvas, rect, { clientX: 10, clientY: 20 })).toEqual([-100, -50]);
     expect(toWorld(canvas, rect, { clientX: 210, clientY: 120 })).toEqual([300, 150]);
     expect(toWorld(canvas, rect, { clientX: 110, clientY: 70 })).toEqual([100, 50]);
+  });
+});
+
+describe('圖層清單拖拉', () => {
+  const ids = (s: Scene) => s.objects.map((o) => o.id);
+  // objects 由後到前 a b c d; 清單由前到後顯示 d c b a, 縫隙 0 = 最前面
+  const sc = () => base('side', { objects: ['a', 'b', 'c', 'd'].map((id) => box({ id })) });
+  it('拖到最前、最後', () => {
+    const s = sc();
+    moveLayer(s, 'a', 0);
+    expect(ids(s)).toEqual(['b', 'c', 'd', 'a']);
+    moveLayer(s, 'a', 4);
+    expect(ids(s)).toEqual(['a', 'b', 'c', 'd']);
+  });
+  it('拖到中間縫隙(往下、往上)', () => {
+    const s = sc();
+    moveLayer(s, 'd', 2); // 放到 c b 之間
+    expect(ids(s)).toEqual(['a', 'b', 'd', 'c']);
+    moveLayer(s, 'a', 1); // 放到 c 之後(第二前)
+    expect(ids(s)).toEqual(['b', 'd', 'a', 'c']);
+  });
+  it('放回原位不變, 找不到 id 不動', () => {
+    const s = sc();
+    moveLayer(s, 'c', 1);
+    moveLayer(s, 'c', 2);
+    moveLayer(s, 'zz', 0);
+    expect(ids(s)).toEqual(['a', 'b', 'c', 'd']);
   });
 });
