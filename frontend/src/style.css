@@ -356,6 +356,8 @@ button.danger { color: var(--danger); }
 .mk-layer-sep { border: none; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }
 .mk-layer-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mk-layer-thumb { width: 20px; height: 20px; object-fit: contain; flex: none; background: #0003; border-radius: 3px; }
+.mk-gen-dialog { width: min(420px, 92vw); max-height: 86vh; display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.mk-gen-body { overflow-y: auto; }
 .mk-side { width: 320px; flex: none; overflow-y: auto; border-left: 1px solid var(--line); }
 .mk-pad { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
 .mk-row { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }

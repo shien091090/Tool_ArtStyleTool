@@ -40,6 +40,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   let showRaw = false;
   let viewZoom = 1;
   let bgOn = false; // 圖層清單選到背景
+  let genBody: HTMLElement | null = null; // 生成視窗開著時的內容區
   const images: Images = new Map();
   const undoStack = createHistory<string>();
 
@@ -58,6 +59,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   const cameraSeg = el('div', { className: 'seg mk-camera' });
   const gridBtn = el('button', { text: '格線', title: '像素場景: 疊上遊戲像素格線' });
   const zoomBtn = el('button', { text: '還原視野', title: '滾輪縮放後回到預設視野' });
+  const genBtn = el('button', { text: '生成', className: 'primary', title: '風格設定與 AI 畫整張' });
   const status = el('span', { className: 'muted small' });
   const viewTag = el('span', { className: 'mk-tag' });
   const pixelTag = el('span', { className: 'mk-tag pixel', text: '像素' });
@@ -70,7 +72,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   );
   const canvas = el('canvas');
   const stage = el('div', { className: 'mk-stage' }, [canvas]);
-  const sceneTools = el('div', { className: 'mk-tools' }, [addBoxBtn, addAssetBtn, selectTool, brushTool, cameraSeg, gridBtn, zoomBtn]);
+  const sceneTools = el('div', { className: 'mk-tools' }, [addBoxBtn, addAssetBtn, selectTool, brushTool, cameraSeg, gridBtn, zoomBtn, el('span', { className: 'spacer' }), genBtn]);
   const palette = el('div', { className: 'mk-palette' });
   const layers = el('div', { className: 'mk-layers' });
   const side = el('div', { className: 'mk-side' });
@@ -165,6 +167,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
     gridBtn.classList.toggle('hidden', !scene?.pixel);
     gridBtn.classList.toggle('primary', showGrid);
     gridBtn.disabled = !editing;
+    genBtn.disabled = !editing;
     zoomBtn.classList.toggle('hidden', !editing || viewZoom <= 1.001);
     stage.classList.toggle('brush', editing && tool === 'brush');
     stage.classList.toggle('cutting', mode === 'view');
@@ -177,6 +180,59 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
     strip.classList.toggle('hidden', !scene?.candidates.length);
     strip.replaceChildren(...(scene ? candidateStrip(scene, viewing, (cid) => view(cid)) : []));
   }
+
+  // ---- 生成視窗(風格設定與 AI 畫整張) ----
+  function drawGen() {
+    const s = scene;
+    if (!genBody) return;
+    if (!s || mode !== 'edit') {
+      closeGen();
+      return;
+    }
+    genBody.replaceChildren(
+      stylePanel(s, edit, {
+        count,
+        busy: rendering(),
+        refUrl: (aid) => api.mockups.fileUrl(s.name, `assets/${aid}.png`),
+        onCount: (n) => {
+          count = n;
+          drawSide();
+        },
+        addRef: () => void addRef(),
+        render: () => {
+          closeGen();
+          void renderAI();
+        },
+      }));
+  }
+
+  function closeGen() {
+    if (!genBody) return;
+    genBody.closest('.lib-modal')?.remove();
+    genBody = null;
+    window.removeEventListener('keydown', onGenKey);
+  }
+
+  function onGenKey(e: KeyboardEvent) {
+    if (e.key === 'Escape') closeGen();
+  }
+
+  genBtn.addEventListener('click', () => {
+    if (!scene || genBody) return;
+    genBody = el('div', { className: 'mk-gen-body' });
+    const close = el('button', { text: '關閉' });
+    close.addEventListener('click', closeGen);
+    const overlay = el('div', { className: 'lib-modal' }, [el('div', { className: 'mk-gen-dialog' }, [
+      el('div', { className: 'toolbar' }, [el('b', { text: '生成' }), el('span', { className: 'spacer' }), close]),
+      genBody,
+    ])]);
+    overlay.addEventListener('pointerdown', (e) => {
+      if (e.target === overlay) closeGen();
+    });
+    document.body.append(overlay);
+    window.addEventListener('keydown', onGenKey);
+    drawGen();
+  });
 
   function drawLayers() {
     const s = scene;
@@ -239,19 +295,9 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
       drawSide();
     }, edit));
     const o = s.objects.find((x) => x.id === selected);
-    side.replaceChildren(...(o ? [objectPanel(s, o, edit, removeSelected)] : bgOn ? [backgroundPanel(s, edit)] : [
-      stylePanel(s, edit, {
-        count,
-        busy: rendering(),
-        refUrl: (aid) => api.mockups.fileUrl(s.name, `assets/${aid}.png`),
-        onCount: (n) => {
-          count = n;
-          drawSide();
-        },
-        addRef: () => void addRef(),
-        render: () => void renderAI(),
-      }),
-    ]));
+    side.replaceChildren(o ? objectPanel(s, o, edit, removeSelected) : bgOn ? backgroundPanel(s, edit)
+      : el('div', { className: 'mk-pad muted small', text: '點選圖層或畫布上的物件來編輯' }));
+    drawGen();
   }
 
   function refresh() {
@@ -609,7 +655,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
 
   function onKey(e: KeyboardEvent) {
     const t = e.target as HTMLElement;
-    if (!scene || formOpen || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+    if (!scene || formOpen || genBody || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
     if (mode === 'view') {
       if (e.key === 'Escape') back();
       return;
@@ -739,6 +785,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   return Object.assign(() => {
     void save();
     alive = false;
+    closeGen();
     ro.disconnect();
     detach();
     detachCutter();
