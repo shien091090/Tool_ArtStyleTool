@@ -11,7 +11,7 @@ def scene(view, empty=False, **style):
 def test_greybox_only():
     p = build_prompt(scene("side"))
     assert "greybox layout mockup of a 2D side-scrolling platformer" in p
-    assert '- "主角 player" (grey block, bottom-left)' in p
+    assert '- "主角 player" (grey block, bottom-center)' in p
     assert "The flat 天空 sky background" in p and "paint them fully" in p
     assert "Do not draw any label text, UI or HUD." in p
     assert "style references" not in p and "already finished" not in p
@@ -21,7 +21,7 @@ def test_greybox_only():
 def test_colored_box():
     s = scene("side")
     s["objects"][-1]["color"] = "#ff0000"
-    assert '- "主角 player" (#ff0000 block, bottom-left)' in build_prompt(s)
+    assert '- "主角 player" (#ff0000 block, bottom-center)' in build_prompt(s)
 
 
 def test_with_assets():

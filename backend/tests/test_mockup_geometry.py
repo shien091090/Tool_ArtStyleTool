@@ -50,7 +50,7 @@ def test_iso_point_pixel():
 def test_ground_size():
     assert ground_size("topdown", False) == (40, 24)
     assert ground_size("topdown", True) == (40, 23)
-    assert ground_size("iso", False) == (20, 20)
+    assert ground_size("iso", False) == (26, 26)
     assert ground_size("iso", True) == (20, 20)
     assert ground_size("side", False) is None
 
@@ -60,7 +60,7 @@ def test_ground_spec():
     assert (g["tile"], g["ox"], g["oy"]) == (64, -640, -384)
     g = ground_spec("topdown", {"cols": 40, "rows": 23}, True)
     assert (g["tile"], g["ox"], g["oy"]) == (16, 0, 0)
-    assert ground_spec("iso", {"cols": 20, "rows": 20}, False) == {"iso": True, "cols": 20, "rows": 20, "offset": 5}
+    assert ground_spec("iso", {"cols": 26, "rows": 26}, False) == {"iso": True, "cols": 26, "rows": 26, "offset": 8}
     assert ground_spec("iso", {"cols": 20, "rows": 20}, True)["offset"] == 0
     g = ground_spec("flat", {"cols": 8, "rows": 8}, True)
     assert (g["tile"], g["ox"], g["oy"]) == (16, 256, 116)

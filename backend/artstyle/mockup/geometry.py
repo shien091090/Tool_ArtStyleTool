@@ -10,10 +10,10 @@ LEVELS = ("xfar", "far", "std", "near", "xnear")
 _SCALE_NORMAL = {"xfar": 0.5, "far": 0.7, "std": 1, "near": 1.4, "xnear": 2}
 _SCALE_PIXEL = {"xfar": 2, "far": 4, "std": 5, "near": 8, "xnear": 10}
 
-# 斜角俯瞰: (格寬, 格高, 格點 (0,0) 的世界座標); 一般場景沿用舊原點, 新的 20×20 格從 i, j = -5 開始
+# 斜角俯瞰: (格寬, 格高, 格點 (0,0) 的世界座標); 一般場景沿用舊原點, 新的 26×26 格從 i, j = -8 開始(超遠時菱形約填滿畫面)
 _ISO = {False: (96, 48, 640, 120), True: (32, 16, 320, 20)}
-ISO_N = 20
-ISO_OFFSET = {False: 5, True: 0}
+ISO_N = {False: 26, True: 20}
+ISO_OFFSET = {False: 8, True: 0}
 
 TILE = {False: 64, True: 16}
 # 俯瞰地面格起點(世界座標): 一般場景讓舊的 20×12 格落在原位(上方超出世界 24, 不顯示)
@@ -88,7 +88,7 @@ def ground_size(view: str, pixel: bool) -> tuple[int, int] | None:
     if view == "topdown":
         return (40, 23) if pixel else (40, 24)
     if view == "iso":
-        return (ISO_N, ISO_N)
+        return (ISO_N[pixel], ISO_N[pixel])
     return None
 
 

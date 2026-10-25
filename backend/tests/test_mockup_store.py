@@ -151,8 +151,8 @@ def test_upgrade_old_iso(tmp_path):
     cells[0] = "道路 road"
     _write_old(tmp_path, "舊", "iso", {"cols": 10, "rows": 10, "cells": cells, "custom": []})
     g = Scene.open(tmp_path, "舊").meta["ground"]
-    assert (g["cols"], g["rows"]) == (20, 20)
-    assert g["cells"][5 * 20 + 5] == "道路 road" and g["cells"][5 * 20 + 6] is None and g["cells"][0] == "草地 grass"
+    assert (g["cols"], g["rows"]) == (26, 26)
+    assert g["cells"][8 * 26 + 8] == "道路 road" and g["cells"][8 * 26 + 9] is None and g["cells"][0] == "草地 grass"
 
 
 def test_save_camera_rules(tmp_path):

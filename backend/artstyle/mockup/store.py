@@ -26,7 +26,7 @@ _CAND_ID = re.compile(r"c[0-9]{1,6}")
 _FILE = re.compile(r"(assets/a[0-9]{1,6}|candidates/c[0-9]{1,6}(_raw)?|cut)\.png")
 COLORS = (16, 24, 32, 48, 64)
 # 舊場景的地面格大小 → (新大小, 舊格子左上角的偏移)
-_OLD_GROUND = {"topdown": ((20, 12), (40, 24), (10, 6)), "iso": ((10, 10), (20, 20), (5, 5))}
+_OLD_GROUND = {"topdown": ((20, 12), (40, 24), (10, 6)), "iso": ((10, 10), (26, 26), (8, 8))}
 
 _lock = threading.RLock()
 
