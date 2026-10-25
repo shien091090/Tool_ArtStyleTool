@@ -353,6 +353,7 @@ button.danger { color: var(--danger); }
 .mk-layer.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
 .mk-layer.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
 .mk-layer[draggable=true] { cursor: grab; }
+.mk-layer-sep { border: none; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }
 .mk-layer-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mk-layer-thumb { width: 20px; height: 20px; object-fit: contain; flex: none; background: #0003; border-radius: 3px; }
 .mk-side { width: 320px; flex: none; overflow-y: auto; border-left: 1px solid var(--line); }

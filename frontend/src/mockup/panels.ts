@@ -309,6 +309,8 @@ export function layerPanel(s: Scene, selected: string | null, opts: {
   thumb: (asset: string) => string;
   onSelect: (id: string) => void;
   onMove: (id: string, gap: number) => void;
+  bgOn: boolean;
+  onBackground: () => void;
 }): HTMLElement {
   const order = [...drawOrder(s)].reverse();
   const canDrag = s.view !== 'iso';
@@ -355,5 +357,13 @@ export function layerPanel(s: Scene, selected: string | null, opts: {
     el('b', { text: '圖層' }),
     ...(canDrag ? [] : [el('span', { className: 'muted small', text: '依腳底位置自動排前後' })]),
   ]);
-  return el('div', { className: 'mk-pad' }, [head, order.length ? list : el('div', { className: 'muted small', text: '還沒有物件' })]);
+  // 背景固定在最底, 用分隔線跟物件分開, 不能拖
+  const bgChip = el('span', { className: 'mk-chip' });
+  bgChip.style.background = s.background.color;
+  const bg = el('div', { className: `mk-layer mk-layer-bg${opts.bgOn ? ' on' : ''}`, title: '背景' },
+    [bgChip, el('span', { className: 'mk-layer-name', text: `背景 · ${s.background.label}` })]);
+  bg.addEventListener('click', opts.onBackground);
+  return el('div', { className: 'mk-pad' }, [
+    head, order.length ? list : el('div', { className: 'muted small', text: '還沒有物件' }), el('hr', { className: 'mk-layer-sep' }), bg,
+  ]);
 }

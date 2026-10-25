@@ -39,6 +39,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   let showGrid = true;
   let showRaw = false;
   let viewZoom = 1;
+  let bgOn = false; // 圖層清單選到背景
   const images: Images = new Map();
   const undoStack = createHistory<string>();
 
@@ -185,10 +186,18 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
       thumb: (aid) => api.mockups.fileUrl(s.name, `assets/${aid}.png`),
       onSelect: (id) => {
         selected = id;
+        bgOn = false;
         drawSide();
         redraw();
       },
       onMove: (id, gap) => edit((sc) => moveLayer(sc, id, gap)),
+      bgOn,
+      onBackground: () => {
+        selected = null;
+        bgOn = true;
+        drawSide();
+        redraw();
+      },
     }));
   }
 
@@ -230,7 +239,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
       drawSide();
     }, edit));
     const o = s.objects.find((x) => x.id === selected);
-    side.replaceChildren(...(o ? [objectPanel(s, o, edit, removeSelected)] : [
+    side.replaceChildren(...(o ? [objectPanel(s, o, edit, removeSelected)] : bgOn ? [backgroundPanel(s, edit)] : [
       stylePanel(s, edit, {
         count,
         busy: rendering(),
@@ -242,7 +251,6 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
         addRef: () => void addRef(),
         render: () => void renderAI(),
       }),
-      backgroundPanel(s, edit),
     ]));
   }
 
@@ -339,6 +347,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
     box = null;
     preview = null;
     selected = null;
+    bgOn = false;
     showRaw = false;
     loadCandidate();
     refresh();
@@ -483,8 +492,9 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
     brush: () => brush,
     selected: () => selected,
     select: (id) => {
-      if (id === selected) return;
+      if (id === selected && !bgOn) return;
       selected = id;
+      bgOn = false;
       drawSide();
       redraw();
     },
@@ -547,6 +557,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
           x: Math.round(cx - size / 2), y: Math.round(cy - size / 2), w: size, h: size });
     });
     selected = id;
+    bgOn = false;
     refresh();
   });
 
@@ -578,6 +589,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
         sc.objects.push({ id, kind: 'asset', asset: a.id, name: r.asset.name, x: ox, y: oy, w: ow, h: oh, flip: false });
       });
       selected = id;
+      bgOn = false;
       refresh();
     } catch (e) {
       error(e);
@@ -636,6 +648,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
     await save();
     scene = null;
     selected = null;
+    bgOn = false;
     mode = 'edit';
     viewZoom = 1;
     viewing = null;
