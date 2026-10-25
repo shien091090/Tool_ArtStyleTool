@@ -16,6 +16,27 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
+const ICON_PATHS = {
+  undo: ['M9 14 4 9l5-5', 'M4 9h10.5a5.5 5.5 0 0 1 0 11H11'],
+  redo: ['m15 14 5-5-5-5', 'M20 9H9.5a5.5 5.5 0 0 0 0 11H13'],
+};
+
+/** 只有圖示的按鈕(圓弧箭頭等); 名稱放在滑鼠提示與無障礙標籤 */
+export function iconButton(icon: keyof typeof ICON_PATHS, label: string): HTMLButtonElement {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const d of ICON_PATHS[icon]) {
+    const p = document.createElementNS(ns, 'path');
+    p.setAttribute('d', d);
+    svg.append(p);
+  }
+  const b = el('button', { className: 'icon-btn', title: label }, [svg]);
+  b.setAttribute('aria-label', label);
+  return b;
+}
+
 /** 會花錢(呼叫 fal.ai)的按鈕: 加錢的圖示、換顏色 */
 export function markPaid<T extends HTMLElement>(b: T): T {
   b.classList.add('paid');

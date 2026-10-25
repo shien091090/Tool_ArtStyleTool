@@ -10,7 +10,7 @@ import { attachEditor } from '../mockup/editor';
 import { createHistory } from '../mockup/history';
 import { bodyOf, CANVAS, DEFAULT_BOX_COLOR, newObjectId, type Scene, type SceneBody } from '../mockup/model';
 import { backgroundPanel, groundPanel, newSceneForm, objectPanel, stylePanel, type Edit } from '../mockup/panels';
-import { confirmDelete, el, option, showBanner } from './ui';
+import { confirmDelete, el, iconButton, option, showBanner } from './ui';
 
 const SAVE_DELAY = 500;
 
@@ -41,8 +41,8 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   const sceneSel = el('select');
   const deleteBtn = el('button', { text: '刪除場景' });
   const newBtn = el('button', { text: '新場景' });
-  const undoBtn = el('button', { text: '復原', title: 'Ctrl+Z' });
-  const redoBtn = el('button', { text: '重做', title: 'Ctrl+Y' });
+  const undoBtn = iconButton('undo', '復原 (Ctrl+Z)');
+  const redoBtn = iconButton('redo', '重做 (Ctrl+Y)');
   const addBoxBtn = el('button', { text: '+ 灰盒' });
   const addAssetBtn = el('button', { text: '擺入素材' });
   const selectTool = el('button', { text: '選取' });
