@@ -134,7 +134,10 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
     renameBtn.disabled = !scene;
     const editing = !!scene && mode === 'edit';
     for (const b of [undoBtn, redoBtn, addBoxBtn, addAssetBtn, selectTool]) b.disabled = !editing;
-    brushTool.disabled = !editing || !scene?.ground;
+    brushTool.disabled = !editing;
+    // 沒有地面格的場景(橫向/縱向卷軸、沒開棋盤的桌面)用不到筆刷, 選取也不必切換, 兩顆都不顯示
+    selectTool.classList.toggle('hidden', !scene?.ground);
+    brushTool.classList.toggle('hidden', !scene?.ground);
     if (!scene?.ground && tool === 'brush') tool = 'select';
     selectTool.classList.toggle('primary', tool === 'select');
     brushTool.classList.toggle('primary', tool === 'brush');
