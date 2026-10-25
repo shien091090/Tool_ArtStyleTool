@@ -39,7 +39,8 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   // ---- 版面 ----
   const banner = el('div');
   const sceneSel = el('select');
-  const deleteBtn = el('button', { text: '刪除場景' });
+  const deleteBtn = el('button', { text: '刪除場景', className: 'danger-fill' });
+  const renameBtn = el('button', { text: '重新命名' });
   const newBtn = el('button', { text: '新場景' });
   const undoBtn = iconButton('undo', '復原 (Ctrl+Z)');
   const redoBtn = iconButton('redo', '重做 (Ctrl+Y)');
@@ -50,7 +51,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   const status = el('span', { className: 'muted small' });
   root.append(
     el('div', { className: 'toolbar' }, [
-      el('label', {}, ['場景', sceneSel]), deleteBtn, undoBtn, redoBtn, status,
+      el('label', {}, ['場景', sceneSel]), renameBtn, deleteBtn, undoBtn, redoBtn, status,
       el('span', { className: 'spacer' }), newBtn,
     ]),
     banner,
@@ -99,6 +100,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
 
   function sync() {
     deleteBtn.disabled = !scene;
+    renameBtn.disabled = !scene;
     const editing = !!scene && mode === 'edit';
     for (const b of [undoBtn, redoBtn, addBoxBtn, addAssetBtn, selectTool]) b.disabled = !editing;
     brushTool.disabled = !editing || !scene?.ground;
@@ -482,13 +484,19 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   window.addEventListener('keydown', onKey);
 
   // ---- 場景管理 ----
-  async function loadList(want: string | null) {
+  /** 重建場景下拉選單, 回傳選中的名稱(want 不存在就是 null) */
+  async function fillList(want: string | null): Promise<string | null> {
     const list = await api.mockups.list();
-    if (!alive) return;
     sceneSel.replaceChildren(option('', list.length ? '(選擇場景)' : '(還沒有場景)'),
       ...list.map((m) => option(m.name, `${m.name}(${VIEW_LABEL[m.view as ViewKey] ?? m.view})`)));
     const pick = want && list.some((m) => m.name === want) ? want : null;
     sceneSel.value = pick ?? '';
+    return pick;
+  }
+
+  async function loadList(want: string | null) {
+    const pick = await fillList(want);
+    if (!alive) return;
     await open(pick);
   }
 
@@ -539,6 +547,30 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
       formOpen = false;
       drawSide();
     }));
+  });
+
+  renameBtn.addEventListener('click', async () => {
+    if (!scene) return;
+    if (rendering()) {
+      showBanner(banner, 'info', 'AI 畫整張還在跑, 跑完再改名');
+      return;
+    }
+    const s = scene;
+    const to = prompt('新的場景名稱', s.name)?.trim();
+    if (!to || to === s.name) return;
+    try {
+      await save(); // 還沒送出的修改先存到舊名稱
+      if (dirty) return; // 存檔失敗, 錯誤已顯示
+      const next = await api.mockups.rename(s.name, to);
+      // 改名只換資料夾, 畫面上的場景與復原紀錄照舊
+      s.name = next.name;
+      s.updated = next.updated;
+      if (scene === s) history.replaceState(null, '', `#/mockup?scene=${encodeURIComponent(s.name)}`);
+      await fillList(scene?.name ?? null);
+      showBanner(banner, null);
+    } catch (e) {
+      error(e);
+    }
   });
 
   deleteBtn.addEventListener('click', async () => {

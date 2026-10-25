@@ -136,6 +136,23 @@ class Flow:
                 continue
         return out
 
+    def rename(self, new: str) -> None:
+        """改名: 資料夾跟著改名; 新名稱被佔用就拒絕。"""
+        validate_name(new)
+        if new == self.name:
+            return
+        with _lock:
+            d = self.root / new
+            if d.exists() and not d.samefile(self.dir):  # 只改大小寫時 Windows 上是同一個資料夾
+                raise FileExistsError(f"流程「{new}」已存在")
+            try:
+                self.dir.rename(d)
+            except PermissionError:
+                raise ValueError("流程裡有檔案正在使用中, 稍後再試") from None
+            self.name, self.dir = new, d
+            self.meta["name"] = new
+            self._save()
+
     def delete(self) -> None:
         shutil.rmtree(self.dir)
 

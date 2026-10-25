@@ -29,6 +29,8 @@ button:hover:not(:disabled) { border-color: var(--accent); }
 button:disabled { opacity: 0.5; cursor: default; }
 button.icon-btn { display: inline-flex; align-items: center; justify-content: center; padding: 4px 7px; }
 button.icon-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+button.danger-fill { background: #a83232; border-color: #c04545; color: #fff; }
+button.danger-fill:hover:not(:disabled) { border-color: #f06a6a; }
 button.primary { background: #2f5ea8; border-color: #2f5ea8; }
 button.paid { background: #7a5212; border-color: #b8801f; color: #fff; }
 button.paid:hover:not(:disabled) { border-color: #f0b54a; }

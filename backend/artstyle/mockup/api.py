@@ -66,6 +66,13 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
     def put_scene(name: str, body: dict = Body(...)):
         return scene(name).save(body)
 
+    @r.post("/{name}/rename")
+    def rename_scene(name: str, body: dict = Body(...)):
+        s = scene(name)
+        s.rename(body.get("name"))
+        library.rename_source("mockup", "scene", name, s.name)
+        return s.meta
+
     @r.delete("/{name}")
     def delete_scene(name: str):
         scene(name).delete()

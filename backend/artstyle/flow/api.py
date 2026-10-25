@@ -92,6 +92,13 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
     def get_flow(name: str):
         return open_flow(name).meta
 
+    @r.post("/{name}/rename")
+    def rename_flow(name: str, body: dict = Body(...)):
+        flow = open_flow(name)
+        flow.rename(body.get("name"))
+        library.rename_source("flow", "flow", name, flow.name)
+        return flow.meta
+
     @r.delete("/{name}")
     def delete_flow(name: str):
         open_flow(name).delete()

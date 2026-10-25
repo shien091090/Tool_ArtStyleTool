@@ -213,3 +213,25 @@ def test_render_snapshot_is_layout_at_start(client, fal, tmp_path):
     fal.edit = edit_and_change
     c = _render(client, "場景").json()["candidates"][0]
     assert len(c["objects"]) == len(s["objects"]) and c["style"]["text"] == ""
+
+
+def test_rename_scene(client, tmp_path):
+    _new(client)
+    _render(client, "場景")
+    client.post(f"{M}/場景/candidates/c1/cut", json={"box": [10, 10, 60, 60]})
+    client.post(f"{M}/場景/candidates/c1/cut/save", json={"name": "截圖", "tags": None})
+    r = client.post(f"{M}/場景/rename", json={"name": "新場景"})
+    assert r.status_code == 200, r.text
+    assert r.json()["name"] == "新場景" and [c["id"] for c in r.json()["candidates"]] == ["c1"]
+    assert client.get(f"{M}/場景").status_code == 404
+    assert [m["name"] for m in client.get(M).json()] == ["新場景"]
+    assert client.get(f"{M}/新場景/files/candidates/c1.png").status_code == 200
+    assert client.get("/api/library").json()[0]["source"]["scene"] == "新場景"
+
+
+def test_rename_scene_rejects_taken_or_bad_name(client):
+    _new(client)
+    _new(client, "別的")
+    assert client.post(f"{M}/場景/rename", json={"name": "別的"}).status_code == 409
+    assert client.post(f"{M}/場景/rename", json={"name": "a/b"}).status_code == 400
+    assert client.get(f"{M}/場景").status_code == 200

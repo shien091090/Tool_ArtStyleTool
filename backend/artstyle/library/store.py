@@ -87,6 +87,15 @@ class Library:
             _write_json(d / "asset.json", meta)
             return meta
 
+    def rename_source(self, kind: str, key: str, old: str, new: str) -> None:
+        """來源(流程/場景)改名時, 把記著舊名稱的素材來源一起改掉。"""
+        with _lock:
+            for a in self.list():
+                src = a.get("source") or {}
+                if src.get("kind") == kind and src.get(key) == old:
+                    a["source"] = {**src, key: new}
+                    _write_json(self.root / a["id"] / "asset.json", a)
+
     def list(self) -> list[dict]:
         if not self.root.is_dir():
             return []

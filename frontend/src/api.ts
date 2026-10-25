@@ -164,6 +164,7 @@ export const api = {
     get: (name: string) => request<Scene>(pmock(name)),
     save: (name: string, body: SceneBody) => request<Scene>(pmock(name), json('PUT', body)),
     remove: (name: string) => request<{ ok: boolean }>(pmock(name), { method: 'DELETE' }),
+    rename: (name: string, to: string) => request<Scene>(`${pmock(name)}/rename`, json('POST', { name: to })),
     addAsset: (name: string, asset: string) =>
       request<{ scene: Scene; asset: Asset }>(`${pmock(name)}/assets`, json('POST', { asset })),
     fileUrl: (name: string, path: string, version: string | number = '') =>
@@ -182,6 +183,7 @@ export const api = {
     create: (name: string) => request<FlowMeta>('/api/flows', json('POST', { name })),
     get: (name: string) => request<FlowMeta>(pflow(name)),
     delete: (name: string) => request<{ ok: boolean }>(pflow(name), { method: 'DELETE' }),
+    rename: (name: string, to: string) => request<FlowMeta>(`${pflow(name)}/rename`, json('POST', { name: to })),
     saveGraph: (name: string, nodes: Pick<FlowNode, 'id' | 'type' | 'x' | 'y' | 'params'>[], links: FlowLink[]) =>
       request<FlowMeta>(`${pflow(name)}/graph`, json('PUT', { nodes, links })),
     fileUrl: (name: string, path: string, version: string | number = Date.now()) =>

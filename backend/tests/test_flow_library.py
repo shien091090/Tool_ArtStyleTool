@@ -155,3 +155,27 @@ def test_save_uploaded_input_links_it(client):
     assert n1["params"] == {"source": "怪物", "asset": a["id"]} and n1["rev"] == 1
     b = _save(client, "n2").json()
     assert b["parent"] == a["id"]
+
+
+def test_rename_flow(client, tmp_path):
+    _setup(client, [("n1", "input"), ("n2", "cutout")], [{"from": "n1", "to": "n2"}])
+    _pick(client, "n1")
+    _upload(client, "n2", input_rev=1)
+    _save(client, "n2", "去背的樹")
+    r = client.post(f"{F}/rename", json={"name": "新流程"})
+    assert r.status_code == 200, r.text
+    assert r.json()["name"] == "新流程" and len(r.json()["nodes"]) == 2
+    assert client.get(F).status_code == 404
+    assert (tmp_path / "flows" / "新流程" / "out" / "n2.png").is_file()
+    assert [f["name"] for f in client.get("/api/flows").json()] == ["新流程"]
+    lib = {a["id"]: a for a in client.get("/api/library").json()}
+    assert lib["a2"]["source"]["flow"] == "新流程"
+    assert lib["a1"]["source"]["kind"] != "flow"
+
+
+def test_rename_flow_rejects_taken_or_bad_name(client):
+    _setup(client, [("n1", "input")], [])
+    assert client.post("/api/flows", json={"name": "別的"}).status_code == 200
+    assert client.post(f"{F}/rename", json={"name": "別的"}).status_code == 409
+    assert client.post(f"{F}/rename", json={"name": "a/b"}).status_code == 400
+    assert client.get(F).status_code == 200

@@ -31,13 +31,14 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): (() =
   // ---- 工具列 ----
   const banner = el('div');
   const flowSel = el('select');
-  const deleteBtn = el('button', { text: '刪除' });
+  const deleteBtn = el('button', { text: '刪除流程', className: 'danger-fill' });
+  const renameBtn = el('button', { text: '重新命名' });
   const nameInput = el('input');
   nameInput.placeholder = '新流程名稱';
   const createBtn = el('button', { text: '新流程' });
   const status = el('span', { className: 'muted' });
   const toolbar = el('div', { className: 'toolbar' }, [
-    el('label', {}, ['流程', flowSel]), deleteBtn, status, el('span', { className: 'spacer' }),
+    el('label', {}, ['流程', flowSel]), renameBtn, deleteBtn, status, el('span', { className: 'spacer' }),
     el('span', { className: 'muted small', text: '拖空白處平移、滾輪縮放、右鍵新增、雙擊節點開啟、Delete 刪除' }),
     nameInput, createBtn,
   ]);
@@ -64,6 +65,7 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): (() =
 
   function sync() {
     deleteBtn.disabled = !flow;
+    renameBtn.disabled = !flow;
   }
 
   function error(e: unknown) {
@@ -440,6 +442,25 @@ export function mountFlowPage(root: HTMLElement, params: URLSearchParams): (() =
       nameInput.value = '';
       await refreshFlows(m.name);
       await openFlow(m.name);
+    } catch (e) {
+      error(e);
+    }
+  })());
+  renameBtn.addEventListener('click', () => void (async () => {
+    if (!flow) return;
+    const f = flow;
+    if (running.size || f.nodes.some((n) => runningJob(flowJobKey(f.name, n.id)))) {
+      showBanner(banner, 'info', '有節點還在處理, 跑完再改名');
+      return;
+    }
+    if (!canLeave()) return;
+    const to = prompt('新的流程名稱', f.name)?.trim();
+    if (!to || to === f.name) return;
+    try {
+      await saveGraph(f); // 還沒存的拖拉先存到舊名稱
+      const next = await api.flows.rename(f.name, to);
+      await refreshFlows(next.name);
+      await openFlow(next.name);
     } catch (e) {
       error(e);
     }
