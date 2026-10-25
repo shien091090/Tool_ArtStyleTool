@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   cellAt, clampToWorld, drawOrder, frameRect, hitTest, isoCell, isoPoint, nativeRes, newObjectId, objectBox, regions,
-  roundPixel, snapStep, visible, worldRect, type BlockObj, type BoxObj, type Scene,
+  editRect, roundPixel, snapStep, visible, worldRect, type BlockObj, type BoxObj, type Rect, type Scene,
 } from '../src/mockup/model';
 import { createHistory } from '../src/mockup/history';
+import { toWorld } from '../src/mockup/editor';
 
 const base = (view: Scene['view'], extra: Partial<Scene> = {}): Scene => ({
   name: 's', view, pixel: false, camera: 'std', created: '', updated: '', background: { label: '天空 sky', color: '#cddeeb' },
@@ -155,5 +156,21 @@ describe('復原堆疊', () => {
     expect(h.redo('a')).toBe('b');
     h.push('x');
     expect(h.redo('x')).toBeNull();
+  });
+});
+
+describe('編輯區範圍與滑鼠換算', () => {
+  it('編輯區 = 輸出框四邊外擴 15%', () => {
+    expect(editRect(base('side'))).toEqual([-192, -108, 1472, 828]);
+    const p = editRect(base('side', { pixel: true, camera: 'far' }));
+    expect(p).toEqual([112, 63, 528, 297]);
+  });
+
+  it('滑鼠位置換成世界座標', () => {
+    const canvas = { getBoundingClientRect: () => ({ left: 10, top: 20, width: 200, height: 100 }) } as unknown as HTMLCanvasElement;
+    const rect: Rect = [-100, -50, 300, 150];
+    expect(toWorld(canvas, rect, { clientX: 10, clientY: 20 })).toEqual([-100, -50]);
+    expect(toWorld(canvas, rect, { clientX: 210, clientY: 120 })).toEqual([300, 150]);
+    expect(toWorld(canvas, rect, { clientX: 110, clientY: 70 })).toEqual([100, 50]);
   });
 });

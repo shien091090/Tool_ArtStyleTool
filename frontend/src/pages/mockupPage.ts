@@ -8,7 +8,7 @@ import { pickAsset } from '../library/picker';
 import { drawScene, renderPngs, type Images } from '../mockup/draw';
 import { attachEditor } from '../mockup/editor';
 import { createHistory } from '../mockup/history';
-import { bodyOf, CANVAS, DEFAULT_BOX_COLOR, newObjectId, type Scene, type SceneBody } from '../mockup/model';
+import { bodyOf, cameraScale, CANVAS, DEFAULT_BOX_COLOR, editRect, newObjectId, type Rect, type Scene, type SceneBody } from '../mockup/model';
 import { backgroundPanel, groundPanel, newSceneForm, objectPanel, stylePanel, type Edit } from '../mockup/panels';
 import { confirmDelete, el, iconButton, option, showBanner } from './ui';
 
@@ -69,9 +69,28 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   }
 
   // ---- 繪製 ----
+  /** 編輯時畫布顯示的世界範圍 */
+  const viewRect = (): Rect => (scene ? editRect(scene) : [0, 0, 1, 1]);
+
+  /** 畫布大小: 編輯 = 編輯範圍 × 鏡頭倍率, 看候選 = 輸出尺寸 */
+  function sizeCanvas() {
+    if (!scene) return;
+    let [w, h] = CANVAS[scene.view];
+    if (mode === 'edit') {
+      const r = viewRect();
+      const k = cameraScale(scene, scene.camera);
+      [w, h] = [Math.round((r[2] - r[0]) * k), Math.round((r[3] - r[1]) * k)];
+    }
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    fit();
+  }
+
   function fit() {
     if (!scene) return;
-    const [w, h] = CANVAS[scene.view];
+    const [w, h] = [canvas.width, canvas.height];
     const k = Math.min((stage.clientWidth - 24) / w, (stage.clientHeight - 24) / h);
     canvas.style.width = `${Math.max(50, w * k)}px`;
     canvas.style.height = `${Math.max(30, h * k)}px`;
@@ -83,7 +102,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
       drawCandidate(canvas.getContext('2d')!, scene, candImg, box);
       return;
     }
-    drawScene(canvas.getContext('2d')!, scene, images, { selected });
+    drawScene(canvas.getContext('2d')!, scene, images, { selected, rect: viewRect() });
   }
 
   function loadImages() {
@@ -168,6 +187,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   }
 
   function refresh() {
+    sizeCanvas();
     sync();
     drawSide();
     drawStrip();
@@ -386,6 +406,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
 
   const detach = attachEditor(canvas, {
     scene: () => scene,
+    rect: viewRect,
     active: () => !formOpen && mode === 'edit',
     tool: () => tool,
     brush: () => brush,
@@ -520,13 +541,9 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
     }
     if (!alive) return;
     wasRendering = rendering();
-    const [w, h] = scene ? CANVAS[scene.view] : [1, 1];
-    canvas.width = w;
-    canvas.height = h;
     canvas.classList.toggle('hidden', !scene);
     history.replaceState(null, '', scene ? `#/mockup?scene=${encodeURIComponent(scene.name)}` : '#/mockup');
     loadImages();
-    fit();
     refresh();
   }
 

@@ -165,6 +165,14 @@ export function frameRect(s: CamGeo, camera: CameraLevel = s.camera): Rect {
   return [cx - w / k / 2, cy - h / k / 2, cx + w / k / 2, cy + h / k / 2];
 }
 
+/** 編輯區顯示的範圍: 輸出框四邊各外擴框寬高的 15%(框外淡化顯示) */
+export function editRect(s: CamGeo): Rect {
+  const [x0, y0, x1, y1] = frameRect(s);
+  const mx = (x1 - x0) * 0.15;
+  const my = (y1 - y0) * 0.15;
+  return [x0 - mx, y0 - my, x1 + mx, y1 + my];
+}
+
 /** 像素場景的原生解析度 */
 export function nativeRes(s: Geo, camera: CameraLevel): [number, number] {
   const [w, h] = CANVAS[s.view];
