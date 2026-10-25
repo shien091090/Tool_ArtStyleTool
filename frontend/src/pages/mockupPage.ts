@@ -58,9 +58,11 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   const gridBtn = el('button', { text: '格線', title: '像素場景: 疊上遊戲像素格線' });
   const zoomBtn = el('button', { text: '還原視野', title: '滾輪縮放後回到預設視野' });
   const status = el('span', { className: 'muted small' });
+  const viewTag = el('span', { className: 'mk-tag' });
+  const pixelTag = el('span', { className: 'mk-tag pixel', text: '像素' });
   root.append(
     el('div', { className: 'toolbar' }, [
-      el('label', {}, ['場景', sceneSel]), renameBtn, deleteBtn, undoBtn, redoBtn, status,
+      el('label', {}, ['場景', sceneSel]), viewTag, pixelTag, renameBtn, deleteBtn, undoBtn, redoBtn, status,
       el('span', { className: 'spacer' }), newBtn,
     ]),
     banner,
@@ -141,6 +143,9 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
     if (!scene?.ground && tool === 'brush') tool = 'select';
     selectTool.classList.toggle('primary', tool === 'select');
     brushTool.classList.toggle('primary', tool === 'brush');
+    viewTag.textContent = scene ? VIEW_LABEL[scene.view as ViewKey] ?? scene.view : '';
+    viewTag.classList.toggle('hidden', !scene);
+    pixelTag.classList.toggle('hidden', !scene?.pixel);
     status.textContent = !scene ? '' : dirty ? '有修改尚未存檔…' : '已存檔';
     // 鏡頭: 一般桌面鎖在標準, 不顯示
     const camOn = !!scene && !(scene.view === 'flat' && !scene.pixel);
@@ -597,7 +602,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   async function fillList(want: string | null): Promise<string | null> {
     const list = await api.mockups.list();
     sceneSel.replaceChildren(option('', list.length ? '(選擇場景)' : '(還沒有場景)'),
-      ...list.map((m) => option(m.name, `${m.name}(${VIEW_LABEL[m.view as ViewKey] ?? m.view}${m.pixel ? '·像素' : ''})`)));
+      ...list.map((m) => option(m.name, m.name)));
     const pick = want && list.some((m) => m.name === want) ? want : null;
     sceneSel.value = pick ?? '';
     return pick;
