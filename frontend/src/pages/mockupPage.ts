@@ -40,6 +40,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   let showRaw = false;
   let viewZoom = 1;
   let bgOn = false; // 圖層清單選到背景
+  let sideTab: 'layers' | 'gen' = 'layers';
   const images: Images = new Map();
   const undoStack = createHistory<string>();
 
@@ -72,10 +73,10 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   const stage = el('div', { className: 'mk-stage' }, [canvas]);
   const sceneTools = el('div', { className: 'mk-tools' }, [addBoxBtn, addAssetBtn, selectTool, brushTool, cameraSeg, gridBtn, zoomBtn]);
   const palette = el('div', { className: 'mk-palette' });
-  const layers = el('div', { className: 'mk-layers' });
+  const layers = el('div', { className: 'mk-layers' }); // 圖層頁籤裡的清單, 物件改動時單獨重畫
   const side = el('div', { className: 'mk-side' });
   const strip = el('div', { className: 'mk-cands hidden' });
-  root.append(el('div', { className: 'mk-body' }, [palette, el('div', { className: 'mk-center' }, [sceneTools, stage]), layers, side]), strip);
+  root.append(el('div', { className: 'mk-body' }, [palette, el('div', { className: 'mk-center' }, [sceneTools, stage]), side]), strip);
 
   function error(e: unknown) {
     showBanner(banner, 'error', (e as Error).message);
@@ -180,8 +181,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
 
   function drawLayers() {
     const s = scene;
-    layers.classList.toggle('hidden', !s || mode !== 'edit' || formOpen);
-    if (!s || mode !== 'edit' || formOpen) return;
+    if (!s || mode !== 'edit' || formOpen || sideTab !== 'layers') return;
     layers.replaceChildren(layerPanel(s, selected, {
       thumb: (aid) => api.mockups.fileUrl(s.name, `assets/${aid}.png`),
       onSelect: (id) => {
@@ -202,7 +202,6 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   }
 
   function drawSide() {
-    drawLayers();
     if (formOpen) return;
     const s = scene;
     palette.classList.toggle('hidden', !s || (s.view !== 'flat' && !s.ground));
@@ -239,19 +238,33 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
       drawSide();
     }, edit));
     const o = s.objects.find((x) => x.id === selected);
-    side.replaceChildren(...(o ? [objectPanel(s, o, edit, removeSelected)] : bgOn ? [backgroundPanel(s, edit)] : [
-      stylePanel(s, edit, {
-        count,
-        busy: rendering(),
-        refUrl: (aid) => api.mockups.fileUrl(s.name, `assets/${aid}.png`),
-        onCount: (n) => {
-          count = n;
-          drawSide();
-        },
-        addRef: () => void addRef(),
-        render: () => void renderAI(),
-      }),
-    ]));
+    const tabs = el('div', { className: 'seg mk-side-tabs' }, (['layers', 'gen'] as const).map((t) => {
+      const b = el('button', { text: t === 'layers' ? '圖層' : '生成', className: t === sideTab ? 'active' : '' });
+      b.addEventListener('click', () => {
+        if (sideTab === t) return;
+        sideTab = t;
+        drawSide();
+      });
+      return b;
+    }));
+    if (sideTab === 'layers') {
+      drawLayers();
+      side.replaceChildren(tabs, layers, o ? objectPanel(s, o, edit, removeSelected) : bgOn ? backgroundPanel(s, edit)
+        : el('div', { className: 'mk-pad muted small', text: '點選圖層或畫布上的物件來編輯' }));
+    } else {
+      side.replaceChildren(tabs,
+        stylePanel(s, edit, {
+          count,
+          busy: rendering(),
+          refUrl: (aid) => api.mockups.fileUrl(s.name, `assets/${aid}.png`),
+          onCount: (n) => {
+            count = n;
+            drawSide();
+          },
+          addRef: () => void addRef(),
+          render: () => void renderAI(),
+        }));
+    }
   }
 
   function refresh() {
@@ -495,6 +508,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
       if (id === selected && !bgOn) return;
       selected = id;
       bgOn = false;
+      if (id) sideTab = 'layers';
       drawSide();
       redraw();
     },
@@ -558,6 +572,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
     });
     selected = id;
     bgOn = false;
+    sideTab = 'layers';
     refresh();
   });
 
@@ -590,6 +605,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
       });
       selected = id;
       bgOn = false;
+      sideTab = 'layers';
       refresh();
     } catch (e) {
       error(e);
@@ -676,7 +692,6 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
 
   newBtn.addEventListener('click', () => {
     formOpen = true;
-    drawLayers();
     side.replaceChildren(newSceneForm(async (name, view, empty, pixel, camera) => {
       try {
         await api.mockups.create(name, view, empty, pixel, camera);
