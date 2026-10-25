@@ -353,7 +353,7 @@ export function layerPanel(s: Scene, selected: string | null, opts: {
   });
   const head = el('div', { className: 'mk-layer-head' }, [
     el('b', { text: '圖層' }),
-    el('span', { className: 'muted small', text: canDrag ? '上 = 前面, 拖拉調整' : '依腳底位置自動排前後' }),
+    ...(canDrag ? [] : [el('span', { className: 'muted small', text: '依腳底位置自動排前後' })]),
   ]);
   return el('div', { className: 'mk-pad' }, [head, order.length ? list : el('div', { className: 'muted small', text: '還沒有物件' })]);
 }
