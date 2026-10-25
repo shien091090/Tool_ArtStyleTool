@@ -343,8 +343,7 @@ button.danger { color: var(--danger); }
 .mk-stage canvas { box-shadow: 0 0 0 1px var(--line), 0 4px 18px #0008; cursor: default; touch-action: none; }
 .mk-stage.brush canvas { cursor: crosshair; }
 .mk-palette { width: 170px; flex: none; overflow-y: auto; border-right: 1px solid var(--line); }
-.mk-side-tabs { padding: 10px 14px 0; }
-.mk-layers { max-height: 45vh; overflow-y: auto; border-bottom: 1px solid var(--line); }
+.mk-layers { width: 190px; flex: none; overflow-y: auto; border-left: 1px solid var(--line); }
 .mk-layer-head { display: flex; flex-direction: column; gap: 2px; }
 .mk-layer-list { display: flex; flex-direction: column; gap: 2px; }
 .mk-layer { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 6px; border: 1px solid transparent; cursor: pointer; font-size: 13px; user-select: none; }
