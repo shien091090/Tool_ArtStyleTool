@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   cellAt, clampToWorld, drawOrder, frameRect, hitTest, isoCell, isoPoint, nativeRes, newObjectId, objectBox, regions,
-  editRect, roundPixel, snapStep, visible, worldRect, type BlockObj, type BoxObj, type Rect, type Scene,
+  editRect, maxViewZoom, roundPixel, snapStep, visible, viewRectAt, worldRect, type BlockObj, type BoxObj, type Rect, type Scene,
 } from '../src/mockup/model';
 import { createHistory } from '../src/mockup/history';
 import { toWorld } from '../src/mockup/editor';
@@ -164,6 +164,17 @@ describe('編輯區範圍與滑鼠換算', () => {
     expect(editRect(base('side'))).toEqual([-192, -108, 1472, 828]);
     const p = editRect(base('side', { pixel: true, camera: 'far' }));
     expect(p).toEqual([112, 63, 528, 297]);
+  });
+
+  it('滾輪縮放編輯範圍: 1 = 預設, 最多看到整個世界外擴 5%', () => {
+    const s = base('side');
+    expect(viewRectAt(s, 1)).toEqual(editRect(s));
+    expect(maxViewZoom(s)).toBeCloseTo(2816 / 1664);
+    expect(viewRectAt(s, 99).map(Math.round)).toEqual([-768, -432, 2048, 1152]);
+    expect(viewRectAt(s, 0.5)).toEqual(editRect(s));
+    const p = base('side', { pixel: true, camera: 'far' });
+    expect(viewRectAt(p, 99).map(Math.round)).toEqual([-32, -18, 672, 378]);
+    expect(maxViewZoom(base('side', { camera: 'xfar' }))).toBe(1);
   });
 
   it('滑鼠位置換成世界座標', () => {

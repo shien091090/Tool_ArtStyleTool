@@ -9,7 +9,7 @@ import { drawScene, renderPngs, type Images } from '../mockup/draw';
 import { attachEditor } from '../mockup/editor';
 import { createHistory } from '../mockup/history';
 import {
-  bodyOf, cameraScale, CANVAS, DEFAULT_BOX_COLOR, editRect, frameRect, isoCell, LEVEL_LABEL, LEVELS, nativeRes, newObjectId, snap,
+  bodyOf, cameraScale, CANVAS, DEFAULT_BOX_COLOR, frameRect, maxViewZoom, viewRectAt, isoCell, LEVEL_LABEL, LEVELS, nativeRes, newObjectId, snap,
   type CameraLevel, type Rect, type Scene, type SceneBody,
 } from '../mockup/model';
 import { backgroundPanel, groundPanel, newSceneForm, objectPanel, stylePanel, type Edit } from '../mockup/panels';
@@ -38,6 +38,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   let renderBusy = false;
   let showGrid = true;
   let showRaw = false;
+  let viewZoom = 1;
   const images: Images = new Map();
   const undoStack = createHistory<string>();
 
@@ -55,6 +56,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   const brushTool = el('button', { text: '地面筆刷' });
   const cameraSeg = el('div', { className: 'seg mk-camera' });
   const gridBtn = el('button', { text: '格線', title: '像素場景: 疊上遊戲像素格線' });
+  const zoomBtn = el('button', { text: '還原視野', title: '滾輪縮放後回到預設視野' });
   const status = el('span', { className: 'muted small' });
   root.append(
     el('div', { className: 'toolbar' }, [
@@ -65,7 +67,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   );
   const canvas = el('canvas');
   const stage = el('div', { className: 'mk-stage' }, [canvas]);
-  const sceneTools = el('div', { className: 'mk-tools' }, [addBoxBtn, addAssetBtn, selectTool, brushTool, cameraSeg, gridBtn]);
+  const sceneTools = el('div', { className: 'mk-tools' }, [addBoxBtn, addAssetBtn, selectTool, brushTool, cameraSeg, gridBtn, zoomBtn]);
   const palette = el('div', { className: 'mk-palette' });
   const side = el('div', { className: 'mk-side' });
   const strip = el('div', { className: 'mk-cands hidden' });
@@ -77,7 +79,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
 
   // ---- 繪製 ----
   /** 編輯時畫布顯示的世界範圍 */
-  const viewRect = (): Rect => (scene ? editRect(scene) : [0, 0, 1, 1]);
+  const viewRect = (): Rect => (scene ? viewRectAt(scene, viewZoom) : [0, 0, 1, 1]);
 
   /** 畫布大小: 編輯 = 編輯範圍 × 鏡頭倍率, 看候選 = 輸出尺寸 */
   function sizeCanvas() {
@@ -86,7 +88,10 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
     if (mode === 'edit') {
       const r = viewRect();
       const k = cameraScale(scene, scene.camera);
-      [w, h] = [Math.round((r[2] - r[0]) * k), Math.round((r[3] - r[1]) * k)];
+      [w, h] = [(r[2] - r[0]) * k, (r[3] - r[1]) * k];
+      // 縮小看整個世界時畫布可能很大, 長邊最多 2560 畫素
+      const cap = Math.min(1, 2560 / Math.max(w, h));
+      [w, h] = [Math.round(w * cap), Math.round(h * cap)];
     }
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w;
@@ -150,6 +155,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
     gridBtn.classList.toggle('hidden', !scene?.pixel);
     gridBtn.classList.toggle('primary', showGrid);
     gridBtn.disabled = !editing;
+    zoomBtn.classList.toggle('hidden', !editing || viewZoom <= 1.001);
     stage.classList.toggle('brush', editing && tool === 'brush');
     stage.classList.toggle('cutting', mode === 'view');
   }
@@ -473,8 +479,26 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
     edit((s) => {
       s.camera = lv;
     }, true);
+    viewZoom = Math.min(viewZoom, maxViewZoom(scene));
     refresh();
   }
+
+  // 滾輪縮放編輯區(連同輸出框一起縮), 看得到框外的物件好拉回來
+  function setViewZoom(z: number) {
+    if (!scene) return;
+    const next = Math.min(Math.max(z, 1), maxViewZoom(scene));
+    if (Math.abs(next - viewZoom) < 1e-6) return;
+    viewZoom = next;
+    sizeCanvas();
+    sync();
+    redraw();
+  }
+  stage.addEventListener('wheel', (e) => {
+    if (!scene || mode !== 'edit') return;
+    e.preventDefault();
+    setViewZoom(viewZoom * (e.deltaY > 0 ? 1.15 : 1 / 1.15));
+  }, { passive: false });
+  zoomBtn.addEventListener('click', () => setViewZoom(1));
 
   gridBtn.addEventListener('click', () => {
     showGrid = !showGrid;
@@ -587,6 +611,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
     scene = null;
     selected = null;
     mode = 'edit';
+    viewZoom = 1;
     viewing = null;
     candImg = null;
     box = null;

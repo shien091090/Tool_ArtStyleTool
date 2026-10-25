@@ -173,6 +173,22 @@ export function editRect(s: CamGeo): Rect {
   return [x0 - mx, y0 - my, x1 + mx, y1 + my];
 }
 
+/** 滾輪縮小編輯區的上限: 看到整個世界, 四邊再外擴 5%; 超遠等本來就看得到全部的鏡頭為 1 */
+export function maxViewZoom(s: CamGeo): number {
+  const [x0, y0, x1, y1] = worldRect(s);
+  const [e0, f0, e1, f1] = editRect(s);
+  return Math.max(1, ((x1 - x0) * 1.1) / (e1 - e0), ((y1 - y0) * 1.1) / (f1 - f0));
+}
+
+/** 滾輪縮放後的編輯範圍: zoom = 1 為預設編輯範圍, 越大看到越多世界(以輸出框中心縮放, 夾在 1 ~ 上限) */
+export function viewRectAt(s: CamGeo, zoom: number): Rect {
+  const [x0, y0, x1, y1] = editRect(s);
+  const z = Math.min(Math.max(zoom, 1), maxViewZoom(s));
+  const [cx, cy] = [(x0 + x1) / 2, (y0 + y1) / 2];
+  const [hw, hh] = [((x1 - x0) / 2) * z, ((y1 - y0) / 2) * z];
+  return [cx - hw, cy - hh, cx + hw, cy + hh];
+}
+
 /** 像素場景的原生解析度 */
 export function nativeRes(s: Geo, camera: CameraLevel): [number, number] {
   const [w, h] = CANVAS[s.view];
