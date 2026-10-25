@@ -102,7 +102,10 @@ export function candidatePanel(c: Candidate, opts: {
   box: Box | null;
   preview: CutPreview | null;
   busy: boolean;
+  /** 像素場景: 目前看的是 AI 原圖(未對齊) */
+  raw: boolean;
   onBack(): void;
+  onRaw(on: boolean): void;
   onDownload(): void;
   onDelete(): void;
   onCut(): void;
@@ -117,8 +120,17 @@ export function candidatePanel(c: Candidate, opts: {
   const prompt = el('details', {}, [el('summary', { className: 'muted small', text: '當時的指令' }),
     el('pre', { className: 'mk-prompt', text: c.prompt })]);
   const rows: HTMLElement[] = [back, el('b', { text: `候選 ${c.id.slice(1)}` }),
-    el('div', { className: 'muted small', text: shortTime(c.created) }), el('div', { className: 'mk-btns' }, [dl, del]), prompt,
-    el('hr'), el('b', { text: '截素材' })];
+    el('div', { className: 'muted small', text: shortTime(c.created) })];
+  if (c.raw) {
+    const seg = el('div', { className: 'seg' }, ([[false, '對齊後'], [true, 'AI 原圖']] as const).map(([v, text]) => {
+      const b = el('button', { text, className: opts.raw === v ? 'active' : '' });
+      b.addEventListener('click', () => opts.onRaw(v));
+      return b;
+    }));
+    rows.push(seg);
+  }
+  rows.push(el('div', { className: 'mk-btns' }, [dl, del]), prompt, el('hr'), el('b', { text: '截素材' }));
+  if (c.raw) rows.push(el('div', { className: 'muted small', text: '截素材一律用對齊後的圖, 存成原生解析度' }));
   if (!opts.box) {
     rows.push(el('div', { className: 'muted small', text: '在圖上拖一個框, 框住想收進素材庫的物件' }));
   } else {

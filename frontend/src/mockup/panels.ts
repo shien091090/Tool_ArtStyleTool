@@ -2,7 +2,7 @@
 import { COST, usd } from '../cost';
 import { KINDS, VIEW_LABEL, VIEWS, type ViewKey } from '../library/model';
 import { costNote, el, markPaid, option } from '../pages/ui';
-import { terrains, type MockObject, type Scene } from './model';
+import { COLOR_CHOICES, LEVEL_LABEL, LEVELS, nativeRes, terrains, type CameraLevel, type MockObject, type Scene } from './model';
 
 /** edit(fn): 存復原點 → fn 改場景 → 重畫並排程存檔 */
 export type Edit = (fn: (s: Scene) => void, rebuild?: boolean) => void;
@@ -48,14 +48,18 @@ export function objectPanel(s: Scene, o: MockObject, edit: Edit, onDelete: () =>
   const find = (sc: Scene) => sc.objects.find((x) => x.id === o.id)!;
   const set = (fn: (x: MockObject) => void) => edit((sc) => fn(find(sc)));
   const rows: HTMLElement[] = [];
+  /** 像素場景的數字以「格」(遊戲像素)為單位 */
+  const unit = s.pixel ? '(格)' : '';
+  const minSize = s.pixel ? 1 : 8;
   if (o.kind === 'asset') {
     rows.push(el('b', { text: `素材: ${o.name}` }));
-    rows.push(row('寬', num(o.w, (v) => edit((sc) => {
+    rows.push(row(`寬${unit}`, num(o.w, (v) => edit((sc) => {
       const x = find(sc);
       if (x.kind !== 'asset') return;
       x.h = (x.h * v) / x.w;
       x.w = v;
-    }, true), { min: 8 })));
+      if (s.pixel) x.h = Math.max(1, Math.round(x.h));
+    }, true), { min: minSize })));
     const flip = el('input');
     flip.type = 'checkbox';
     flip.checked = o.flip;
@@ -91,20 +95,22 @@ export function objectPanel(s: Scene, o: MockObject, edit: Edit, onDelete: () =>
       row(name, num(o[key], (v) => set((x) => {
         if (x.kind === 'block') x[key] = v;
       }), { step, min }));
-    rows.push(el('div', { className: 'mk-grid2' }, [f('i', '格 i', 0.5), f('j', '格 j', 0.5), f('w', '佔地寬(格)', 0.5, 0.1),
-      f('l', '佔地深(格)', 0.5, 0.1), f('h', '高度(px)', 10, 1)]));
+    rows.push(el('div', { className: 'mk-grid2' }, [f('i', '格 i', 0.5), f('j', '格 j', 0.5), f('w', '佔地寬(格)', 0.5, s.pixel ? 0.5 : 0.1),
+      f('l', '佔地深(格)', 0.5, s.pixel ? 0.5 : 0.1), f('h', s.pixel ? '高度(遊戲像素)' : '高度(px)', s.pixel ? 1 : 10, 1)]));
   } else {
-    const f = (key: 'x' | 'y' | 'w' | 'h', min?: number) => row(key, num(o[key], (v) => edit((sc) => {
+    const f = (key: 'x' | 'y' | 'w' | 'h', min?: number) => row(`${key}${unit}`, num(o[key], (v) => edit((sc) => {
       const x = find(sc);
       if (x.kind !== 'block') {
+        const val = s.pixel ? Math.round(v) : v;
         if (x.kind === 'asset' && (key === 'w' || key === 'h')) {
-          const k = v / x[key];
+          const k = val / x[key];
           x.w *= k;
           x.h *= k;
-        } else x[key] = v;
+          if (s.pixel) [x.w, x.h] = [Math.max(1, Math.round(x.w)), Math.max(1, Math.round(x.h))];
+        } else x[key] = val;
       }
     }, o.kind === 'asset'), { min }));
-    rows.push(el('div', { className: 'mk-grid2' }, [f('x'), f('y'), f('w', 8), f('h', 8)]));
+    rows.push(el('div', { className: 'mk-grid2' }, [f('x'), f('y'), f('w', minSize), f('h', minSize)]));
   }
   if (s.view !== 'iso') {
     const move = (text: string, to: (n: number, len: number) => number) => {
@@ -190,6 +196,12 @@ export function stylePanel(s: Scene, edit: Edit, opts: {
   count.value = String(opts.count);
   const note = costNote(usd(opts.count * COST.gptImage));
   count.addEventListener('change', () => opts.onCount(Number(count.value)));
+  const colors = el('select');
+  colors.append(...COLOR_CHOICES.map((n) => option(String(n), `${n} 色`)));
+  colors.value = String(s.style.colors);
+  colors.addEventListener('change', () => edit((sc) => {
+    sc.style.colors = Number(colors.value);
+  }));
   const go = markPaid(el('button', { text: opts.busy ? 'AI 畫圖中…' : 'AI 畫整張' }));
   go.disabled = opts.busy;
   go.addEventListener('click', opts.render);
@@ -199,6 +211,7 @@ export function stylePanel(s: Scene, edit: Edit, opts: {
     row('風格描述', text),
     el('div', { className: 'muted small', text: '參考圖(最多 4 張, 只參考畫風)' }),
     el('div', { className: 'mk-refs' }, [...refs, addRef]),
+    ...(s.pixel ? [row('色數(AI 畫完對齊格子時限制)', colors)] : []),
     el('div', { className: 'mk-btns' }, [count, go, note]),
   ]);
 }
@@ -221,9 +234,10 @@ export function groundPanel(s: Scene, brush: string | null, onBrush: (b: string 
         for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) cells.push(c < g.cols && r < g.rows ? g.cells[r * g.cols + c] : null);
         sc.ground = { ...g, cols, rows, cells };
       }, true);
+      const [maxC, maxR] = s.pixel ? [40, 22] : [20, 11];
       items.push(el('div', { className: 'mk-grid2' }, [
-        row('行數', num(s.ground.cols, (v) => resize(Math.round(Math.min(20, Math.max(2, v))), s.ground!.rows), { min: 2 })),
-        row('列數', num(s.ground.rows, (v) => resize(s.ground!.cols, Math.round(Math.min(11, Math.max(2, v)))), { min: 2 })),
+        row('行數', num(s.ground.cols, (v) => resize(Math.round(Math.min(maxC, Math.max(2, v))), s.ground!.rows), { min: 2 })),
+        row('列數', num(s.ground.rows, (v) => resize(s.ground!.cols, Math.round(Math.min(maxR, Math.max(2, v)))), { min: 2 })),
       ]));
     }
   }
@@ -262,16 +276,34 @@ export function groundPanel(s: Scene, brush: string | null, onBrush: (b: string 
 }
 
 /** 新場景表單 */
-export function newSceneForm(onCreate: (name: string, view: ViewKey, empty: boolean) => void, onCancel: () => void): HTMLElement {
+export function newSceneForm(onCreate: (name: string, view: ViewKey, empty: boolean, pixel: boolean, camera?: CameraLevel) => void,
+  onCancel: () => void): HTMLElement {
   const name = el('input');
   name.placeholder = '場景名稱';
   const view = el('select');
   view.append(...VIEWS.map((v) => option(v, VIEW_LABEL[v])));
   const preset = el('select');
   preset.append(option('preset', '預設擺設'), option('empty', '空白'));
+  const pixel = el('input');
+  pixel.type = 'checkbox';
+  const res = el('select');
+  const fillRes = () => {
+    const keep = res.value || 'far';
+    res.replaceChildren(...LEVELS.map((lv) =>
+      option(lv, `${LEVEL_LABEL[lv]} ${nativeRes({ view: view.value as ViewKey, pixel: true }, lv).join('×')}`)));
+    res.value = keep;
+  };
+  fillRes();
+  const resRow = row('解析度(就是鏡頭遠近, 之後可換)', res);
+  resRow.classList.add('hidden');
+  pixel.addEventListener('change', () => resRow.classList.toggle('hidden', !pixel.checked));
+  view.addEventListener('change', fillRes);
   const ok = el('button', { text: '建立', className: 'primary' });
   ok.addEventListener('click', () => {
-    if (name.value.trim()) onCreate(name.value.trim(), view.value as ViewKey, preset.value === 'empty');
+    if (name.value.trim()) {
+      onCreate(name.value.trim(), view.value as ViewKey, preset.value === 'empty', pixel.checked,
+        pixel.checked ? (res.value as CameraLevel) : undefined);
+    }
   });
   name.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') ok.click();
@@ -282,6 +314,8 @@ export function newSceneForm(onCreate: (name: string, view: ViewKey, empty: bool
     el('b', { text: '新場景' }),
     row('名稱', name),
     row('畫面架構(建立後不能改)', view),
+    el('label', { className: 'mk-row' }, [pixel, '像素場景(建立後不能改)']),
+    resRow,
     row('內容', preset),
     el('div', { className: 'mk-btns' }, [ok, cancel]),
   ]);

@@ -8,7 +8,10 @@ import { pickAsset } from '../library/picker';
 import { drawScene, renderPngs, type Images } from '../mockup/draw';
 import { attachEditor } from '../mockup/editor';
 import { createHistory } from '../mockup/history';
-import { bodyOf, cameraScale, CANVAS, DEFAULT_BOX_COLOR, editRect, newObjectId, type Rect, type Scene, type SceneBody } from '../mockup/model';
+import {
+  bodyOf, cameraScale, CANVAS, DEFAULT_BOX_COLOR, editRect, frameRect, isoCell, LEVEL_LABEL, LEVELS, nativeRes, newObjectId, snap,
+  type CameraLevel, type Rect, type Scene, type SceneBody,
+} from '../mockup/model';
 import { backgroundPanel, groundPanel, newSceneForm, objectPanel, stylePanel, type Edit } from '../mockup/panels';
 import { confirmDelete, el, iconButton, option, showBanner } from './ui';
 
@@ -33,6 +36,8 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   let count = 1;
   let wasRendering = false;
   let renderBusy = false;
+  let showGrid = true;
+  let showRaw = false;
   const images: Images = new Map();
   const undoStack = createHistory<string>();
 
@@ -48,6 +53,8 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   const addAssetBtn = el('button', { text: '擺入素材' });
   const selectTool = el('button', { text: '選取' });
   const brushTool = el('button', { text: '地面筆刷' });
+  const cameraSeg = el('div', { className: 'seg mk-camera' });
+  const gridBtn = el('button', { text: '格線', title: '像素場景: 疊上遊戲像素格線' });
   const status = el('span', { className: 'muted small' });
   root.append(
     el('div', { className: 'toolbar' }, [
@@ -58,7 +65,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   );
   const canvas = el('canvas');
   const stage = el('div', { className: 'mk-stage' }, [canvas]);
-  const sceneTools = el('div', { className: 'mk-tools' }, [addBoxBtn, addAssetBtn, selectTool, brushTool]);
+  const sceneTools = el('div', { className: 'mk-tools' }, [addBoxBtn, addAssetBtn, selectTool, brushTool, cameraSeg, gridBtn]);
   const palette = el('div', { className: 'mk-palette' });
   const side = el('div', { className: 'mk-side' });
   const strip = el('div', { className: 'mk-cands hidden' });
@@ -102,7 +109,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
       drawCandidate(canvas.getContext('2d')!, scene, candImg, box);
       return;
     }
-    drawScene(canvas.getContext('2d')!, scene, images, { selected, rect: viewRect() });
+    drawScene(canvas.getContext('2d')!, scene, images, { selected, rect: viewRect(), grid: showGrid });
   }
 
   function loadImages() {
@@ -127,6 +134,22 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
     selectTool.classList.toggle('primary', tool === 'select');
     brushTool.classList.toggle('primary', tool === 'brush');
     status.textContent = !scene ? '' : dirty ? '有修改尚未存檔…' : '已存檔';
+    // 鏡頭: 一般桌面鎖在標準, 不顯示
+    const camOn = !!scene && !(scene.view === 'flat' && !scene.pixel);
+    cameraSeg.classList.toggle('hidden', !camOn);
+    if (camOn && scene) {
+      const s = scene;
+      cameraSeg.replaceChildren(...LEVELS.map((lv) => {
+        const res = s.pixel ? ` ${nativeRes(s, lv).join('×')}` : '';
+        const b = el('button', { text: `${LEVEL_LABEL[lv]}${res}`, className: lv === s.camera ? 'active' : '' });
+        b.disabled = !editing;
+        b.addEventListener('click', () => setCamera(lv));
+        return b;
+      }));
+    }
+    gridBtn.classList.toggle('hidden', !scene?.pixel);
+    gridBtn.classList.toggle('primary', showGrid);
+    gridBtn.disabled = !editing;
     stage.classList.toggle('brush', editing && tool === 'brush');
     stage.classList.toggle('cutting', mode === 'view');
   }
@@ -153,9 +176,15 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
       palette.classList.add('hidden');
       if (c) {
         side.replaceChildren(candidatePanel(c, {
-          box, preview, busy: cutBusy,
+          box, preview, busy: cutBusy, raw: showRaw,
           onBack: () => back(),
-          onDownload: () => download(api.mockups.fileUrl(s.name, `candidates/${c.id}.png`), `${s.name}-候選${c.id.slice(1)}.png`),
+          onRaw: (on) => {
+            showRaw = on;
+            loadCandidate();
+            drawSide();
+          },
+          onDownload: () => download(api.mockups.fileUrl(s.name, candFile(c)),
+            `${s.name}-候選${c.id.slice(1)}${showRaw && c.raw ? '-原圖' : ''}.png`),
           onDelete: () => void removeCandidate(c.id),
           onCut: () => void cut(),
           onSave: (name, tags) => void saveCut(name, tags),
@@ -261,6 +290,17 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
     if (mode === 'edit' && !selected && !formOpen) drawSide();
   });
 
+  /** 目前要看的候選圖檔: 像素場景可切換看 AI 原圖 */
+  const candFile = (c: Scene['candidates'][number]) => (showRaw && c.raw ? c.raw : `candidates/${c.id}.png`);
+
+  function loadCandidate() {
+    const c = scene?.candidates.find((x) => x.id === viewing);
+    if (!scene || !c) return;
+    candImg = new Image();
+    candImg.onload = () => redraw();
+    candImg.src = api.mockups.fileUrl(scene.name, candFile(c), c.id);
+  }
+
   function view(cid: string) {
     if (!scene) return;
     mode = 'view';
@@ -268,9 +308,8 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
     box = null;
     preview = null;
     selected = null;
-    candImg = new Image();
-    candImg.onload = () => redraw();
-    candImg.src = api.mockups.fileUrl(scene.name, `candidates/${cid}.png`, cid);
+    showRaw = false;
+    loadCandidate();
     refresh();
   }
 
@@ -429,15 +468,33 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
     },
   });
 
-  // ---- 新增物件 ----
+  function setCamera(lv: CameraLevel) {
+    if (!scene || scene.camera === lv) return;
+    edit((s) => {
+      s.camera = lv;
+    }, true);
+    refresh();
+  }
+
+  gridBtn.addEventListener('click', () => {
+    showGrid = !showGrid;
+    sync();
+    redraw();
+  });
+
+  // ---- 新增物件(放在目前輸出框中間) ----
   addBoxBtn.addEventListener('click', () => {
     if (!scene) return;
-    const [w, h] = CANVAS[scene.view];
+    const [fx0, fy0, fx1, fy1] = frameRect(scene);
+    const [cx, cy] = [(fx0 + fx1) / 2, (fy0 + fy1) / 2];
     const id = newObjectId(scene);
+    const size = scene.pixel ? 16 : 128;
+    const [ci, cj] = isoCell(scene.pixel, cx, cy).map((v) => snap(v - 0.5, 0.5));
     edit((s) => {
       s.objects.push(s.view === 'iso'
-        ? { id, kind: 'block', label: '物件 object', color: DEFAULT_BOX_COLOR, type: null, i: 4.5, j: 4.5, w: 1, l: 1, h: 60 }
-        : { id, kind: 'box', label: '物件 object', color: DEFAULT_BOX_COLOR, type: null, x: w / 2 - 64, y: h / 2 - 64, w: 128, h: 128 });
+        ? { id, kind: 'block', label: '物件 object', color: DEFAULT_BOX_COLOR, type: null, i: ci, j: cj, w: 1, l: 1, h: s.pixel ? 24 : 60 }
+        : { id, kind: 'box', label: '物件 object', color: DEFAULT_BOX_COLOR, type: null,
+          x: Math.round(cx - size / 2), y: Math.round(cy - size / 2), w: size, h: size });
     });
     selected = id;
     refresh();
@@ -458,13 +515,17 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
       await img.decode();
       images.set(a.id, img);
       if (scene !== s) return;
-      const [w, h] = CANVAS[s.view];
-      const k = (h * 0.25) / Math.max(img.naturalWidth, img.naturalHeight);
-      const ow = img.naturalWidth * k;
-      const oh = img.naturalHeight * k;
+      // 一般: 目前畫面高度的 25%; 像素: 原圖像素大小, 大於畫面一半才縮
+      const [fx0, fy0, fx1, fy1] = frameRect(s);
+      const [fw, fh] = [fx1 - fx0, fy1 - fy0];
+      const [nw, nh] = [img.naturalWidth, img.naturalHeight];
+      const k = s.pixel ? Math.min(1, fw / 2 / nw, fh / 2 / nh) : (fh * 0.25) / Math.max(nw, nh);
+      let [ow, oh] = [nw * k, nh * k];
+      let [ox, oy] = [(fx0 + fx1 - ow) / 2, (fy0 + fy1 - oh) / 2];
+      if (s.pixel) [ow, oh, ox, oy] = [Math.max(1, Math.round(ow)), Math.max(1, Math.round(oh)), Math.round(ox), Math.round(oy)];
       const id = newObjectId(s);
       edit((sc) => {
-        sc.objects.push({ id, kind: 'asset', asset: a.id, name: r.asset.name, x: (w - ow) / 2, y: (h - oh) / 2, w: ow, h: oh, flip: false });
+        sc.objects.push({ id, kind: 'asset', asset: a.id, name: r.asset.name, x: ox, y: oy, w: ow, h: oh, flip: false });
       });
       selected = id;
       refresh();
@@ -509,7 +570,7 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
   async function fillList(want: string | null): Promise<string | null> {
     const list = await api.mockups.list();
     sceneSel.replaceChildren(option('', list.length ? '(選擇場景)' : '(還沒有場景)'),
-      ...list.map((m) => option(m.name, `${m.name}(${VIEW_LABEL[m.view as ViewKey] ?? m.view})`)));
+      ...list.map((m) => option(m.name, `${m.name}(${VIEW_LABEL[m.view as ViewKey] ?? m.view}${m.pixel ? '·像素' : ''})`)));
     const pick = want && list.some((m) => m.name === want) ? want : null;
     sceneSel.value = pick ?? '';
     return pick;
@@ -551,9 +612,9 @@ export function mountMockupPage(root: HTMLElement, params: URLSearchParams): (()
 
   newBtn.addEventListener('click', () => {
     formOpen = true;
-    side.replaceChildren(newSceneForm(async (name, view, empty) => {
+    side.replaceChildren(newSceneForm(async (name, view, empty, pixel, camera) => {
       try {
-        await api.mockups.create(name, view, empty);
+        await api.mockups.create(name, view, empty, pixel, camera);
         formOpen = false;
         showBanner(banner, null);
         await loadList(name);
