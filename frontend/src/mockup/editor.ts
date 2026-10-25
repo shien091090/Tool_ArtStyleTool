@@ -56,7 +56,7 @@ export function attachEditor(canvas: HTMLCanvasElement, ctl: EditorControl): () 
     }
     const sel = s.objects.find((o) => o.id === ctl.selected());
     if (sel && sel.kind !== 'block') {
-      const [, , x1, y1] = objectBox(s.view, sel);
+      const [, , x1, y1] = objectBox(s, sel);
       if (Math.abs(p[0] - x1) <= HANDLE && Math.abs(p[1] - y1) <= HANDLE) {
         drag = { kind: 'resize', obj: sel, start: p, orig: { ...sel }, moved: false };
         return;
@@ -88,8 +88,8 @@ export function attachEditor(canvas: HTMLCanvasElement, ctl: EditorControl): () 
     const orig = drag.orig;
     if (drag.kind === 'move') {
       if (o.kind === 'block' && orig.kind === 'block') {
-        const [si, sj] = isoCell(...drag.start);
-        const [pi, pj] = isoCell(...p);
+        const [si, sj] = isoCell(s.pixel, ...drag.start);
+        const [pi, pj] = isoCell(s.pixel, ...p);
         o.i = free ? orig.i + pi - si : snap(orig.i + pi - si, 0.5);
         o.j = free ? orig.j + pj - sj : snap(orig.j + pj - sj, 0.5);
       } else if (o.kind !== 'block' && orig.kind !== 'block') {

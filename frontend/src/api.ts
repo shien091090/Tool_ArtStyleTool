@@ -159,8 +159,9 @@ export const api = {
     remove: (id: string) => request<{ ok: boolean }>(`/api/library/${enc(id)}`, { method: 'DELETE' }),
   },
   mockups: {
-    list: () => request<{ name: string; view: string; updated: string; candidates: number }[]>('/api/mockups'),
-    create: (name: string, view: string, empty: boolean) => request<Scene>('/api/mockups', json('POST', { name, view, empty })),
+    list: () => request<{ name: string; view: string; pixel: boolean; updated: string; candidates: number }[]>('/api/mockups'),
+    create: (name: string, view: string, empty: boolean, pixel = false, camera?: string) =>
+      request<Scene>('/api/mockups', json('POST', { name, view, empty, pixel, camera })),
     get: (name: string) => request<Scene>(pmock(name)),
     save: (name: string, body: SceneBody) => request<Scene>(pmock(name), json('PUT', body)),
     remove: (name: string) => request<{ ok: boolean }>(pmock(name), { method: 'DELETE' }),

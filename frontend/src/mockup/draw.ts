@@ -56,13 +56,14 @@ function poly(ctx: CanvasRenderingContext2D, pts: [number, number][], fill: stri
   ctx.stroke();
 }
 
-function drawBlock(ctx: CanvasRenderingContext2D, o: BlockObj) {
+function drawBlock(ctx: CanvasRenderingContext2D, s: Scene, o: BlockObj) {
   const { i, j, w, l, h } = o;
-  poly(ctx, [isoPoint(i + w, j), isoPoint(i + w, j + l), isoPoint(i + w, j + l, h), isoPoint(i + w, j, h)], shade(o.color, 0.7));
-  poly(ctx, [isoPoint(i, j + l), isoPoint(i + w, j + l), isoPoint(i + w, j + l, h), isoPoint(i, j + l, h)], shade(o.color, 0.85));
-  poly(ctx, [isoPoint(i, j, h), isoPoint(i + w, j, h), isoPoint(i + w, j + l, h), isoPoint(i, j + l, h)], o.color);
-  const [cx, cy] = isoPoint(i + w / 2, j + l / 2, h);
-  const [x0, , x1] = objectBox('iso', o);
+  const P = (a: number, b: number, z = 0) => isoPoint(s.pixel, a, b, z);
+  poly(ctx, [P(i + w, j), P(i + w, j + l), P(i + w, j + l, h), P(i + w, j, h)], shade(o.color, 0.7));
+  poly(ctx, [P(i, j + l), P(i + w, j + l), P(i + w, j + l, h), P(i, j + l, h)], shade(o.color, 0.85));
+  poly(ctx, [P(i, j, h), P(i + w, j, h), P(i + w, j + l, h), P(i, j + l, h)], o.color);
+  const [cx, cy] = P(i + w / 2, j + l / 2, h);
+  const [x0, , x1] = objectBox(s, o);
   label(ctx, o.label, cx, cy, fitSize(x1 - x0, 60, o.label));
 }
 
@@ -92,7 +93,8 @@ function drawGround(ctx: CanvasRenderingContext2D, s: Scene) {
     const c = k % g.cols;
     const r = Math.floor(k / g.cols);
     if (g.kind === 'iso') {
-      const pts = [isoPoint(c, r), isoPoint(c + 1, r), isoPoint(c + 1, r + 1), isoPoint(c, r + 1)];
+      const [ci, rj] = [c - g.offset, r - g.offset];
+      const pts = [isoPoint(s.pixel, ci, rj), isoPoint(s.pixel, ci + 1, rj), isoPoint(s.pixel, ci + 1, rj + 1), isoPoint(s.pixel, ci, rj + 1)];
       ctx.beginPath();
       pts.forEach(([x, y], n) => (n ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
       ctx.closePath();
@@ -133,12 +135,12 @@ export function drawScene(ctx: CanvasRenderingContext2D, s: Scene, images: Image
   }
   for (const o of drawOrder(s)) {
     if (o.kind === 'asset') drawAsset(ctx, o, images);
-    else if (all) (o.kind === 'box' ? drawBox(ctx, o) : drawBlock(ctx, o));
+    else if (all) (o.kind === 'box' ? drawBox(ctx, o) : drawBlock(ctx, s, o));
   }
   if (all && opts.selected) {
     const o = s.objects.find((x) => x.id === opts.selected);
     if (o) {
-      const [x0, y0, x1, y1] = objectBox(s.view, o);
+      const [x0, y0, x1, y1] = objectBox(s, o);
       ctx.save();
       ctx.setLineDash([6, 4]);
       ctx.lineWidth = 2;

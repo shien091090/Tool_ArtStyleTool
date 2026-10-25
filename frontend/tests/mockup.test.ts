@@ -1,38 +1,100 @@
 import { describe, it, expect } from 'vitest';
-import { cellAt, drawOrder, hitTest, isoCell, isoPoint, newObjectId, objectBox, regions, snapStep, type Scene } from '../src/mockup/model';
+import {
+  cellAt, clampToWorld, drawOrder, frameRect, hitTest, isoCell, isoPoint, nativeRes, newObjectId, objectBox, regions,
+  roundPixel, snapStep, visible, worldRect, type BlockObj, type BoxObj, type Scene,
+} from '../src/mockup/model';
 import { createHistory } from '../src/mockup/history';
 
 const base = (view: Scene['view'], extra: Partial<Scene> = {}): Scene => ({
-  name: 's', view, created: '', updated: '', background: { label: '天空 sky', color: '#cddeeb' }, ground: null,
-  objects: [], style: { text: '', refs: [], genre: '' }, candidates: [], nextCandidate: 1, ...extra,
+  name: 's', view, pixel: false, camera: 'std', created: '', updated: '', background: { label: '天空 sky', color: '#cddeeb' },
+  ground: null, objects: [], style: { text: '', refs: [], genre: '', colors: 32 }, candidates: [], nextCandidate: 1, ...extra,
+});
+const box = (extra: Partial<BoxObj> = {}): BoxObj =>
+  ({ id: 'o1', kind: 'box', label: 'a', color: '#9a9a9a', type: null, x: 0, y: 0, w: 100, h: 100, ...extra });
+
+describe('鏡頭與世界', () => {
+  it('輸出框: 一般標準 = 舊畫布, 超遠 = 世界; 像素依解析度', () => {
+    expect(frameRect(base('side'))).toEqual([0, 0, 1280, 720]);
+    expect(frameRect(base('side', { camera: 'xfar' }))).toEqual(worldRect(base('side')));
+    expect(worldRect(base('vertical'))).toEqual([-360, -640, 1080, 1920]);
+    expect(worldRect(base('flat'))).toEqual([0, 0, 1280, 720]);
+    expect(frameRect(base('side', { pixel: true, camera: 'far' }))).toEqual([160, 90, 480, 270]);
+    expect(frameRect(base('vertical', { pixel: true, camera: 'xnear' }))).toEqual([144, 256, 216, 384]);
+    const near = frameRect(base('side'), 'near');
+    expect(near[2] - near[0]).toBeCloseTo(1280 / 1.4);
+    expect((near[0] + near[2]) / 2).toBeCloseTo(640);
+  });
+
+  it('像素原生解析度', () => {
+    expect(nativeRes(base('side', { pixel: true }), 'far')).toEqual([320, 180]);
+    expect(nativeRes(base('vertical', { pixel: true }), 'std')).toEqual([144, 256]);
+  });
+
+  it('只有和輸出框相交的物件算看得到', () => {
+    const far = box({ x: 1700, y: 400 });
+    expect(visible(base('side'), far)).toBe(false);
+    expect(visible(base('side', { camera: 'xfar' }), far)).toBe(true);
+    expect(visible(base('side'), far, 'xfar')).toBe(true);
+  });
+
+  it('物件夾在世界內; 像素場景取整', () => {
+    const s = base('side');
+    const o = box({ x: 5000, y: -9000 });
+    clampToWorld(s, o);
+    expect([o.x, o.y]).toEqual([1820, -360]);
+    const p = base('side', { pixel: true });
+    const q = box({ x: 3.4, y: 2.6, w: 15.5, h: 0.2 });
+    roundPixel(p, q);
+    expect([q.x, q.y, q.w, q.h]).toEqual([3, 3, 16, 1]);
+    const b: BlockObj = { id: 'o2', kind: 'block', label: 'b', color: '#9a9a9a', type: null, i: 0.3, j: 1.8, w: 0.1, l: 1.2, h: 10.6 };
+    roundPixel(base('iso', { pixel: true }), b);
+    expect([b.i, b.j, b.w, b.l, b.h]).toEqual([0.5, 2, 0.5, 1, 11]);
+    const n = box({ x: 3.4 });
+    roundPixel(s, n);
+    expect(n.x).toBe(3.4);
+  });
+
+  it('斜角方塊夾在格子內', () => {
+    const b: BlockObj = { id: 'o2', kind: 'block', label: 'b', color: '#9a9a9a', type: null, i: 30, j: -20, w: 2, l: 2, h: 10 };
+    clampToWorld(base('iso'), b);
+    expect([b.i, b.j]).toEqual([16, -8]);
+  });
 });
 
 describe('座標換算', () => {
   it('斜角格點與反算互逆', () => {
-    expect(isoPoint(0, 0)).toEqual([640, 120]);
-    expect(isoPoint(1, 0, 30)).toEqual([688, 114]);
-    const [i, j] = isoCell(...isoPoint(3, 4));
+    expect(isoPoint(false, 0, 0)).toEqual([640, 120]);
+    expect(isoPoint(false, 1, 0, 30)).toEqual([688, 114]);
+    expect(isoPoint(true, 0, 0)).toEqual([320, 20]);
+    expect(isoPoint(true, 1, 0)).toEqual([336, 28]);
+    const [i, j] = isoCell(true, ...isoPoint(true, 3, 4));
     expect(i).toBeCloseTo(3);
     expect(j).toBeCloseTo(4);
   });
 
-  it('俯瞰點到格索引, 畫布外為 null', () => {
-    const s = base('topdown', { ground: { cols: 20, rows: 12, cells: Array(240).fill(null), custom: [] } });
-    expect(cellAt(s, 130, 70)).toBe(22);
-    expect(cellAt(s, -5, 70)).toBeNull();
+  it('俯瞰點到格索引: 舊 (0,0) 格在第 10 行第 6 列, 世界外為 null', () => {
+    const s = base('topdown', { ground: { cols: 40, rows: 24, cells: Array(960).fill(null), custom: [] } });
+    expect(cellAt(s, 1, 1)).toBe(6 * 40 + 10);
+    expect(cellAt(s, -700, 1)).toBeNull();
     expect(cellAt(base('side'), 10, 10)).toBeNull();
+    const p = base('topdown', { pixel: true, ground: { cols: 40, rows: 23, cells: Array(920).fill(null), custom: [] } });
+    expect(cellAt(p, 17, 1)).toBe(1);
   });
 
-  it('斜角點到格索引', () => {
-    const s = base('iso', { ground: { cols: 10, rows: 10, cells: Array(100).fill(null), custom: [] } });
-    const [x, y] = isoPoint(2.5, 3.5);
-    expect(cellAt(s, x, y)).toBe(3 * 10 + 2);
-    expect(cellAt(s, 5, 5)).toBeNull();
+  it('斜角點到格索引(一般場景偏移 8)', () => {
+    const s = base('iso', { ground: { cols: 26, rows: 26, cells: Array(676).fill(null), custom: [] } });
+    expect(cellAt(s, ...isoPoint(false, 0.5, 0.5))).toBe(8 * 26 + 8);
+    expect(cellAt(s, ...isoPoint(false, -7.5, 2.5))).toBe(10 * 26 + 0);
+    expect(cellAt(s, -2000, 5)).toBeNull();
+    const p = base('iso', { pixel: true, ground: { cols: 20, rows: 20, cells: Array(400).fill(null), custom: [] } });
+    expect(cellAt(p, ...isoPoint(true, 2.5, 3.5))).toBe(3 * 20 + 2);
   });
 
-  it('對齊間距: 俯瞰 64, 其他 8', () => {
+  it('對齊間距: 一般俯瞰 64、其他 8; 像素俯瞰 16、其他 1', () => {
     expect(snapStep(base('topdown'))).toBe(64);
     expect(snapStep(base('side'))).toBe(8);
+    expect(snapStep(base('topdown', { pixel: true }))).toBe(16);
+    expect(snapStep(base('side', { pixel: true }))).toBe(1);
   });
 });
 
@@ -52,17 +114,17 @@ describe('物件前後與點選', () => {
   });
 
   it('點選取最前面那個', () => {
-    const a = { id: 'o1', kind: 'box' as const, label: 'a', color: '#9a9a9a', type: null, x: 0, y: 0, w: 100, h: 100 };
+    const a = box();
     const b = { ...a, id: 'o2', x: 50 };
     const s = base('side', { objects: [a, b] });
     expect(hitTest(s, 60, 10)?.id).toBe('o2');
     expect(hitTest(s, 10, 10)?.id).toBe('o1');
     expect(hitTest(s, 500, 500)).toBeNull();
-    expect(objectBox('side', a)).toEqual([0, 0, 100, 100]);
+    expect(objectBox(s, a)).toEqual([0, 0, 100, 100]);
   });
 
   it('新物件編號接在最大的後面', () => {
-    const a = { id: 'o7', kind: 'box' as const, label: 'a', color: '#9a9a9a', type: null, x: 0, y: 0, w: 1, h: 1 };
+    const a = box({ id: 'o7', w: 1, h: 1 });
     expect(newObjectId(base('side', { objects: [a] }))).toBe('o8');
     expect(newObjectId(base('side'))).toBe('o1');
   });
@@ -71,14 +133,14 @@ describe('物件前後與點選', () => {
 describe('地面區域標籤', () => {
   it('相連同地形 2 格以上才標, 不相連的各標一次', () => {
     const W = '水 water';
-    const cells: (string | null)[] = Array(20 * 12).fill('草地 grass');
+    const cells: (string | null)[] = Array(40 * 24).fill('草地 grass');
     cells[0] = W; cells[1] = W; // 左上兩格
-    cells[30] = W; cells[50] = W; // 第 1、2 列第 10 行
-    cells[239] = W; // 單格
-    const s = base('topdown', { ground: { cols: 20, rows: 12, cells, custom: [] } });
+    cells[50] = W; cells[90] = W; // 第 1、2 列第 10 行
+    cells[959] = W; // 單格
+    const s = base('topdown', { ground: { cols: 40, rows: 24, cells, custom: [] } });
     const water = regions(s).filter((r) => r.label === W);
     expect(water).toHaveLength(2);
-    expect(water[0]).toEqual({ label: W, x: 64, y: 32 });
+    expect(water[0]).toEqual({ label: W, x: -576, y: -352 });
   });
 });
 
