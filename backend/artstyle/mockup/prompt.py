@@ -1,6 +1,15 @@
-"""組出送 GPT Image 2 的英文指令(骨架見規格附錄, 加上實驗後補的背景、斜角小角色、參考圖句)。"""
-from .geometry import canvas_size, object_bbox
+"""組出送 GPT Image 2 的英文指令(骨架見規格附錄, 加上實驗後補的背景、斜角小角色、參考圖句、鏡頭與像素句)。"""
+from .geometry import canvas_size, frame_rect, object_bbox, scale, to_screen
 from .presets import DEFAULT_BOX_COLOR, TERRAINS
+
+CAMERA_SENTENCE = {
+    "xfar": "The camera is very far away: every character and object is small. "
+            "Keep all of them clearly visible at their small size.",
+    "far": "The camera is far away: characters and objects are fairly small.",
+    "std": None,
+    "near": "The camera is close: characters and objects are large and detailed.",
+    "xnear": "This is a close-up view: characters and objects are very large and highly detailed.",
+}
 
 
 def position_word(bbox, w: float, h: float) -> str:
@@ -30,11 +39,36 @@ def _terrains(scene: dict) -> list[dict]:
     return [t for t in TERRAINS + g.get("custom", []) if t["label"] in used]
 
 
+def _screen_bbox(view: str, pixel: bool, camera: str, obj: dict):
+    x0, y0, x1, y1 = object_bbox(view, obj, pixel)
+    return (*to_screen(view, pixel, camera, x0, y0), *to_screen(view, pixel, camera, x1, y1))
+
+
+def _pixel_sentence(view: str, camera: str) -> str:
+    w, h = canvas_size(view)
+    s = int(scale(True, camera))
+    line = (f"This is a pixel art game with a native resolution of {w // s}×{h // s}; every game pixel is shown "
+            f"as a {s}×{s} square. Draw everything — characters, objects, background and ground — as crisp pixel "
+            f"art with the same {s}×{s} pixel size, hard edges, no anti-aliasing, no blur and a limited palette.")
+    if view == "topdown":
+        line += " Ground tiles are 16×16 game pixels."
+    elif view == "iso":
+        line += " Ground tiles are 32×16 game pixel diamonds."
+    return line
+
+
 def build_prompt(scene: dict) -> str:
     view = scene["view"]
+    pixel, camera = scene.get("pixel", False), scene.get("camera", "std")
     w, h = canvas_size(view)
     game = " ".join(["2D", scene["style"]["genre"].strip(), "game"]).replace("  ", " ")
-    objs = scene["objects"]
+    fx0, fy0, fx1, fy1 = frame_rect(view, pixel, camera)
+
+    def in_frame(o):
+        x0, y0, x1, y1 = object_bbox(view, o, pixel)
+        return min(x1, fx1) > max(x0, fx0) and min(y1, fy1) > max(y0, fy0)
+
+    objs = [o for o in scene["objects"] if in_frame(o)]
     assets = [o for o in objs if o["kind"] == "asset"]
     boxes = [o for o in objs if o["kind"] != "asset"]
     style = _style_phrase(scene, bool(assets))
@@ -58,11 +92,15 @@ def build_prompt(scene: dict) -> str:
         lines.append("Each block is a placeholder for the object named in its label: replace it with a real, "
                      "detailed version of that object.")
     lines.append("Keep the exact composition, camera angle, and the position and size of every element.")
+    if pixel:
+        lines.append(_pixel_sentence(view, camera))
+    elif CAMERA_SENTENCE[camera]:
+        lines.append(CAMERA_SENTENCE[camera])
     if boxes:
         lines.append("Placeholders:")
         for o in boxes:
             color = "grey" if o["color"].lower() == DEFAULT_BOX_COLOR else o["color"]
-            lines.append(f'- "{o["label"]}" ({color} block, {position_word(object_bbox(view, o), w, h)})')
+            lines.append(f'- "{o["label"]}" ({color} block, {position_word(_screen_bbox(view, pixel, camera, o), w, h)})')
     terrains = _terrains(scene)
     if terrains:
         tiles = ", ".join(f'"{t["label"]}" ({t["color"]})' for t in terrains)
