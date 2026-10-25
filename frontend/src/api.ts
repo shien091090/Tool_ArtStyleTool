@@ -83,10 +83,6 @@ function packApi(base: (name: string) => string) {
     runStep: (name: string, step: string, params: Record<string, unknown> = {}) =>
       request<PackMeta>(`${base(name)}/steps/${step}`, json('POST', params)),
     decomposeAll: (name: string) => request<PackMeta>(`${base(name)}/decompose`, { method: 'POST' }),
-    regionAt: (name: string, x: number, y: number) =>
-      request<{ id: number; color: RGB | null }>(`${base(name)}/region?x=${x}&y=${y}`),
-    setRegionColor: (name: string, id: number, color: RGB) =>
-      request<PackMeta>(`${base(name)}/regions/${id}`, json('PUT', { color })),
     fileUrl: (name: string, layer: string, version = '') =>
       `${base(name)}/files/${layer}.png?v=${enc(version || String(Date.now()))}`,
   };

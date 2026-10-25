@@ -67,8 +67,6 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .cell .view .stack { position: relative; }
 .cell .view .overlay { position: absolute; inset: 0; width: 100%; mix-blend-mode: multiply; pointer-events: none; }
 .cell .view .empty { color: var(--muted); align-self: center; }
-.cell.clickable img { cursor: crosshair; }
-.region-pop { position: fixed; z-index: 10; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: flex; gap: 8px; align-items: center; box-shadow: 0 4px 16px #000a; }
 
 /* 自訂色票編輯區(放在 Tweakpane 色彩資料夾裡) */
 .pal-editor { padding: 6px 8px 8px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
