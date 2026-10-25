@@ -1,5 +1,5 @@
 """五種畫面架構的預設: 背景、地面格、灰盒擺設、遊戲類型描述(參照 2026-10-24 實驗的灰盒草稿, 不含 HUD)。"""
-from .geometry import ISO_N
+
 
 TERRAINS = [
     {"label": "草地 grass", "color": "#96b978"},
@@ -112,7 +112,7 @@ def _ground(view: str) -> dict | None:
     if view == "topdown":
         cols, rows, cell = 20, 12, _topdown_cell
     elif view == "iso":
-        cols, rows, cell = ISO_N, ISO_N, _iso_cell
+        cols, rows, cell = 10, 10, _iso_cell
     else:
         return None
     # 格索引 = 列 × cols + 行; 斜角俯瞰的行是 i、列是 j
