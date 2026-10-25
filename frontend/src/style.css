@@ -89,7 +89,7 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .prop-canvas-wrap { flex: 1; min-height: 0; position: relative; background: repeating-conic-gradient(#26272b 0% 25%, #222326 0% 50%) 50% / 24px 24px; }
 .prop-canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
 .prop-compare-bar { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-top: 1px solid var(--line); background: var(--panel); }
-.prop-compare-bar .spacer { flex: 1; }
+.prop-compare-bar .spacer, .mk-tools .spacer { flex: 1; }
 .prop-panel { width: 340px; overflow-x: hidden; }
 /* 標籤文字不換行; 下拉選單在窄面板裡可縮, 長選項不撐開面板 */
 .prop-panel label { white-space: nowrap; max-width: 100%; }
