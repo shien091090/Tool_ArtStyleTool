@@ -14,7 +14,8 @@ from ..fal import FalClient
 from ..imaging import decode_any, read_png, write_png
 from ..library.store import Library
 from .compose import cut_object, fit_to_canvas, overlap_suggest, paste_layer
-from .geometry import canvas_size
+from .geometry import canvas_size, scale
+from .pixelate import align_grid
 from .prompt import build_prompt
 from .store import Scene
 
@@ -116,8 +117,14 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
         objects, style = copy.deepcopy(s.meta["objects"]), copy.deepcopy(s.meta["style"])
         c = client()
         outs = await run_in_threadpool(c.edit, MODEL, grey[..., :3], prompt, count, refs)
+        pixel, camera = s.meta["pixel"], s.meta["camera"]
         for out in outs:
-            s.add_candidate(paste_layer(fit_to_canvas(out, w, h), lay), prompt, objects, style)
+            img = paste_layer(fit_to_canvas(out, w, h), lay)
+            if pixel:  # 素材先貼回再整張對齊, 全圖落在同一套格子
+                aligned = await run_in_threadpool(align_grid, img, int(scale(True, camera)), style["colors"])
+                s.add_candidate(aligned, prompt, objects, style, camera, raw=img)
+            else:
+                s.add_candidate(img, prompt, objects, style, camera)
         return s.meta
 
     @r.delete("/{name}/candidates/{cid}")
@@ -130,8 +137,10 @@ def create_router(data_dir: Path, client_factory: Callable[[], FalClient | None]
         s = scene(name)
         box = _box(body.get("box"))
         img = s.candidate_image(cid)
-        hit = overlap_suggest(s.candidate(cid)["objects"], s.meta["view"], box)
-        rgba = await run_in_threadpool(cut_object, client(), img, box, sam_prompt(hit["label"] if hit else None))
+        cand, pixel = s.candidate(cid), s.meta["pixel"]
+        hit = overlap_suggest(cand["objects"], s.meta["view"], box, pixel, cand["camera"])
+        grid = int(scale(True, cand["camera"])) if pixel else 1
+        rgba = await run_in_threadpool(cut_object, client(), img, box, sam_prompt(hit["label"] if hit else None), grid)
         write_png(s.dir / "cut.png", rgba)
         info = {"candidate": cid, "box": box, "name": hit["label"] if hit else f"{name} 截圖",
                 "type": hit.get("type") if hit else None}

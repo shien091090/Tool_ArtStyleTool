@@ -243,3 +243,33 @@ def test_create_pixel_scene(client):
     assert r.json()["pixel"] is True and r.json()["camera"] == "far"
     r = client.post(M, json={"name": "像素2", "view": "side", "empty": True, "pixel": True, "camera": "near"})
     assert r.json()["camera"] == "near"
+
+
+def test_render_pixel_scene(client, fal):
+    r = client.post(M, json={"name": "像素", "view": "side", "empty": True, "pixel": True})
+    assert r.status_code == 200, r.text
+    r = _render(client, "像素")
+    assert r.status_code == 200, r.text
+    c = r.json()["candidates"][0]
+    assert c["raw"] == "candidates/c1_raw.png" and c["camera"] == "far" and c["style"]["colors"] == 32
+    assert "native resolution of 320×180" in c["prompt"]
+    assert client.get(f"{M}/像素/files/candidates/c1_raw.png").status_code == 200
+    img = decode_any(client.get(f"{M}/像素/files/candidates/c1.png").content)[..., :3]
+    b = img.reshape(180, 4, 320, 4, 3)
+    assert (b == b[:, :1, :, :1]).all()
+
+
+def test_render_normal_scene_has_camera_no_raw(client):
+    _new(client)
+    c = _render(client, "場景").json()["candidates"][0]
+    assert c["camera"] == "std" and "raw" not in c
+
+
+def test_cut_pixel_scene_native_size(client, fal):
+    client.post(M, json={"name": "像素", "view": "side", "empty": True, "pixel": True})
+    _render(client, "像素")
+    r = client.post(f"{M}/像素/candidates/c1/cut", json={"box": [100, 100, 300, 260]})
+    assert r.status_code == 200, r.text
+    cut = decode_any(client.get(f"{M}/像素/files/cut.png").content)
+    # 假 SAM 的遮罩是框內縮 2px(102~298, 102~258), 對齊 4×4 方塊後 = 104~295、104~255, 縮成 1/4
+    assert cut.shape[:2] == (38, 48)

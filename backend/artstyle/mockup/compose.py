@@ -4,7 +4,7 @@ import math
 import cv2
 import numpy as np
 
-from .geometry import object_bbox
+from .geometry import object_bbox, to_screen
 
 RATIO_TOLERANCE = 0.02
 EMPTY_CUT = "框內找不到物件, 換個框"
@@ -40,8 +40,16 @@ def paste_layer(img: np.ndarray, layer: np.ndarray) -> np.ndarray:
     return out
 
 
-def cut_object(client, img: np.ndarray, box, prompt: str) -> np.ndarray:
-    """SAM 依框去背: 挑框內面積最大的遮罩、框外清空, 裁到不透明範圍(RGBA)。"""
+def snap_mask(alpha: np.ndarray, grid: int) -> np.ndarray:
+    """遮罩對齊 grid×grid 方塊: 方塊內過半是前景就整塊前景(尺寸要能整除)。"""
+    h, w = alpha.shape
+    fg = (alpha > 0).reshape(h // grid, grid, w // grid, grid).sum(axis=(1, 3)) * 2 > grid * grid
+    return np.repeat(np.repeat(np.where(fg, 255, 0).astype(np.uint8), grid, axis=0), grid, axis=1)
+
+
+def cut_object(client, img: np.ndarray, box, prompt: str, grid: int = 1) -> np.ndarray:
+    """SAM 依框去背: 挑框內面積最大的遮罩、框外清空, 裁到不透明範圍(RGBA)。
+    grid > 1(像素場景): 遮罩對齊方塊, 裁切對齊方塊邊界, 再每 grid 取一點縮回原生解析度。"""
     h, w = img.shape[:2]
     x0, y0 = max(0, math.floor(box[0])), max(0, math.floor(box[1]))
     x1, y1 = min(w, math.ceil(box[2])), min(h, math.ceil(box[3]))
@@ -58,18 +66,27 @@ def cut_object(client, img: np.ndarray, box, prompt: str) -> np.ndarray:
         raise ValueError(EMPTY_CUT)
     alpha = np.zeros((h, w), np.uint8)
     alpha[y0:y1, x0:x1] = np.where(best[y0:y1, x0:x1] > 0, 255, 0)
+    if grid > 1:
+        alpha = snap_mask(alpha, grid)
     ys, xs = np.nonzero(alpha)
+    if not len(ys):
+        raise ValueError(EMPTY_CUT)
     rgba = np.dstack([rgb, alpha])
+    if grid > 1:
+        top, left = ys.min(), xs.min()  # 對齊後前景邊界一定落在方塊邊上
+        return rgba[top:ys.max() + 1:grid, left:xs.max() + 1:grid]
     return rgba[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
 
 
-def overlap_suggest(objects: list[dict], view: str, box) -> dict | None:
-    """和框重疊面積最大的灰盒(不看素材); 都沒重疊回 None。"""
+def overlap_suggest(objects: list[dict], view: str, box, pixel: bool = False, camera: str = "std") -> dict | None:
+    """和框(輸出像素)重疊面積最大的灰盒(不看素材); 物件依候選當時的鏡頭換算; 都沒重疊回 None。"""
     best, area = None, 0.0
     for o in objects:
         if o["kind"] == "asset":
             continue
-        bx0, by0, bx1, by1 = object_bbox(view, o)
+        x0, y0, x1, y1 = object_bbox(view, o, pixel)
+        bx0, by0 = to_screen(view, pixel, camera, x0, y0)
+        bx1, by1 = to_screen(view, pixel, camera, x1, y1)
         a = max(0.0, min(bx1, box[2]) - max(bx0, box[0])) * max(0.0, min(by1, box[3]) - max(by0, box[1]))
         if a > area:
             best, area = o, a

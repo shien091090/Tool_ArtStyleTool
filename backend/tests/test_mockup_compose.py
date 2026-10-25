@@ -86,3 +86,23 @@ def test_overlap_suggest():
     asset = {"id": "o3", "kind": "asset", "x": 400, "y": 0, "w": 100, "h": 100}
     assert overlap_suggest([a, b, asset], "side", [80, 0, 180, 50])["id"] == "o2"
     assert overlap_suggest([a, b, asset], "side", [410, 10, 450, 50]) is None
+
+
+def test_cut_grid_native_size():
+    img = np.full((100, 100, 3), 50, np.uint8)
+    img[::4, ::4] = 50
+    m = np.zeros((100, 100), np.uint8)
+    m[10:31, 13:42] = 255  # 邊緣切在 4×4 方塊中間
+    out = cut_object(FakeSeg([(m, 0.9)]), img, [0, 0, 100, 100], "x", grid=4)
+    assert out.shape[2] == 4 and set(np.unique(out[..., 3])) <= {0, 255}
+    # 方塊內過半才算前景: 列方塊 3~7(12~31)、行方塊 3~9(12~39), 縮回原生解析度
+    assert out.shape[:2] == (5, 7)
+
+
+def test_overlap_with_camera():
+    far = {"id": "o1", "kind": "box", "label": "遠方", "x": 1700, "y": 400, "w": 100, "h": 100}
+    box = [1170, 380, 1220, 430]  # 超遠鏡頭下它在輸出圖上的位置
+    assert overlap_suggest([far], "side", box, camera="xfar")["id"] == "o1"
+    assert overlap_suggest([far], "side", box) is None
+    px = {"id": "o2", "kind": "box", "label": "主角", "x": 160, "y": 90, "w": 16, "h": 16}
+    assert overlap_suggest([px], "side", [0, 0, 64, 64], pixel=True, camera="far")["id"] == "o2"
