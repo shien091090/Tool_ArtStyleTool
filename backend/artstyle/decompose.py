@@ -16,7 +16,10 @@ from .regions import decode_labels, encode_labels
 
 STEPS = ["depth", "normal", "normal_detail", "line", "line_sdf", "regions", "flat", "shade", "ao", "silhouette_sdf"]
 # 不在「全部拆解」順序裡、只由前端單獨呼叫的步驟
-EXTRA_STEPS = ["line_clean"]
+EXTRA_STEPS = ["line_clean", "regions_split"]
+# 平塗分格方式: ai = 直接用 AI 平塗切出的色塊(預設); lines = 照線稿分格, 交界貼齊線稿, 但線有缺口時會整片塗成同色
+SPLIT_MODES = ("ai", "lines")
+DEFAULT_SPLIT = "ai"
 STEP_NAMES = {"depth": "深度", "normal": "法線", "normal_detail": "細部法線", "line": "線稿",
               "line_sdf": "線條距離場", "regions": "AI 平塗", "flat": "平塗", "ao": "環境遮蔽",
               "silhouette_sdf": "主體剪影", "shade": "原圖光影", "source": "原圖",
@@ -64,18 +67,33 @@ def _write_clean_line(pack: Pack, level: int) -> None:
     pack.write_layer("line", clean_line(pack.read("line_ai"), fg, level), origin, level=level)
     run_step(pack, "line_sdf", None)
     if pack.has("flat_ai") and pack.has("regions"):
-        _split_regions(pack)
-        run_step(pack, "flat", None)
+        if _split_mode(pack) == "lines":
+            _split_regions(pack)
+            run_step(pack, "flat", None)
+        else:
+            # AI 色塊不看線稿: 區塊與改過的顏色照舊, 只重算會用到線稿的光影
+            for layer in ("regions", "flat", "silhouette_sdf"):
+                if layer in pack.meta["layers"]:
+                    pack.meta["layers"][layer]["stale"] = False
+            pack.save_meta()
+            run_step(pack, "shade", None)
 
 
-def _split_regions(pack: Pack) -> None:
-    """AI 平塗原圖 → 照線稿分格的區塊。"""
+def _split_mode(pack: Pack) -> str:
+    """沒有區塊的新包用預設; 有區塊但沒記錄的是加這個選項前做的, 當時都照線稿分格。"""
+    entry = pack.meta["layers"].get("regions")
+    return entry.get("split", "lines") if entry else DEFAULT_SPLIT
+
+
+def _split_regions(pack: Pack, mode: str | None = None) -> None:
+    """AI 平塗原圖 → 區塊; mode 為 lines 時照線稿分格。"""
+    mode = mode or _split_mode(pack)
     ai, src = pack.read("flat_ai")[..., :3], pack.read("source")[..., :3]
     if not pack.has("flat_seg") or pack.is_stale("flat_seg"):
         pack.write_layer("flat_seg", encode_labels(segment_flat(ai, src)), "computed")
-    lines = line_mask(pack.read("line")) if pack.has("line") else None
+    lines = line_mask(pack.read("line")) if mode == "lines" and pack.has("line") else None
     labels, colors = flat_regions(ai, src, lines, decode_labels(pack.read("flat_seg")))
-    pack.write_layer("regions", encode_labels(labels), pack.meta["layers"]["flat_ai"]["origin"])
+    pack.write_layer("regions", encode_labels(labels), pack.meta["layers"]["flat_ai"]["origin"], split=mode)
     pack.set_regions_meta(colors, region_areas(labels))
     if pack.has("silhouette_sdf"):
         run_step(pack, "silhouette_sdf", None)  # 剪影取自區塊, 區塊變了就要跟著重算
@@ -124,6 +142,13 @@ def run_step(pack: Pack, step: str, client: FalClient | None, **params) -> None:
         # 留下 AI 原圖: 換線稿時直接重新分格, 不用再花錢重畫
         pack.write_layer("flat_ai", resize_to(ai[..., :3], w, h), f"ai:{FLAT_MODEL}")
         _split_regions(pack)
+    elif step == "regions_split":
+        mode = params.get("mode")
+        if mode not in SPLIT_MODES:
+            raise ValueError(f"未知的分格方式: {mode}(可用: {', '.join(SPLIT_MODES)})")
+        _require(pack, "flat_ai")
+        _split_regions(pack, mode)
+        run_step(pack, "flat", None)
     elif step == "flat":
         _require(pack, "regions")
         labels = decode_labels(pack.read("regions"))

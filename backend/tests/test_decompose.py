@@ -266,6 +266,53 @@ def test_flat_not_replaceable(pack):
         decompose.replace_layer(pack, "flat", _png(_source()))
 
 
+def test_split_defaults_to_ai_segments(pack):
+    decompose.run_all(pack, FakeFal())
+    assert pack.meta["layers"]["regions"]["split"] == "ai"
+
+
+def test_regions_split_switches_mode_free(pack):
+    decompose.run_all(pack, FakeFal())
+    calls = FakeFal()
+    decompose.run_step(pack, "regions_split", calls, mode="lines")
+    assert calls.calls == [] and pack.meta["layers"]["regions"]["split"] == "lines"
+    assert not pack.is_stale("flat") and not pack.is_stale("shade")
+    decompose.run_step(pack, "regions_split", None, mode="ai")
+    assert pack.meta["layers"]["regions"]["split"] == "ai"
+    with pytest.raises(ValueError):
+        decompose.run_step(pack, "regions_split", None, mode="nope")
+
+
+def test_ai_split_ignores_line_changes(pack):
+    decompose.run_all(pack, FakeFal())
+    rid = decompose.region_at(pack, 30, 25)
+    decompose.set_region_color(pack, rid, (0, 255, 0))
+    before = pack.meta["layers"]["regions"]["updated"]
+    pack.meta["layers"]["regions"]["updated"] = "舊"
+    decompose.run_step(pack, "line_clean", None, level=0)
+    layers = pack.meta["layers"]
+    assert layers["regions"]["updated"] == "舊" and before                # 沒有重新分格
+    assert pack.read("flat")[30, 25].tolist() == [0, 255, 0]               # 改過的顏色還在
+    for layer in ["regions", "flat", "shade", "silhouette_sdf"]:
+        assert not layers[layer]["stale"]
+
+
+def test_old_pack_without_split_keeps_lines_mode(pack):
+    decompose.run_all(pack, FakeFal())
+    del pack.meta["layers"]["regions"]["split"]                 # 模擬加選項前的分層包
+    decompose.run_step(pack, "line_clean", None, level=0)
+    assert pack.meta["layers"]["regions"]["split"] == "lines"
+
+
+def test_lines_split_resplits_on_line_change(pack):
+    decompose.run_all(pack, FakeFal())
+    decompose.run_step(pack, "regions_split", None, mode="lines")
+    pack.meta["layers"]["regions"]["updated"] = "舊"
+    decompose.run_step(pack, "line_clean", None, level=0)
+    assert pack.meta["layers"]["regions"]["updated"] != "舊"
+    assert pack.meta["layers"]["regions"]["split"] == "lines"
+
+
 def test_line_clean_reuses_flat_segments(pack):
     decompose.run_all(pack, FakeFal())
     seg = pack.meta["layers"]["flat_seg"]["updated"]

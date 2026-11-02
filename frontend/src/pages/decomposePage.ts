@@ -66,7 +66,13 @@ export function mountDecomposePage(root: HTMLElement, embed: DecomposeEmbed): ()
   cleanLevel.addEventListener('input', () => { cleanValue.textContent = cleanLevel.value; });
   cleanLevel.addEventListener('change', () => step('整理線稿', [['line_clean', { level: Number(cleanLevel.value) }]]));
 
-  const actions: (HTMLButtonElement | HTMLInputElement)[] = [runAllBtn, cleanLevel];
+  /** 平塗分格方式, 對應後端 decompose.SPLIT_MODES / DEFAULT_SPLIT */
+  const splitMode = el('select');
+  splitMode.append(option('ai', 'AI 色塊'), option('lines', '照線稿分格'));
+  splitMode.value = 'ai';
+  splitMode.addEventListener('change', () => step('重新分格平塗', [['regions_split', { mode: splitMode.value }]]));
+
+  const actions: (HTMLButtonElement | HTMLInputElement | HTMLSelectElement)[] = [runAllBtn, cleanLevel, splitMode];
   const button = (text: string, onClick: () => void) => {
     const b = el('button', { text });
     b.addEventListener('click', onClick);
@@ -93,11 +99,12 @@ export function mountDecomposePage(root: HTMLElement, embed: DecomposeEmbed): ()
     makeCell('line', '線稿', [
       markPaid(button('重跑', () => step('重跑線稿', [['line', { level: Number(cleanLevel.value) }]]))), costNote(usd(COST.line)),
       el('label', {}, ['去雜線', cleanLevel, cleanValue]),
-      el('span', { className: 'muted', text: '拉動會重新整理線稿並重新分格平塗(免費)' }),
+      el('span', { className: 'muted', text: '拉動會重新整理線稿(免費); 平塗選「照線稿分格」時也會跟著重新分格' }),
     ]),
     makeCell('flat', '平塗', [
       markPaid(button('重畫', () => step('重畫平塗', [['regions', {}], ['flat', {}]]))), costNote(usd(COST.gptImage)),
-      el('span', { className: 'muted', text: 'GPT Image 2 畫平塗, 再依線稿分格上色' }),
+      el('label', {}, ['分格方式', splitMode]),
+      el('span', { className: 'muted', text: 'GPT Image 2 畫平塗再整理成色塊。AI 色塊: 照 AI 畫的分; 照線稿分格: 交界貼齊線稿, 但線有缺口會整片塗成同色(切換免費)' }),
     ]),
     makeCell('normal', '法線', [
       normalView,
@@ -124,6 +131,8 @@ export function mountDecomposePage(root: HTMLElement, embed: DecomposeEmbed): ()
     const level = lineInfo?.level ?? CLEAN_DEFAULT;
     cleanLevel.value = String(level);
     cleanValue.textContent = String(level);
+    splitMode.value = m.layers.regions ? (m.layers.regions.split ?? 'lines') : 'ai'; // 舊包沒記錄, 當時都照線稿分格
+    splitMode.disabled = !m.layers.flat_ai;
     for (const c of cells) {
       const shown = c.layer === 'normal' ? normalView.value : c.layer;
       const info = m.layers[shown];

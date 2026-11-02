@@ -14,6 +14,8 @@ export interface LayerInfo {
   stale: boolean;
   /** 線稿: 去雜線程度 0~10 */
   level?: number;
+  /** 區塊: 平塗分格方式, ai = AI 色塊(預設), lines = 照線稿分格 */
+  split?: 'ai' | 'lines';
 }
 
 export interface PackMeta {
